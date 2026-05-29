@@ -4,6 +4,11 @@ import { useApp } from '../store';
 
 export function TopBar() {
   const { state, clearSession, setActiveSidebarTab } = useApp();
+  
+  const selectedComponentNames = state.selectedComponents
+    .map(id => state.availableComponents.find(c => c.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <div className="h-[35px] border-b border-[#1e1e1e] bg-[#3c3c3c] flex items-center justify-between px-3 text-[12px] shrink-0">
@@ -20,6 +25,17 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Selected Components Indicator */}
+        {state.selectedComponents.length > 0 && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#2d2d2d] rounded text-[10px] text-[#007acc] border border-[#007acc]/30">
+            <span className="font-bold">{state.selectedComponents.length}</span>
+            <span className="text-[#858585]">component{state.selectedComponents.length > 1 ? 's' : ''}:</span>
+            <span className="max-w-[200px] truncate" title={selectedComponentNames}>
+              {selectedComponentNames}
+            </span>
+          </div>
+        )}
+        
         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#2d2d2d] rounded text-[10px] text-white">
           <div className={`w-2 h-2 rounded-full ${state.isEngineLive ? 'bg-green-500 animate-pulse' : 'bg-[#858585]'}`}></div>
           <span className="uppercase">{state.isEngineLive ? 'ENGINE: GPU LIVE' : 'ENGINE: OFFLINE'}</span>
