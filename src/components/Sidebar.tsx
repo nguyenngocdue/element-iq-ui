@@ -27,6 +27,9 @@ export function Sidebar() {
   const totalFF = state.files.reduce((acc, f) => acc + f.detections.filter(d => d.type === 'FF').length, 0);
   const totalDet = state.files.reduce((acc, f) => acc + f.detections.length, 0);
 
+  // Generate batch ID from session ID
+  const batchId = `Batch_${state.id.split('-')[1]?.toUpperCase() || '2024_Q3_012'}`;
+
   return (
     <div className="w-[260px] bg-[#1a1b20] border-r border-[#2b2d35] flex flex-col shrink-0 text-[#cccccc] font-sans">
       {/* Workspace Header */}
@@ -40,9 +43,10 @@ export function Sidebar() {
         <div className="text-[13px] font-bold text-[#b4c5ff] mb-1 truncate" title="PROJECT_8A027867_QA">
           PROJECT_8A027867_QA
         </div>
+        <div className="text-[11px] text-[#858585] flex items-center gap-1.5 mb-1">
+          <span className="font-mono text-[#007acc]">{batchId}</span>
+        </div>
         <div className="text-[11px] text-[#858585] flex items-center gap-1.5 mb-4">
-          <span>Batch</span>
-          <span className="w-1 h-1 bg-[#858585] rounded-full"></span>
           <span>{state.files.length} files</span>
           <span className="w-1 h-1 bg-[#858585] rounded-full"></span>
           <span className="text-[#2eb886] font-medium">{displayPassRate}% pass</span>
