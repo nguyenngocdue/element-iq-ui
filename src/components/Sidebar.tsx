@@ -3,12 +3,9 @@ import { useApp } from '../store';
 import { ChevronDown, CloudUpload, File as FileIcon, X, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { DocumentFile } from '../types';
-import { ComponentPanel } from './ComponentPanel';
-import { ImportModal } from './ImportModal';
 
 export function Sidebar() {
   const { state, setActiveFile, addFiles, clearSession } = useApp();
-  const [showImportModal, setShowImportModal] = React.useState(false);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -52,21 +49,16 @@ export function Sidebar() {
         </div>
         
         <div className="flex gap-2 text-[12px] font-medium">
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors"
-          >
+          <label className="flex-1 flex items-center justify-center gap-2 bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors cursor-pointer">
             <CloudUpload className="w-3.5 h-3.5 text-[#858585]" />
             Import
-          </button>
+            <input type="file" multiple accept=".pdf" className="hidden" onChange={handleFileUpload} />
+          </label>
           <button onClick={clearSession} className="px-4 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
             Clear all
           </button>
         </div>
       </div>
-      
-      {/* Component Panel */}
-      <ComponentPanel />
       
       {/* Compliance Stats */}
       <div className="p-4 border-b border-[#2b2d35] bg-[#1a1b20]">
@@ -138,9 +130,6 @@ export function Sidebar() {
           </div>
         )}
       </div>
-
-      {/* Import Modal */}
-      <ImportModal open={showImportModal} onClose={() => setShowImportModal(false)} />
     </div>
   );
 }

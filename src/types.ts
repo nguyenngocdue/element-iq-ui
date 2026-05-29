@@ -1,16 +1,3 @@
-export interface Component {
-  id: string;
-  name: string;
-  description: string;
-  modelFile: string;
-  classes: string[];
-  accuracy: number | null;
-  status: 'ready' | 'training' | 'missing';
-  trainingProgress?: number;
-  lastTrained?: string;
-  size?: string;
-}
-
 export interface DocumentFile {
   id: string;
   name: string;
@@ -20,7 +7,6 @@ export interface DocumentFile {
   passRate?: number;
   detections: Detection[];
   events: AppEvent[];
-  analyzedComponents?: string[]; // Which components were analyzed
 }
 
 export interface Detection {
@@ -35,7 +21,6 @@ export interface Detection {
   status: 'PASS' | 'FAIL' | 'WARN';
   reason?: string;
   note?: string;
-  componentId?: string; // Which component detected this
 }
 
 export interface AppEvent {
@@ -55,7 +40,4 @@ export interface SessionState {
   isSidebarOpen: boolean;
   isEngineLive: boolean;
   confidenceThreshold: number;
-  availableComponents: Component[];
-  selectedComponents: string[];
-  componentConfidence: Record<string, number>;
 }
