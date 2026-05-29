@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, Columns, MousePointer2, Hand, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
@@ -101,9 +101,16 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
   );
 }
 
-function PdfRenderer({ file, pageNum, scale, showAnnotations }: { file: any, pageNum: number, scale: number, showAnnotations: boolean }) {
+function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded }: { file: any, pageNum: number, scale: number, showAnnotations: boolean, onDimensionsLoaded?: (w: number, h: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [renderScale, setRenderScale] = useState(scale);
+  const [baseSize, setBaseSize] = useState({ w: 0, h: 0 });
   const renderTaskRef = useRef<any>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setRenderScale(scale), 150);
+    return () => clearTimeout(t);
+  }, [scale]);
 
   useEffect(() => {
     if (!file || !file.file || !canvasRef.current) return;
@@ -121,7 +128,11 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations }: { file: any, pag
         const page = await pdf.getPage(pageNum || 1);
         if (!isMounted) return;
 
-        const viewport = page.getViewport({ scale: scale });
+        const baseViewport = page.getViewport({ scale: 1 });
+        setBaseSize({ w: baseViewport.width, h: baseViewport.height });
+        if (onDimensionsLoaded) onDimensionsLoaded(baseViewport.width, baseViewport.height);
+
+        const viewport = page.getViewport({ scale: renderScale * 2 }); // Render at 2x resolution for sharpness
         const canvas = canvasRef.current;
         if (!canvas) return;
         
@@ -130,7 +141,7 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations }: { file: any, pag
 
         canvas.height = viewport.height;
         canvas.width = viewport.width;
-
+        
         const renderContext = {
           canvasContext: context,
           viewport: viewport,
@@ -162,11 +173,22 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations }: { file: any, pag
         } catch(e) {}
       }
     };
-  }, [file?.file, scale, pageNum]);
+  }, [file?.file, renderScale, pageNum]);
 
   return (
-    <div className="relative shadow-2xl origin-top-left border border-[#444] transition-[width,height] duration-200">
-      <canvas ref={canvasRef} className="block bg-white max-w-none" />
+    <div 
+      className="relative shadow-2xl origin-top-left border border-[#444]" 
+      style={{ 
+        width: baseSize.w ? baseSize.w * scale : 'auto', 
+        height: baseSize.h ? baseSize.h * scale : 'auto'
+      }}
+    >
+      <canvas 
+        ref={canvasRef} 
+        className="block bg-white" 
+        style={{ width: '100%', height: '100%' }}
+      />
+
       
       {showAnnotations && file.detections && file.detections.filter((d: any) => d.page === (pageNum || 1)).map((d: any) => (
         <div 
@@ -197,8 +219,20 @@ export function MainEditor() {
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
   const [zoomRect, setZoomRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  const [pdfDimensions, setPdfDimensions] = useState<{ w: number, h: number } | null>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId: string } | null>(null);
+
+  const fitScreen = () => {
+    if (pane1Ref.current && pdfDimensions) {
+      const pane = pane1Ref.current;
+      const padding = 64; // Two sides of 32px padding roughly
+      const availableWidth = pane.clientWidth - padding;
+      const availableHeight = pane.clientHeight - padding;
+      const newScale = Math.min(availableWidth / pdfDimensions.w, availableHeight / pdfDimensions.h);
+      setScale(Math.max(0.1, Math.min(4, newScale)));
+    }
+  };
   
   const isAPressed = useRef(false);
   const pane1Ref = useRef<HTMLDivElement>(null);
@@ -300,10 +334,37 @@ export function MainEditor() {
   }, []);
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (isAPressed.current || e.altKey) {
+    if (isAPressed.current || e.altKey || e.ctrlKey || e.metaKey) {
       e.stopPropagation();
-      const zoomFactor = e.deltaY > 0 ? -0.1 : 0.1;
-      setScale(s => Math.min(4, Math.max(0.1, s + zoomFactor)));
+      
+      const pane = e.currentTarget as HTMLDivElement;
+      const rect = pane.getBoundingClientRect();
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      
+      setScale((prevScale) => {
+        const nextScale = Math.min(4, Math.max(0.1, prevScale * zoomFactor));
+        if (nextScale === prevScale) return prevScale;
+        
+        const ratio = nextScale / prevScale;
+        const scrollLeft = pane.scrollLeft;
+        const scrollTop = pane.scrollTop;
+
+        const contentX = pointerX + scrollLeft;
+        const contentY = pointerY + scrollTop;
+
+        const newContentX = contentX * ratio;
+        const newContentY = contentY * ratio;
+
+        setTimeout(() => {
+          pane.scrollLeft = newContentX - pointerX;
+          pane.scrollTop = newContentY - pointerY;
+        }, 0);
+
+        return nextScale;
+      });
     }
   };
 
@@ -370,7 +431,7 @@ export function MainEditor() {
               className="h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 border-t-transparent text-[#858585] hover:text-white"
               title="Split Editor Right"
             >
-              <Columns className="w-4 h-4" />
+              <Split className="w-4 h-4" />
             </button>
             <button 
               onClick={toggleBot}
@@ -392,11 +453,6 @@ export function MainEditor() {
         {/* Editor Toolbar (Pane 1) */}
         <div className="h-[40px] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e]">
           <div className="flex items-center gap-4">
-            <div className="flex items-center bg-[#252526] rounded border border-[#3c3c3c]">
-              <button onClick={() => setScale(s => Math.max(0.1, s - 0.25))} className="px-2 py-1 border-r border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">−</button>
-              <span className="px-3 text-[11px] font-mono">{Math.round(scale * 100)}%</span>
-              <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="px-2 py-1 border-l border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">+</button>
-            </div>
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setShowAnnotations(!showAnnotations)}
@@ -460,20 +516,23 @@ export function MainEditor() {
           onMouseMove={(e) => handleMouseMove(e, pane1Ref)}
           onMouseUp={() => handleMouseUp(pane1Ref)}
           onMouseLeave={() => handleMouseLeave(pane1Ref)}
-          className={`flex-1 overflow-auto bg-[#121212] relative flex items-center justify-center p-8 no-scrollbar ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
+          className={`flex-1 overflow-auto bg-[#121212] relative no-scrollbar ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
         >
-          {file.status === 'ANALYZING' && (
-            <>
-              <ParsingOverlay fileName={file.name} pages={file.pages} />
-              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[#10b981] to-transparent shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-scan z-40 pointer-events-none" />
-            </>
-          )}
-          <PdfRenderer 
-             file={file} 
-             pageNum={state.activePage || 1} 
-             scale={scale} 
-             showAnnotations={showAnnotations} 
-          />
+          <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
+            {file.status === 'ANALYZING' && (
+              <>
+                <ParsingOverlay fileName={file.name} pages={file.pages} />
+                <div className="absolute top-0 left-0 w-full h-[3px] bg-[#00ff41] shadow-[0_0_15px_3px_rgba(0,255,65,0.9),0_0_5px_1px_rgba(255,255,255,0.8)] animate-scan z-40 pointer-events-none" />
+              </>
+            )}
+            <PdfRenderer 
+               file={file} 
+               pageNum={state.activePage || 1} 
+               scale={scale || 0.5} 
+               onDimensionsLoaded={(w, h) => setPdfDimensions({w, h})}
+               showAnnotations={showAnnotations} 
+            />
+          </div>
         </div>
 
         {/* Footer (Pane 1) */}
@@ -518,21 +577,23 @@ export function MainEditor() {
             onMouseMove={(e) => handleMouseMove(e, pane2Ref)}
             onMouseUp={() => handleMouseUp(pane2Ref)}
             onMouseLeave={() => handleMouseLeave(pane2Ref)}
-            className={`flex-1 overflow-auto bg-[#0a0a0a] relative flex items-center justify-center p-8 no-scrollbar shadow-inner ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
+            className={`flex-1 overflow-auto bg-[#0a0a0a] relative no-scrollbar shadow-inner ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
           >
-             {splitFile ? (
-               <PdfRenderer 
-                 file={splitFile} 
-                 pageNum={state.activePage || 1} 
-                 scale={scale} 
-                 showAnnotations={showAnnotations} 
-               />
-             ) : (
-               <div className="flex flex-col items-center justify-center text-center p-6 mt-8">
-                 <svg className="w-12 h-12 mb-4 text-[#3c3c3c]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                 <h3 className="text-[#858585] font-semibold mb-2 text-sm">No Document Selected</h3>
-               </div>
-             )}
+             <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
+               {splitFile ? (
+                 <PdfRenderer 
+                   file={splitFile} 
+                   pageNum={state.activePage || 1} 
+                   scale={scale} 
+                   showAnnotations={showAnnotations} 
+                 />
+               ) : (
+                 <div className="flex flex-col items-center justify-center text-center p-6 mt-8">
+                   <svg className="w-12 h-12 mb-4 text-[#3c3c3c]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                   <h3 className="text-[#858585] font-semibold mb-2 text-sm">No Document Selected</h3>
+                 </div>
+               )}
+             </div>
           </div>
           
           {/* Footer (Pane 2) */}
@@ -560,7 +621,7 @@ export function MainEditor() {
       )}
 
       {/* Floating Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1 rounded-lg shadow-2xl flex items-center gap-1 z-50">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
         <button 
           onClick={() => setToolMode('select')}
           className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'select' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
@@ -582,6 +643,21 @@ export function MainEditor() {
         >
           <Search className="w-4 h-4" />
         </button>
+        
+        <div className="w-[1px] h-5 bg-[#3c3c3c] mx-2"></div>
+        
+        <button 
+          onClick={fitScreen}
+          className="px-2 py-1.5 rounded text-[#a0a5b5] hover:text-white hover:bg-[#333] transition-colors"
+          title="Fit to Screen"
+        >
+          <Maximize className="w-4 h-4" />
+        </button>
+        <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent bg-[#1e1e1e] rounded border border-[#3c3c3c] ml-1">
+          <button onClick={() => setScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
+          <span className="w-[45px] text-center">{Math.round((scale || 0.5) * 100)}%</span>
+          <button onClick={() => setScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
+        </div>
       </div>
 
       {/* Context Menu */}
