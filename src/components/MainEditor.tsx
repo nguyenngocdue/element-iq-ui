@@ -230,7 +230,9 @@ export function MainEditor() {
       const availableWidth = pane.clientWidth - padding;
       const availableHeight = pane.clientHeight - padding;
       const newScale = Math.min(availableWidth / pdfDimensions.w, availableHeight / pdfDimensions.h);
-      setScale(Math.max(0.1, Math.min(4, newScale)));
+      if (!isNaN(newScale) && newScale > 0) {
+        setScale(Math.max(0.1, Math.min(4, newScale)));
+      }
     }
   };
   
@@ -277,7 +279,7 @@ export function MainEditor() {
   const handleMouseUp = (paneRef: React.RefObject<HTMLDivElement>) => {
     if (isDragging.current) {
       isDragging.current = false;
-      if (paneRef.current) paneRef.current.style.cursor = toolMode === 'pan' ? 'grab' : '';
+      if (paneRef.current) paneRef.current.style.cursor = '';
     } else if (isDrawingZoom.current && zoomRect && paneRef.current) {
       isDrawingZoom.current = false;
       
@@ -630,22 +632,20 @@ export function MainEditor() {
           <MousePointer2 className="w-4 h-4" />
         </button>
         <button 
-          onClick={() => setToolMode('pan')}
+          onClick={() => setToolMode(toolMode === 'pan' ? 'select' : 'pan')}
           className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'pan' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
           title="Pan (H)"
         >
           <Hand className="w-4 h-4" />
         </button>
         <button 
-          onClick={() => setToolMode('zoom')}
+          onClick={() => setToolMode(toolMode === 'zoom' ? 'select' : 'zoom')}
           className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'zoom' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
           title="Zoom (Z)"
         >
           <Search className="w-4 h-4" />
         </button>
-        
         <div className="w-[1px] h-5 bg-[#3c3c3c] mx-2"></div>
-        
         <button 
           onClick={fitScreen}
           className="px-2 py-1.5 rounded text-[#a0a5b5] hover:text-white hover:bg-[#333] transition-colors"
@@ -653,9 +653,9 @@ export function MainEditor() {
         >
           <Maximize className="w-4 h-4" />
         </button>
-        <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent bg-[#1e1e1e] rounded border border-[#3c3c3c] ml-1">
+        <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent rounded bg-[#121212] border border-[#3c3c3c] ml-1">
           <button onClick={() => setScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
-          <span className="w-[45px] text-center">{Math.round((scale || 0.5) * 100)}%</span>
+          <span className="w-[45px] text-center">{!isNaN(scale) ? Math.round((scale || 0.5) * 100) : 100}%</span>
           <button onClick={() => setScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
         </div>
       </div>
