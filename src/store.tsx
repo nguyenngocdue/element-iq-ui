@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { SessionState, DocumentFile, Detection, AppEvent } from './types';
+import { SessionState, DocumentFile, Component } from './types';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -15,7 +15,55 @@ interface AppContextType {
   clearSession: () => void;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
+  setSelectedComponents: (ids: string[]) => void;
+  setComponentConfidence: (id: string, confidence: number) => void;
+  toggleComponent: (id: string) => void;
 }
+
+// Mock available components (P0: grout-tube ready, others not ready)
+const mockComponents: Component[] = [
+  {
+    id: 'grout-tube',
+    name: 'Grout Tube',
+    description: 'NF (filled) / FF (hollow)',
+    modelFile: 'grout-tube-best.pt',
+    classes: ['FF', 'NF'],
+    accuracy: 0.92,
+    status: 'ready',
+    lastTrained: '2026-05-20T10:30:00Z',
+    size: '12.4 MB',
+  },
+  {
+    id: 'm20-ferrule',
+    name: 'M20 Ferrule',
+    description: 'NF (filled) / FF (hollow)',
+    modelFile: 'm20-ferrule-best.pt',
+    classes: ['FF', 'NF'],
+    accuracy: 0.95,
+    status: 'ready',
+    lastTrained: '2026-05-22T14:20:00Z',
+    size: '10.8 MB',
+  },
+  {
+    id: 'void-tube',
+    name: 'Void Tube',
+    description: 'Void tube symbol',
+    modelFile: 'void-tube-best.pt',
+    classes: ['void'],
+    accuracy: null,
+    status: 'training',
+    trainingProgress: 0.75,
+  },
+  {
+    id: 'cast-in-plate',
+    name: 'Cast-in Plate',
+    description: 'CP3 (3 holes) / CP4 (4 holes)',
+    modelFile: 'cast-in-plate-best.pt',
+    classes: ['CP3', 'CP4'],
+    accuracy: null,
+    status: 'missing',
+  },
+];
 
 const initialState: SessionState = {
   id: 'session-1',
@@ -27,6 +75,12 @@ const initialState: SessionState = {
   isSidebarOpen: true,
   isEngineLive: true,
   confidenceThreshold: 0.5,
+  availableComponents: mockComponents,
+  selectedComponents: ['grout-tube'],
+  componentConfidence: {
+    'grout-tube': 0.40,
+    'm20-ferrule': 0.35,
+  },
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -107,6 +161,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, confidenceThreshold: val }));
   }, []);
 
+  const setSelectedComponents = useCallback((ids: string[]) => {
+    setState((prev) => ({ ...prev, selectedComponents: ids }));
+  }, []);
+
+  const setComponentConfidence = useCallback((id: string, confidence: number) => {
+    setState((prev) => ({
+      ...prev,
+      componentConfidence: {
+        ...prev.componentConfidence,
+        [id]: confidence,
+      },
+    }));
+  }, []);
+
+  const toggleComponent = useCallback((id: string) => {
+    setState((prev) => {
+      const isSelected = prev.selectedComponents.includes(id);
+      const newSelection = isSelected
+        ? prev.selectedComponents.filter(c => c !== id)
+        : [...prev.selectedComponents, id];
+      return { ...prev, selectedComponents: newSelection };
+    });
+  }, []);
+
   const clearSession = useCallback(() => {
     setState({ ...initialState, id: `session-${Date.now()}` });
   }, []);
@@ -163,7 +241,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setConfidenceThreshold,
         clearSession,
         updateFileStatus,
-        analyzeFile
+        analyzeFile,
+        setSelectedComponents,
+        setComponentConfidence,
+        toggleComponent,
       }}
     >
       {children}
