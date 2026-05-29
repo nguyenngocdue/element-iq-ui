@@ -1,14 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../store';
-import { ChevronDown, CloudUpload, File as FileIcon, X, RefreshCw } from 'lucide-react';
+import { ChevronDown, CloudUpload, File as FileIcon, X, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { DocumentFile } from '../types';
-import { ComponentPanel } from './ComponentPanel';
-import { ImportModal } from './ImportModal';
+import { useResizable } from '../hooks/useResizable';
 
 export function Sidebar() {
-  const { state, setActiveFile, clearSession } = useApp();
-  const [showImportModal, setShowImportModal] = React.useState(false);
+  const { state, setActiveFile, clearSession, openConfigModal } = useApp();
+  const [showStatuses, setShowStatuses] = useState(true);
+  const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const passList = state.files.filter(f => f.status === 'PASS');
   const failList = state.files.filter(f => f.status === 'FAIL');
@@ -24,24 +24,23 @@ export function Sidebar() {
   const totalFF = state.files.reduce((acc, f) => acc + f.detections.filter(d => d.type === 'FF').length, 0);
   const totalDet = state.files.reduce((acc, f) => acc + f.detections.length, 0);
 
-  // Generate batch ID from session ID
-  const batchId = `Batch_${state.id.split('-')[1]?.toUpperCase() || '2024_Q3_012'}`;
-
   return (
-    <div className="w-[260px] bg-[#1a1b20] border-r border-[#2b2d35] flex flex-col shrink-0 text-[#cccccc] font-sans">
+    <div style={{ width }} className="bg-[#1a1b20] border-r border-[#2b2d35] flex flex-col shrink-0 text-[#cccccc] font-sans relative">
+      {/* Resizer Handle */}
+      <div 
+        onMouseDown={handleMouseDown}
+        className={cn("absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize z-50 hover:bg-[#10b981] transition-colors", isDragging && "bg-[#10b981]")}
+      />
       {/* Workspace Header */}
       <div className="flex flex-col p-4 border-b border-[#2b2d35]">
         <div className="flex items-center justify-between cursor-pointer mb-2 group">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#858585] group-hover:text-white transition-colors">
-            Current Workspace
+            Current Project
           </span>
           <ChevronDown className="w-3.5 h-3.5 text-[#858585] group-hover:text-white transition-colors" />
         </div>
-        <div className="text-[13px] font-bold text-[#b4c5ff] mb-1 truncate" title="PROJECT_8A027867_QA">
-          PROJECT_8A027867_QA
-        </div>
-        <div className="text-[11px] text-[#858585] flex items-center gap-1.5 mb-1">
-          <span className="font-mono text-[#007acc]">{batchId}</span>
+        <div className="text-[13px] font-bold text-[#b4c5ff] mb-1 truncate" title={state.activeProject?.name || "Untitled Project"}>
+          {state.activeProject?.name || "Untitled Project"}
         </div>
         <div className="text-[11px] text-[#858585] flex items-center gap-1.5 mb-4">
           <span>{state.files.length} files</span>
@@ -51,7 +50,7 @@ export function Sidebar() {
         
         <div className="flex gap-2 text-[12px] font-medium">
           <button
-            onClick={() => setShowImportModal(true)}
+            onClick={() => openConfigModal('import')}
             className="flex-1 flex items-center justify-center gap-2 bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors"
           >
             <CloudUpload className="w-3.5 h-3.5 text-[#858585]" />
@@ -62,58 +61,17 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-      
-      {/* Component Panel */}
-      <ComponentPanel />
-      
-      {/* Compliance Stats */}
-      <div className="p-4 border-b border-[#2b2d35] bg-[#1a1b20]">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#858585]">Compliance</span>
-          <span className="text-[#2eb886] font-bold text-[12px]">{displayPassRate}%</span>
-        </div>
-        <div className="h-1 w-full bg-[#3c3c3c] rounded-full overflow-hidden mb-3 flex">
-           <div className="h-full bg-[#2eb886]" style={{ width: `${overallPassRate}%` }}></div>
-           <div className="h-full bg-[#d4b238]" style={{ width: `${100 - overallPassRate}%` }}></div>
-        </div>
-        
-        <div className="grid grid-cols-4 gap-1 text-center mb-4">
-          <div className="flex flex-col items-center">
-            <span className="text-[13px] font-bold text-white">{passList.length}</span>
-            <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Pass</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="text-[13px] font-bold text-white">{failList.length}</span>
-            <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Fail</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="text-[13px] font-bold text-white">{noNoteList.length}</span>
-            <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">No Note</span>
-          </div>
-          <div className="flex flex-col items-center">
-            <span className="text-[13px] font-bold text-white">{errList.length}</span>
-            <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Err</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-[10px] font-mono">
-          <div className="flex gap-2">
-            <span className="border border-[#007acc] text-[#82aaff] px-1.5 py-0.5 rounded flex items-center gap-1 bg-[#007acc]/10">
-              <span className="font-bold">NF</span> {totalNF}
-            </span>
-            <span className="border border-[#d4b238] text-[#d4b238] px-1.5 py-0.5 rounded flex items-center gap-1 bg-[#d4b238]/10">
-              <span className="font-bold">FF</span> {totalFF}
-            </span>
-          </div>
-          <span className="text-[#858585]">{totalDet} det</span>
-        </div>
-      </div>
 
       {/* Drawings Explorer */}
       <div className="flex-1 overflow-y-auto flex flex-col pb-4 bg-[#1a1b20]">
         <div className="px-4 py-3 flex justify-between items-center sticky top-0 bg-[#1a1b20] z-10">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#858585]">Drawings explorer</span>
-          <span className="text-[#2eb886] font-bold text-[11px] bg-[#2eb886]/10 px-1.5 py-0.5 rounded">{displayPassRate}%</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowStatuses(!showStatuses)} className="text-[#858585] hover:text-white transition-colors" title="Toggle Status Badges">
+              {showStatuses ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+            <span className="text-[#2eb886] font-bold text-[11px] bg-[#2eb886]/10 px-1.5 py-0.5 rounded">{displayPassRate}%</span>
+          </div>
         </div>
         
         {state.files.length === 0 ? (
@@ -131,14 +89,12 @@ export function Sidebar() {
                 activePage={state.activePage || 1}
                 onClick={() => setActiveFile(file.id, 1)}
                 onPageClick={(page) => setActiveFile(file.id, page)}
+                hideBadge={!showStatuses}
               />
             ))}
           </div>
         )}
       </div>
-
-      {/* Import Modal */}
-      <ImportModal open={showImportModal} onClose={() => setShowImportModal(false)} />
     </div>
   );
 }
@@ -153,10 +109,12 @@ export function FileItem({ file, isActive, activePage, onClick, onPageClick, hid
     if (file.status === 'FAIL') {
       return <span className="text-[#ef4444] font-bold text-[9px] bg-[#ef4444]/10 px-1.5 py-0.5 rounded border border-[#ef4444]/30 tracking-wider">FAIL</span>;
     }
-    if (file.status === 'ANALYZING') {
-      return <RefreshCw className="w-3.5 h-3.5 text-[#007acc] animate-spin" />;
+    if (file.status === 'PENDING' || file.status === 'WARN' || file.status === 'NO-NOTE') {
+      return <span className="text-[#bba438] font-bold text-[9px] bg-[#bba438]/10 px-1.5 py-0.5 rounded border border-[#bba438]/30 tracking-wider">NO-NOTE</span>;
     }
-    // Do not show NO-NOTE for pending/warn
+    if (file.status === 'ANALYZING') {
+      return <RefreshCw className="w-3.5 h-3.5 text-[#10b981] animate-spin" />;
+    }
     return null;
   };
 

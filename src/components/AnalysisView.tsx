@@ -2,22 +2,25 @@ import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Download, Share2, ChevronRight, Folder, FileText, CheckCircle, AlertTriangle, FileSpreadsheet, Plus, DownloadCloud, Expand, RefreshCw, Layers, Database, ShieldCheck, Box } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useResizable } from '../hooks/useResizable';
 
 import { FileItem } from './Sidebar';
 
 export function AnalysisView() {
-  const { state, setActiveFile } = useApp();
+  const { state, setActiveFile, openConfigModal } = useApp();
   const file = state.files.find(f => f.id === state.activeFileId) || state.files[0];
   
   const [exporting, setExporting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const handleExport = () => {
     setExporting(true);
     setTimeout(() => setExporting(false), 2000);
   };
+
 
   const handleShare = () => {
     setSharing(true);
@@ -61,19 +64,19 @@ export function AnalysisView() {
   return (
     <div className="flex-1 flex bg-[#1e1e1e] overflow-hidden text-[#cccccc] font-sans">
       {/* Left Sidebar - Workspace Files */}
-      <div className="w-[260px] bg-[#1a1a1a] border-r border-[#333333] flex flex-col shrink-0">
+      <div style={{ width }} className="bg-[#1a1a1a] border-r border-[#333333] flex flex-col shrink-0 relative">
+        {/* Resizer Handle */}
+        <div 
+          onMouseDown={handleMouseDown}
+          className={cn("absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize z-50 hover:bg-[#10b981] transition-colors", isDragging && "bg-[#10b981]")}
+        />
         <div className="p-4 border-b border-[#333333] flex items-center justify-between">
           <span className="text-[11px] font-bold text-[#858585] uppercase tracking-wider">Project Files</span>
-          <label className="text-[#858585] hover:text-white transition-colors bg-[#252526] p-1 rounded-md border border-[#333333] cursor-pointer">
+          <button onClick={() => openConfigModal('import')} className="text-[#858585] hover:text-white transition-colors bg-[#252526] p-1 rounded-md border border-[#333333] cursor-pointer">
             <Plus className="w-3.5 h-3.5" />
-            <input type="file" multiple accept=".pdf" className="hidden" onChange={(e) => {
-               if (e.target.files && e.target.files.length > 0) {
-                 useApp.getState().addFiles(Array.from(e.target.files));
-               }
-            }} />
-          </label>
+          </button>
         </div>
-        <div className="flex-1 overflow-y-auto flex flex-col pb-4 text-sm font-sans">
+        <div className="flex-1 overflow-y-auto flex flex-col pb-4 text-sm font-sans border-b border-[#333333]">
           {state.files.map((f) => (
             <FileItem 
               key={f.id} 
@@ -85,6 +88,35 @@ export function AnalysisView() {
               hideBadge={true}
             />
           ))}
+        </div>
+        
+        <div className="p-4 bg-[#1a1a1a]">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#858585]">Compliance</span>
+            <span className="text-[#2eb886] font-bold text-[12px]">{state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length).toFixed(1) : '0.0'}%</span>
+          </div>
+          <div className="h-1 w-full bg-[#3c3c3c] rounded-full overflow-hidden mb-3 flex">
+             <div className="h-full bg-[#2eb886]" style={{ width: `${state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length) : 0}%` }}></div>
+             <div className="h-full bg-[#d4b238]" style={{ width: `${100 - (state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length) : 0)}%` }}></div>
+          </div>
+          <div className="grid grid-cols-4 gap-1 text-center">
+            <div className="flex flex-col items-center">
+              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'PASS').length}</span>
+              <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Pass</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'FAIL').length}</span>
+              <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Fail</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'PENDING' || f.status === 'WARN' || f.status === 'NO-NOTE').length}</span>
+              <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">No Note</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'ERROR' as any).length}</span>
+              <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Err</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -111,7 +143,7 @@ export function AnalysisView() {
             <button onClick={handleExport} className="bg-[#252526] hover:bg-[#2d2d2d] text-white px-4 py-2 rounded-md font-medium text-xs flex items-center gap-2 transition-colors border border-[#3c3c3c]">
               {exporting ? <CheckCircle className="w-4 h-4 text-[#2eb886]" /> : <DownloadCloud className="w-4 h-4" />} {exporting ? 'Exported!' : 'Export Report'}
             </button>
-            <button onClick={handleShare} className="bg-[#007acc] hover:bg-[#006bb3] text-white px-4 py-2 rounded-md font-medium text-xs flex items-center gap-2 transition-colors shadow-lg shadow-[#007acc]/20 border border-[#007acc]">
+            <button onClick={handleShare} className="bg-[#10b981] hover:bg-[#059669] text-white px-4 py-2 rounded-md font-medium text-xs flex items-center gap-2 transition-colors shadow-lg shadow-[#10b981]/20 border border-[#10b981]">
               {sharing ? <CheckCircle className="w-4 h-4 text-white" /> : <Share2 className="w-4 h-4" />} {sharing ? 'Link Copied!' : 'Share'}
             </button>
           </div>
@@ -153,7 +185,7 @@ export function AnalysisView() {
             onClick={() => {
               const tooltip = document.createElement('div');
               tooltip.textContent = 'Opening Schedule...';
-              tooltip.className = 'fixed bg-[#007acc] text-white text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-50 animate-bounce';
+              tooltip.className = 'fixed bg-[#10b981] text-white text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-50 animate-bounce';
               tooltip.style.left = `50%`;
               tooltip.style.top = `50%`;
               document.body.appendChild(tooltip);
@@ -184,7 +216,7 @@ export function AnalysisView() {
                </div>
                <div className="p-5 border-b border-[#3c3c3c]">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <div className="w-6 h-6 rounded bg-[#007acc]/10 flex items-center justify-center text-[#007acc]"><RefreshCw className="w-3.5 h-3.5" /></div>
+                    <div className="w-6 h-6 rounded bg-[#10b981]/10 flex items-center justify-center text-[#10b981]"><RefreshCw className="w-3.5 h-3.5" /></div>
                     Revit Integration
                   </h3>
                </div>
@@ -210,7 +242,7 @@ export function AnalysisView() {
                     </div>
                  </div>
 
-                 <button onClick={handleSync} className={`w-full ${syncing ? 'bg-[#2eb886] hover:bg-[#259b6c]' : 'bg-[#007acc] hover:bg-[#006bb3] shadow-lg shadow-[#007acc]/20'} text-white py-2.5 rounded-md font-medium text-xs flex items-center justify-center gap-2 transition-colors`}>
+                 <button onClick={handleSync} className={`w-full ${syncing ? 'bg-[#2eb886] hover:bg-[#259b6c]' : 'bg-[#10b981] hover:bg-[#059669] shadow-lg shadow-[#10b981]/20'} text-white py-2.5 rounded-md font-medium text-xs flex items-center justify-center gap-2 transition-colors`}>
                    {syncing ? <CheckCircle className="w-4 h-4" /> : <Database className="w-4 h-4" />} {syncing ? 'Data Synced!' : 'Sync Data to Revit'}
                  </button>
                </div>

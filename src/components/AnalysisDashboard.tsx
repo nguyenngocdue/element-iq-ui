@@ -91,7 +91,7 @@ export function AnalysisDashboard() {
                 placeholder="Search drawings..." 
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-[#16161a] border border-[#3c3c3c] text-sm text-white rounded-md pl-9 pr-4 py-1.5 focus:outline-none focus:border-[#007acc] w-64"
+                className="bg-[#16161a] border border-[#3c3c3c] text-sm text-white rounded-md pl-9 pr-4 py-1.5 focus:outline-none focus:border-[#10b981] w-64"
               />
             </div>
           </div>

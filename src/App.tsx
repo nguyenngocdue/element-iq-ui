@@ -8,9 +8,16 @@ import { BottomBar } from './components/BottomBar';
 import { AnalysisDashboard } from './components/AnalysisDashboard';
 import { AnalysisView } from './components/AnalysisView';
 import { AppProvider, useApp } from './store';
+import { AnalysisConfigModal } from './components/ImportModal';
+import { ProjectDashboard } from './components/ProjectDashboard';
+import { ElementIQBot } from './components/ElementIQBot';
 
 function AppContent() {
-  const { state } = useApp();
+  const { state, closeConfigModal } = useApp();
+
+  if (state.currentView === 'projects') {
+    return <ProjectDashboard />;
+  }
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-editor-bg text-fg font-sans antialiased text-[14px]">
@@ -25,11 +32,19 @@ function AppContent() {
           <>
             {state.isSidebarOpen && <Sidebar />}
             <MainEditor />
-            <ValidationPanel />
+            {state.isValidationOpen && <ValidationPanel />}
           </>
         )}
+        {state.isBotOpen && <ElementIQBot />}
       </div>
       <BottomBar />
+      
+      <AnalysisConfigModal 
+        open={state.showConfigModal} 
+        onClose={closeConfigModal} 
+        mode={state.configModalMode}
+        targetFileId={state.configTargetFileId}
+      />
     </div>
   );
 }

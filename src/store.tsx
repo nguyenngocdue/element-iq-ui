@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { SessionState, DocumentFile, Component } from './types';
+import { SessionState, DocumentFile, Component, Project } from './types';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -9,8 +9,14 @@ interface AppContextType {
   addFiles: (files: File[]) => void;
   setActiveFile: (id: string, page?: number) => void;
   closeFile: (id: string) => void;
+  closeOthers: (id: string) => void;
+  closeToRight: (id: string) => void;
+  closeAll: () => void;
+  togglePin: (id: string) => void;
+  splitEditor: (direction: 'none' | 'up' | 'down' | 'left' | 'right', fileId?: string) => void;
   setActiveSidebarTab: (tab: SessionState['activeSidebarTab']) => void;
   toggleSidebar: () => void;
+  toggleValidation: () => void;
   setConfidenceThreshold: (val: number) => void;
   clearSession: () => void;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
@@ -18,6 +24,11 @@ interface AppContextType {
   setSelectedComponents: (ids: string[]) => void;
   setComponentConfidence: (id: string, confidence: number) => void;
   toggleComponent: (id: string) => void;
+  openConfigModal: (mode: 'import' | 'reanalyze', fileId?: string) => void;
+  closeConfigModal: () => void;
+  setCurrentView: (view: 'projects' | 'editor') => void;
+  setActiveProject: (project: Project) => void;
+  toggleBot: () => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -70,9 +81,11 @@ const initialState: SessionState = {
   files: [],
   activeFileId: null,
   openFiles: [],
+  pinnedFiles: [],
   activePage: 1,
   activeSidebarTab: 'explorer',
   isSidebarOpen: true,
+  isValidationOpen: true,
   isEngineLive: true,
   confidenceThreshold: 0.5,
   availableComponents: mockComponents,
@@ -81,6 +94,12 @@ const initialState: SessionState = {
     'grout-tube': 0.40,
     'm20-ferrule': 0.35,
   },
+  showConfigModal: false,
+  configModalMode: 'import',
+  currentView: 'projects',
+  isBotOpen: false,
+  splitMode: 'none',
+  splitFileId: null,
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -144,6 +163,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const closeOthers = useCallback((id: string) => {
+    setState((prev) => {
+      const openFiles = prev.openFiles.filter(fid => fid === id || prev.pinnedFiles.includes(fid));
+      return {
+        ...prev,
+        openFiles,
+        activeFileId: id,
+        activePage: 1
+      };
+    });
+  }, []);
+
+  const closeToRight = useCallback((id: string) => {
+    setState((prev) => {
+      const idx = prev.openFiles.indexOf(id);
+      if (idx === -1) return prev;
+      const openFiles = prev.openFiles.filter((fid, currentIdx) => {
+        return currentIdx <= idx || prev.pinnedFiles.includes(fid);
+      });
+      const activeFileId = openFiles.includes(prev.activeFileId!) ? prev.activeFileId : id;
+      return { ...prev, openFiles, activeFileId };
+    });
+  }, []);
+
+  const closeAll = useCallback(() => {
+    setState((prev) => {
+      // keep pinned files
+      const openFiles = prev.openFiles.filter(id => prev.pinnedFiles.includes(id));
+      const activeFileId = openFiles.length > 0 ? openFiles[0] : null;
+      return {
+        ...prev,
+        openFiles,
+        activeFileId,
+        activePage: 1
+      };
+    });
+  }, []);
+
+  const togglePin = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      pinnedFiles: prev.pinnedFiles.includes(id) 
+        ? prev.pinnedFiles.filter(fid => fid !== id) 
+        : [...prev.pinnedFiles, id]
+    }));
+  }, []);
+
+  const splitEditor = useCallback((direction: 'none' | 'up' | 'down' | 'left' | 'right', fileId?: string) => {
+    setState((prev) => ({
+      ...prev,
+      splitMode: direction,
+      splitFileId: fileId || prev.activeFileId,
+    }));
+  }, []);
+
   const setActiveSidebarTab = useCallback((tab: SessionState['activeSidebarTab']) => {
     setState((prev) => {
       if (prev.activeSidebarTab === tab) {
@@ -155,6 +229,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const toggleSidebar = useCallback(() => {
     setState((prev) => ({ ...prev, isSidebarOpen: !prev.isSidebarOpen }));
+  }, []);
+
+  const toggleValidation = useCallback(() => {
+    setState((prev) => ({ ...prev, isValidationOpen: !prev.isValidationOpen }));
   }, []);
 
   const setConfidenceThreshold = useCallback((val: number) => {
@@ -183,6 +261,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         : [...prev.selectedComponents, id];
       return { ...prev, selectedComponents: newSelection };
     });
+  }, []);
+
+  const openConfigModal = useCallback((mode: 'import' | 'reanalyze', fileId?: string) => {
+    setState((prev) => ({ ...prev, showConfigModal: true, configModalMode: mode, configTargetFileId: fileId }));
+  }, []);
+
+  const closeConfigModal = useCallback(() => {
+    setState((prev) => ({ ...prev, showConfigModal: false }));
+  }, []);
+
+  const setCurrentView = useCallback((view: 'projects' | 'editor') => {
+    setState((prev) => ({ ...prev, currentView: view }));
+  }, []);
+
+  const setActiveProject = useCallback((project: Project) => {
+    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor' }));
+  }, []);
+
+  const toggleBot = useCallback(() => {
+    setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
 
   const clearSession = useCallback(() => {
@@ -236,8 +334,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addFiles,
         setActiveFile,
         closeFile,
+        closeOthers,
+        closeToRight,
+        closeAll,
+        togglePin,
+        splitEditor,
         setActiveSidebarTab,
         toggleSidebar,
+        toggleValidation,
         setConfidenceThreshold,
         clearSession,
         updateFileStatus,
@@ -245,6 +349,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedComponents,
         setComponentConfidence,
         toggleComponent,
+        openConfigModal,
+        closeConfigModal,
+        setCurrentView,
+        setActiveProject,
+        toggleBot,
       }}
     >
       {children}

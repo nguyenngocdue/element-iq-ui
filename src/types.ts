@@ -45,17 +45,35 @@ export interface AppEvent {
   type: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR';
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  role: string;
+  age: string;
+  hasImage: boolean;
+}
+
 export interface SessionState {
   id: string;
   files: DocumentFile[];
   activeFileId: string | null;
   openFiles: string[];
+  pinnedFiles: string[];
   activePage: number;
   activeSidebarTab: 'explorer' | 'search' | 'analysis' | 'settings' | 'reports';
   isSidebarOpen: boolean;
+  isValidationOpen: boolean;
   isEngineLive: boolean;
   confidenceThreshold: number;
   availableComponents: Component[];
   selectedComponents: string[];
   componentConfidence: Record<string, number>;
+  showConfigModal: boolean;
+  configModalMode: 'import' | 'reanalyze';
+  configTargetFileId?: string;
+  currentView: 'projects' | 'editor';
+  activeProject?: Project;
+  isBotOpen: boolean;
+  splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
+  splitFileId?: string | null;
 }

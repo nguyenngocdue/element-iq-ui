@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, Columns, MousePointer2, Hand, Search } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
 
 function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }) {
+  const { state, closeFile } = useApp();
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<{msg: string, type: 'info'|'debug'|'success'}[]>([]);
 
@@ -93,20 +94,15 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
 
          <div className="p-4 border-t border-[#3c3c3c] bg-[#1e1e1e] flex justify-end gap-3">
            <button onClick={() => {}} className="text-[#a0a5b5] hover:text-white px-3 py-1.5 text-xs font-semibold transition-colors">Pause</button>
-           <button onClick={() => { useApp.getState().closeFile(useApp.getState().activeFileId!); }} className="bg-[#3c3c3c] hover:bg-[#4d4d4d] text-white px-4 py-1.5 text-xs font-semibold rounded transition-colors">Cancel Analysis</button>
+           <button onClick={() => { closeFile(state.activeFileId!); }} className="bg-[#3c3c3c] hover:bg-[#4d4d4d] text-white px-4 py-1.5 text-xs font-semibold rounded transition-colors">Cancel Analysis</button>
          </div>
       </div>
     </div>
   );
 }
 
-export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile } = useApp();
-  const file = state.files.find(f => f.id === state.activeFileId);
-  const [scale, setScale] = useState(1);
-  const [showAnnotations, setShowAnnotations] = useState(true);
+function PdfRenderer({ file, pageNum, scale, showAnnotations }: { file: any, pageNum: number, scale: number, showAnnotations: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
   const renderTaskRef = useRef<any>(null);
 
   useEffect(() => {
@@ -122,10 +118,10 @@ export function MainEditor() {
         const loadingTask = pdfjsLib.getDocument({ data: typedarray });
         const pdf = await loadingTask.promise;
         if (!isMounted) return;
-        const page = await pdf.getPage(state.activePage || 1); // Render selected page
+        const page = await pdf.getPage(pageNum || 1);
         if (!isMounted) return;
 
-        const viewport = page.getViewport({ scale: scale * 1.5 }); // Base scale up for clarity
+        const viewport = page.getViewport({ scale: scale });
         const canvas = canvasRef.current;
         if (!canvas) return;
         
@@ -166,156 +162,500 @@ export function MainEditor() {
         } catch(e) {}
       }
     };
-  }, [file?.file, scale, state.activePage]);
+  }, [file?.file, scale, pageNum]);
+
+  return (
+    <div className="relative shadow-2xl origin-top-left border border-[#444] transition-[width,height] duration-200">
+      <canvas ref={canvasRef} className="block bg-white max-w-none" />
+      
+      {showAnnotations && file.detections && file.detections.filter((d: any) => d.page === (pageNum || 1)).map((d: any) => (
+        <div 
+          key={d.id}
+          className={`absolute border-2 pointer-events-none rounded-[2px] ${d.type === 'NF' ? 'border-nf-pass' : d.type === 'FF' ? 'border-ff-fail' : 'border-warning'}`}
+          style={{
+            left: `${d.x * scale}px`,
+            top: `${d.y * scale}px`,
+            width: `${d.width * scale}px`,
+            height: `${d.height * scale}px`,
+            backgroundColor: d.type === 'NF' ? 'rgba(34,197,94,0.1)' : d.type === 'FF' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'
+          }}
+        >
+          <div className={`absolute -top-5 -left-0.5 px-1 py-0.5 text-[9px] whitespace-nowrap font-bold text-white rounded-t-sm ${d.type === 'NF' ? 'bg-[#22c55e]' : d.type === 'FF' ? 'bg-[#ef4444]' : 'bg-[#f59e0b]'}`}>
+            {d.type} {(d.confidence * 100).toFixed(0)}%
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function MainEditor() {
+  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation } = useApp();
+  const file = state.files.find(f => f.id === state.activeFileId);
+  const splitFile = state.files.find(f => f.id === state.splitFileId);
+  const [scale, setScale] = useState(0.5);
+  const [showAnnotations, setShowAnnotations] = useState(true);
+  const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
+  const [zoomRect, setZoomRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId: string } | null>(null);
+  
+  const isAPressed = useRef(false);
+  const pane1Ref = useRef<HTMLDivElement>(null);
+  const pane2Ref = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const isDrawingZoom = useRef(false);
+  const startDragPos = useRef({ x: 0, y: 0 });
+  const startScrollPos = useRef({ left: 0, top: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent, paneRef: React.RefObject<HTMLDivElement>) => {
+    if (!paneRef.current) return;
+    
+    if (toolMode === 'pan' || isAPressed.current) {
+      isDragging.current = true;
+      startDragPos.current = { x: e.clientX, y: e.clientY };
+      startScrollPos.current = { left: paneRef.current.scrollLeft, top: paneRef.current.scrollTop };
+      paneRef.current.style.cursor = 'grabbing';
+    } else if (toolMode === 'zoom') {
+      isDrawingZoom.current = true;
+      startDragPos.current = { x: e.clientX, y: e.clientY };
+      setZoomRect({ x: e.clientX, y: e.clientY, w: 0, h: 0 });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent, paneRef: React.RefObject<HTMLDivElement>) => {
+    if (!paneRef.current) return;
+    if (isDragging.current) {
+      const dx = e.clientX - startDragPos.current.x;
+      const dy = e.clientY - startDragPos.current.y;
+      paneRef.current.scrollLeft = startScrollPos.current.left - dx;
+      paneRef.current.scrollTop = startScrollPos.current.top - dy;
+    } else if (isDrawingZoom.current) {
+      setZoomRect({
+        x: Math.min(startDragPos.current.x, e.clientX),
+        y: Math.min(startDragPos.current.y, e.clientY),
+        w: Math.abs(e.clientX - startDragPos.current.x),
+        h: Math.abs(e.clientY - startDragPos.current.y)
+      });
+    }
+  };
+
+  const handleMouseUp = (paneRef: React.RefObject<HTMLDivElement>) => {
+    if (isDragging.current) {
+      isDragging.current = false;
+      if (paneRef.current) paneRef.current.style.cursor = toolMode === 'pan' ? 'grab' : '';
+    } else if (isDrawingZoom.current && zoomRect && paneRef.current) {
+      isDrawingZoom.current = false;
+      
+      if (zoomRect.w > 20 && zoomRect.h > 20) {
+        const paneRect = paneRef.current.getBoundingClientRect();
+        
+        const zoomCenterX = zoomRect.x + zoomRect.w / 2;
+        const zoomCenterY = zoomRect.y + zoomRect.h / 2;
+        
+        const contentX = zoomCenterX - paneRect.left + paneRef.current.scrollLeft;
+        const contentY = zoomCenterY - paneRect.top + paneRef.current.scrollTop;
+        
+        const scaleX = paneRect.width / zoomRect.w;
+        const scaleY = paneRect.height / zoomRect.h;
+        const scaleMultiplier = Math.min(scaleX, scaleY);
+        
+        const prevScale = scale;
+        const nextScale = Math.min(4, Math.max(0.1, prevScale * scaleMultiplier));
+        
+        setScale(nextScale);
+        
+        setTimeout(() => {
+          if (paneRef.current) {
+            const ratio = nextScale / prevScale;
+            paneRef.current.scrollLeft = contentX * ratio - paneRect.width / 2;
+            paneRef.current.scrollTop = contentY * ratio - paneRect.height / 2;
+          }
+        }, 10);
+      }
+      setZoomRect(null);
+      setToolMode('select');
+    }
+  };
+
+  const handleMouseLeave = (paneRef: React.RefObject<HTMLDivElement>) => {
+    handleMouseUp(paneRef);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'a') isAPressed.current = true;
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'a') isAPressed.current = false;
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (isAPressed.current || e.altKey) {
+      e.stopPropagation();
+      const zoomFactor = e.deltaY > 0 ? -0.1 : 0.1;
+      setScale(s => Math.min(4, Math.max(0.1, s + zoomFactor)));
+    }
+  };
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   if (!file) {
     return (
       <div className="flex-1 bg-editor-bg flex items-center justify-center text-muted flex-col relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
         <div className="w-64 h-64 border-2 border-dashed border-panel-border rounded-lg flex flex-col items-center justify-center text-center p-6 bg-sidebar-bg">
-           <svg className="w-12 h-12 mb-4 text-[#007acc]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+           <svg className="w-12 h-12 mb-4 text-[#10b981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
            <h3 className="text-white font-semibold mb-2 text-sm">Welcome to Element IQ</h3>
            <p className="text-xs mb-4">Select a file from the workspace or import new drawings to begin analysis.</p>
-           <label className="bg-[#007acc] text-white px-4 py-2 rounded text-[13px] font-semibold cursor-pointer hover:bg-[#0062a3] shadow-lg transition-colors border border-[#007acc]">
+           <button onClick={() => openConfigModal('import')} className="bg-[#10b981] text-white px-4 py-2 rounded text-[13px] font-semibold cursor-pointer hover:bg-[#059669] shadow-lg transition-colors border border-[#10b981]">
               Import Drawings
-              <input type="file" multiple accept=".pdf" className="hidden" onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  useApp.getState().addFiles(Array.from(e.target.files));
-                }
-              }} />
-           </label>
+           </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-editor-bg flex flex-col relative overflow-hidden text-[#cccccc]">
-      {/* Editor Tabs */}
-      <div className="h-[35px] bg-[#252526] flex items-center shrink-0 overflow-x-auto no-scrollbar">
-        {state.openFiles.map(fid => {
-          const f = state.files.find(f => f.id === fid);
-          if (!f) return null;
-          const isActive = fid === state.activeFileId;
-          return (
-            <div 
-              key={fid}
-              onClick={() => setActiveFile(fid, 1)}
-              className={`px-3 h-full flex items-center border-r border-[#252526] text-[13px] gap-2 group cursor-pointer min-w-[120px] max-w-[200px] select-none ${isActive ? 'bg-[#1e1e1e] text-[#4ec9b0] italic border-t-2 border-t-[#007acc]' : 'bg-[#2d2d2d] text-[#969696] hover:bg-[#252526] hover:text-white border-t-2 border-t-transparent'}`}
-            >
-              <span className="truncate flex-1">{f.name}</span>
-              <button 
-                onClick={(e) => { e.stopPropagation(); closeFile(fid); }}
-                className={`flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-sm hover:bg-white/10 ${isActive ? 'text-[#4ec9b0]' : 'text-transparent group-hover:text-[#969696] hover:!text-white'}`}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Editor Toolbar */}
-      <div className="h-[40px] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e]">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center bg-[#252526] rounded border border-[#3c3c3c]">
-            <button onClick={() => setScale(s => Math.max(0.1, s - 0.25))} className="px-2 py-1 border-r border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">−</button>
-            <span className="px-3 text-[11px] font-mono">{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="px-2 py-1 border-l border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">+</button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button className="p-1 hover:bg-[#3c3c3c] rounded text-muted hover:text-white"><Move className="w-4 h-4" /></button>
-            <button 
-              onClick={() => setShowAnnotations(!showAnnotations)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] border ${showAnnotations ? 'bg-[#37373d] border-[#007acc] text-white' : 'bg-transparent border-[#3c3c3c] text-muted hover:text-white'}`}
-            >
-              <ShieldCheck className="w-3 h-3" /> QA Overlay
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 text-[11px]">
-          {file.status === 'PENDING' ? (
-            <button onClick={() => analyzeFile(file.id)} className="text-[#007acc] font-medium hover:underline flex items-center gap-1">
-               Start Analysis
-            </button>
-          ) : file.status === 'ANALYZING' ? (
-            <button disabled className="text-muted font-medium flex items-center gap-1">
-               <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
-            </button>
-          ) : (
-            <button onClick={() => analyzeFile(file.id)} className="text-[#007acc] font-medium hover:underline flex items-center gap-1">
-               Re-analyze
-            </button>
-          )}
-          <button 
-            onClick={(e) => {
-              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-              const tooltip = document.createElement('div');
-              tooltip.textContent = 'Exported!';
-              tooltip.className = 'fixed bg-[#2eb886] text-white text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-50 animate-bounce';
-              tooltip.style.left = `${rect.left}px`;
-              tooltip.style.top = `${rect.bottom + 8}px`;
-              document.body.appendChild(tooltip);
-              setTimeout(() => {
-                tooltip.style.opacity = '0';
-                tooltip.style.transition = 'opacity 0.3s';
-                setTimeout(() => document.body.removeChild(tooltip), 300);
-              }, 1500);
-            }}
-            className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white"
-          >
-            Export
-          </button>
-        </div>
-      </div>
-
-      {/* Canvas Viewport */}
-      <div className="flex-1 overflow-auto bg-[#121212] relative flex items-center justify-center p-8 no-scrollbar">
-         {file.status === 'ANALYZING' && (
-           <>
-             <ParsingOverlay fileName={file.name} pages={file.pages} />
-             <div className="absolute top-0 left-0 w-full h-[4px] bg-[#2eb886] shadow-[0_0_30px_5px_rgba(46,184,134,0.6),0_0_15px_2px_rgba(46,184,134,0.8)] animate-scan z-40 pointer-events-none" />
-           </>
-         )}
-
-         <div className="relative shadow-2xl transition-transform origin-center border border-[#444]" style={{ transform: `scale(${scale})` }}>
-            <canvas ref={canvasRef} className="block bg-white max-w-none" />
-            
-            {showAnnotations && file.detections.filter(d => d.page === (state.activePage || 1)).map(d => {
-              // Map simulated detection coordinates somewhat to the scaled canvas.
-              // In a real app we'd map coordinates properly based on native PDF dimensions.
-              // For demonstration we render them using absolute pos based on the canvas dimensions
+    <div className={`flex-1 bg-editor-bg flex overflow-hidden text-[#cccccc] ${state.splitMode === 'up' || state.splitMode === 'down' ? 'flex-col' : 'flex-row'}`}>
+      
+      {/* PANE 1 */}
+      <div className={`flex flex-col relative overflow-hidden ${state.splitMode === 'none' ? 'flex-1' : 'flex-1 border-[#3c3c3c] border-r'}`}>
+        
+        {/* Editor Tabs (Pane 1) */}
+        <div className="h-[35px] bg-[#252526] flex items-center justify-between shrink-0 border-b border-[#1e1e1e]">
+          <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar">
+            {state.openFiles.map(fid => {
+              const f = state.files.find(f => f.id === fid);
+              if (!f) return null;
+              const isActive = fid === state.activeFileId;
               return (
                 <div 
-                  key={d.id}
-                  className={`absolute border-2 pointer-events-none rounded-[2px] ${d.type === 'NF' ? 'border-nf-pass' : d.type === 'FF' ? 'border-ff-fail' : 'border-warning'}`}
-                  style={{
-                    left: `${d.x}px`,
-                    top: `${d.y}px`,
-                    width: `${d.width}px`,
-                    height: `${d.height}px`,
-                    backgroundColor: d.type === 'NF' ? 'rgba(34,197,94,0.1)' : d.type === 'FF' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'
+                  key={fid}
+                  onClick={() => setActiveFile(fid, 1)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ x: e.clientX, y: e.clientY, fileId: fid });
                   }}
+                  className={`px-3 h-full flex items-center border-r border-[#252526] text-[13px] gap-2 group cursor-pointer min-w-[120px] max-w-[200px] select-none ${isActive ? 'bg-[#1e1e1e] text-[#4ec9b0] italic border-t-2 border-t-[#10b981]' : 'bg-[#2d2d2d] text-[#969696] hover:bg-[#252526] hover:text-white border-t-2 border-t-transparent'}`}
                 >
-                  <div className={`absolute -top-5 -left-0.5 px-1 py-0.5 text-[9px] whitespace-nowrap font-bold text-white rounded-t-sm ${d.type === 'NF' ? 'bg-[#22c55e]' : d.type === 'FF' ? 'bg-[#ef4444]' : 'bg-[#f59e0b]'}`}>
-                    {d.type} {(d.confidence * 100).toFixed(0)}%
-                  </div>
+                  {state.pinnedFiles.includes(fid) && <Pin className="w-3 h-3 text-[#10b981]" />}
+                  <span className="truncate flex-1">{f.name}</span>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); closeFile(fid); }}
+                    className={`flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-sm hover:bg-white/10 ${isActive ? 'text-[#4ec9b0]' : 'text-transparent group-hover:text-[#969696] hover:!text-white'}`}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               );
             })}
-         </div>
+          </div>
+          <div className="flex items-center h-full">
+            <button 
+              onClick={() => splitEditor('right')}
+              className="h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 border-t-transparent text-[#858585] hover:text-white"
+              title="Split Editor Right"
+            >
+              <Columns className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={toggleBot}
+              className={`h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 ${state.isBotOpen ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585]'}`}
+              title="AI Chat"
+            >
+              <Brain className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={toggleValidation}
+              className={`h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 ${state.isValidationOpen ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585]'}`}
+              title="Toggle Validation Panel"
+            >
+              <PanelRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Editor Toolbar (Pane 1) */}
+        <div className="h-[40px] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e]">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center bg-[#252526] rounded border border-[#3c3c3c]">
+              <button onClick={() => setScale(s => Math.max(0.1, s - 0.25))} className="px-2 py-1 border-r border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">−</button>
+              <span className="px-3 text-[11px] font-mono">{Math.round(scale * 100)}%</span>
+              <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="px-2 py-1 border-l border-[#3c3c3c] hover:bg-[#333] text-muted hover:text-white">+</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowAnnotations(!showAnnotations)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] border ${showAnnotations ? 'bg-[#37373d] border-[#10b981] text-white' : 'bg-transparent border-[#3c3c3c] text-muted hover:text-white'}`}
+              >
+                <ShieldCheck className="w-3 h-3" /> QA Overlay
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-[11px]">
+            {file.status === 'PENDING' ? (
+              <button onClick={() => openConfigModal('reanalyze', file.id)} className="text-[#10b981] font-medium hover:underline flex items-center gap-1">
+                 Start Analysis
+              </button>
+            ) : file.status === 'ANALYZING' ? (
+              <button disabled className="text-muted font-medium flex items-center gap-1">
+                 <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
+              </button>
+            ) : (
+              <button onClick={() => openConfigModal('reanalyze', file.id)} className="text-[#10b981] font-medium hover:underline flex items-center gap-1">
+                 Re-analyze
+              </button>
+            )}
+            <button 
+              onClick={(e) => {
+                if (file && file.file) {
+                  const url = URL.createObjectURL(file.file);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = file.name || 'document.pdf';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                const tooltip = document.createElement('div');
+                tooltip.textContent = 'Exported!';
+                tooltip.className = 'fixed bg-[#2eb886] text-white text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-50 animate-bounce';
+                tooltip.style.left = `${rect.left}px`;
+                tooltip.style.top = `${rect.bottom + 8}px`;
+                document.body.appendChild(tooltip);
+                setTimeout(() => {
+                  tooltip.style.opacity = '0';
+                  tooltip.style.transition = 'opacity 0.3s';
+                  setTimeout(() => document.body.removeChild(tooltip), 300);
+                }, 1500);
+              }}
+              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white"
+            >
+              Export
+            </button>
+          </div>
+        </div>
+
+        {/* Canvas (Pane 1) */}
+        <div 
+          ref={pane1Ref}
+          onWheel={handleWheel}
+          onMouseDown={(e) => handleMouseDown(e, pane1Ref)}
+          onMouseMove={(e) => handleMouseMove(e, pane1Ref)}
+          onMouseUp={() => handleMouseUp(pane1Ref)}
+          onMouseLeave={() => handleMouseLeave(pane1Ref)}
+          className={`flex-1 overflow-auto bg-[#121212] relative flex items-center justify-center p-8 no-scrollbar ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
+        >
+          {file.status === 'ANALYZING' && (
+            <>
+              <ParsingOverlay fileName={file.name} pages={file.pages} />
+              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[#10b981] to-transparent shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-scan z-40 pointer-events-none" />
+            </>
+          )}
+          <PdfRenderer 
+             file={file} 
+             pageNum={state.activePage || 1} 
+             scale={scale} 
+             showAnnotations={showAnnotations} 
+          />
+        </div>
+
+        {/* Footer (Pane 1) */}
+        <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
+          <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
+          <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
+          <span className="text-[#10b981]">{file.status}</span>
+        </div>
       </div>
 
-      {/* Footer Status */}
-      <div className="absolute py-1 px-3 bg-editor-bg border border-panel-border bottom-4 right-4 text-xs font-mono rounded shadow-lg flex items-center gap-3">
-        <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
-        <span className="w-1 h-1 bg-muted rounded-full"></span>
-        <span className="text-active">{file.status}</span>
-        <span className="w-1 h-1 bg-muted rounded-full"></span>
-        <span className="text-nf-pass">{file.detections.length} ANNOTATIONS</span>
+      {/* PANE 2 (Split Mode) */}
+      {state.splitMode !== 'none' && (
+        <div className="flex flex-col flex-1 relative overflow-hidden border-[#3c3c3c]">
+          
+          {/* Editor Tabs (Pane 2) */}
+          <div className="h-[35px] bg-[#252526] flex items-center justify-between shrink-0 border-b border-[#1e1e1e]">
+             <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar">
+               {splitFile && (
+                 <div className="px-3 h-full flex items-center border-r border-[#252526] text-[13px] gap-2 group cursor-pointer min-w-[120px] max-w-[200px] select-none bg-[#1e1e1e] text-[#4ec9b0] italic border-t-2 border-t-[#10b981]">
+                   <span className="truncate flex-1">{splitFile.name}</span>
+                   <button 
+                     onClick={() => splitEditor('none')}
+                     className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-sm hover:bg-white/10 hover:!text-white text-[#4ec9b0]"
+                   >
+                     <X className="w-3.5 h-3.5" />
+                   </button>
+                 </div>
+               )}
+             </div>
+             <div className="flex items-center h-full px-2">
+                <button onClick={() => splitEditor('none')} className="text-muted hover:text-white flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-[#333]/50">
+                  <X className="w-3 h-3" /> Close Split
+                </button>
+             </div>
+          </div>
+
+          {/* Canvas (Pane 2) */}
+          <div 
+            ref={pane2Ref}
+            onWheel={handleWheel}
+            onMouseDown={(e) => handleMouseDown(e, pane2Ref)}
+            onMouseMove={(e) => handleMouseMove(e, pane2Ref)}
+            onMouseUp={() => handleMouseUp(pane2Ref)}
+            onMouseLeave={() => handleMouseLeave(pane2Ref)}
+            className={`flex-1 overflow-auto bg-[#0a0a0a] relative flex items-center justify-center p-8 no-scrollbar shadow-inner ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
+          >
+             {splitFile ? (
+               <PdfRenderer 
+                 file={splitFile} 
+                 pageNum={state.activePage || 1} 
+                 scale={scale} 
+                 showAnnotations={showAnnotations} 
+               />
+             ) : (
+               <div className="flex flex-col items-center justify-center text-center p-6 mt-8">
+                 <svg className="w-12 h-12 mb-4 text-[#3c3c3c]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                 <h3 className="text-[#858585] font-semibold mb-2 text-sm">No Document Selected</h3>
+               </div>
+             )}
+          </div>
+          
+          {/* Footer (Pane 2) */}
+          {splitFile && (
+            <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
+              <span className="text-muted">PAGE {state.activePage || 1}/{splitFile.pages}</span>
+              <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
+              <span className="text-[#10b981]">{splitFile.status}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Zoom Rect Overlay */}
+      {zoomRect && (
+        <div 
+          className="fixed border-2 border-[#10b981] bg-[#10b981]/20 pointer-events-none z-50 rounded-[2px]"
+          style={{
+            left: zoomRect.x,
+            top: zoomRect.y,
+            width: zoomRect.w,
+            height: zoomRect.h
+          }}
+        />
+      )}
+
+      {/* Floating Toolbar */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1 rounded-lg shadow-2xl flex items-center gap-1 z-50">
+        <button 
+          onClick={() => setToolMode('select')}
+          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'select' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+          title="Select (V)"
+        >
+          <MousePointer2 className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={() => setToolMode('pan')}
+          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'pan' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+          title="Pan (H)"
+        >
+          <Hand className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={() => setToolMode('zoom')}
+          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'zoom' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+          title="Zoom (Z)"
+        >
+          <Search className="w-4 h-4" />
+        </button>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div 
+          className="fixed z-[100] bg-[#1e1e1e] border border-[#3c3c3c] rounded-[4px] shadow-2xl min-w-[200px] text-[12px] flex flex-col py-1 font-sans text-[#cccccc]"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()} // prevent clicking menu from closing it immediately
+        >
+          <button 
+            onClick={() => { setContextMenu(null); closeFile(contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white flex justify-between group"
+          >
+            <span>Close</span>
+          </button>
+          <div className="h-[1px] bg-[#3c3c3c] my-1"></div>
+          <button 
+            onClick={() => { setContextMenu(null); closeOthers(contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Close Others
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); closeToRight(contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Close to the Right
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); closeAll(); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Close All
+          </button>
+          <div className="h-[1px] bg-[#3c3c3c] my-1"></div>
+          <button 
+            onClick={() => { setContextMenu(null); alert('Feature in development'); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white opacity-50 cursor-not-allowed"
+          >
+            Keep Open
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); togglePin(contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            {state.pinnedFiles.includes(contextMenu.fileId) ? 'Unpin' : 'Pin'}
+          </button>
+          <div className="h-[1px] bg-[#3c3c3c] my-1"></div>
+          <button 
+            onClick={() => { setContextMenu(null); splitEditor('up', contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Split Up
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); splitEditor('down', contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Split Down
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); splitEditor('left', contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Split Left
+          </button>
+          <button 
+            onClick={() => { setContextMenu(null); splitEditor('right', contextMenu.fileId); }}
+            className="w-full text-left px-4 py-1.5 hover:bg-[#0060c0] hover:text-white"
+          >
+            Split Right
+          </button>
+        </div>
+      )}
     </div>
   );
 }

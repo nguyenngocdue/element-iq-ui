@@ -2,10 +2,13 @@ import React from 'react';
 import { useApp } from '../store';
 import { CheckCircle2, AlertCircle, XCircle, ShieldCheck } from 'lucide-react';
 import { Detection } from '../types';
+import { useResizable } from '../hooks/useResizable';
+import { cn } from '../lib/utils';
 
 export function ValidationPanel() {
   const { state } = useApp();
   const file = state.files.find(f => f.id === state.activeFileId);
+  const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 350, minWidth: 250, maxWidth: 600, direction: 'right' });
 
   if (!file) return null;
 
@@ -14,7 +17,12 @@ export function ValidationPanel() {
   const warnDetections = file.detections.filter(d => d.status === 'WARN');
 
   return (
-    <aside className="w-[350px] bg-[#252526] border-l border-[#3c3c3c] flex flex-col shrink-0">
+    <aside style={{ width }} className="bg-[#252526] border-l border-[#3c3c3c] flex flex-col shrink-0 relative">
+       {/* Resizer Handle */}
+       <div 
+        onMouseDown={handleMouseDown}
+        className={cn("absolute top-0 left-[-3px] bottom-0 w-[6px] cursor-col-resize z-50 hover:bg-[#10b981] transition-colors", isDragging && "bg-[#10b981]")}
+      />
       <div className="p-4 flex flex-col gap-4 flex-1 overflow-y-auto">
         <div className={`bg-[#2d2d2d] rounded-lg p-4 border ${file.passRate === 100 ? 'border-[#22c55e]/30' : (file.passRate || 0) >= 50 ? 'border-[#f59e0b]/30' : 'border-[#ef4444]/30'}`}>
           <div className="flex justify-between items-start">

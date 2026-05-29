@@ -104,7 +104,7 @@ export function ComponentCard({
             step="0.05"
             value={confidence}
             onChange={(e) => onConfidenceChange(component.id, parseFloat(e.target.value))}
-            className="w-full h-2 bg-[#3c3c3c] rounded-lg appearance-none cursor-pointer accent-[#007acc]"
+            className="w-full h-2 bg-[#3c3c3c] rounded-lg appearance-none cursor-pointer accent-[#10b981]"
           />
           <div className="flex justify-between text-[10px] text-[#858585] mt-1">
             <span>↑ More detections</span>
@@ -128,7 +128,7 @@ export function ComponentCard({
 
       {component.status === 'missing' && (
         <div className="pt-3 border-t border-[#3c3c3c] flex gap-2">
-          <button className="text-xs px-3 py-1.5 bg-[#007acc] hover:bg-[#0062a3] text-white rounded transition-colors font-semibold">Train Model</button>
+          <button className="text-xs px-3 py-1.5 bg-[#10b981] hover:bg-[#059669] text-white rounded transition-colors font-semibold">Train Model</button>
           <button className="text-xs px-3 py-1.5 border border-[#3c3c3c] text-[#858585] hover:text-white hover:border-[#858585] rounded transition-colors">Learn More</button>
         </div>
       )}

@@ -7,7 +7,7 @@ export function BottomBar() {
   const file = state.files.find(f => f.id === state.activeFileId);
 
   return (
-    <footer className="h-[22px] bg-[#007acc] text-white flex items-center justify-between px-3 text-[10px] shrink-0 font-sans select-none">
+    <footer className="h-[22px] bg-[#10b981] text-white flex items-center justify-between px-3 text-[10px] shrink-0 font-sans select-none">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm12-3a1 1 0 10-2 0 1 1 0 002 0zM9 11V9H7v2h2zm0 2v-2h2v2H9z" clipRule="evenodd"></path></svg>
