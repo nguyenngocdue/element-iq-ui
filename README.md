@@ -18,3 +18,17 @@ View your app in AI Studio: https://ai.studio/apps/e4941527-1b9f-4178-a9da-6d06e
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+===
+cd ~/on-board/element-iq-server
+# Tạo venv
+python3 -m venv venv
+
+# Activate
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run
+uvicorn app.main:app --reload --port 8000

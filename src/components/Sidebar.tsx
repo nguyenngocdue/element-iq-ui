@@ -6,7 +6,7 @@ import { DocumentFile } from '../types';
 import { useResizable } from '../hooks/useResizable';
 
 export function Sidebar() {
-  const { state, setActiveFile, clearSession, openConfigModal } = useApp();
+  const { state, setActiveFile, clearSession, openConfigModal, analyzeAll } = useApp();
   const [showStatuses, setShowStatuses] = useState(true);
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
@@ -56,8 +56,16 @@ export function Sidebar() {
             <CloudUpload className="w-3.5 h-3.5 text-[#858585]" />
             Import
           </button>
-          <button onClick={clearSession} className="px-4 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
-            Clear all
+          <button
+            onClick={analyzeAll}
+            disabled={state.files.length === 0}
+            className="flex-1 flex items-center justify-center gap-2 bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Run All
+          </button>
+          <button onClick={clearSession} className="px-3 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
+            Clear
           </button>
         </div>
       </div>

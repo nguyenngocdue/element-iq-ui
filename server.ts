@@ -1,65 +1,121 @@
-import express from 'express';
-import multer from 'multer';
+import express, { Request, Response } from 'express';
+import http from 'http';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
-const upload = multer({ storage: multer.memoryStorage() });
+// ─── Config ────────────────────────────────────────────────────────────────
+const PORT = 3000;
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const USE_MOCK = process.env.USE_MOCK === 'true';
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+// ─── Proxy helper ──────────────────────────────────────────────────────────
+function proxyToBackend(req: Request, res: Response) {
+  const backendUrl = new URL(BACKEND_URL);
+  const options: http.RequestOptions = {
+    hostname: backendUrl.hostname,
+    port: backendUrl.port || 80,
+    path: req.originalUrl,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: `${backendUrl.hostname}:${backendUrl.port}`,
+    },
+  };
 
-  app.use(express.json());
-
-  // Mock Analysis Endpoint
-  app.post('/api/analyze', upload.single('document'), (req, res) => {
-    const threshold = parseFloat(req.body.threshold || '0.5');
-    
-    // Simulate processing delay
-    setTimeout(() => {
-      // Generate some dummy detections for visual testing
-      const detections = [
-        {
-          id: 'd1',
-          page: 1,
-          x: 100, y: 150, width: 40, height: 40,
-          type: 'NF',
-          confidence: 0.92,
-          status: 'PASS',
-          note: 'NF 1',
-        },
-        {
-          id: 'd2',
-          page: 1,
-          x: 200, y: 250, width: 40, height: 40,
-          type: 'FF',
-          confidence: 0.88,
-          status: 'FAIL',
-          reason: 'Hollow grout tube detected (Text note missing)',
-          note: '',
-        },
-        {
-          id: 'd3',
-          page: 1,
-          x: 350, y: 100, width: 40, height: 40,
-          type: 'UNKNOWN',
-          confidence: 0.45,
-          status: 'WARN',
-          reason: 'Ambiguous detection',
-        }
-      ].filter(d => d.confidence >= threshold);
-
-      const passCount = detections.filter(d => d.status === 'PASS').length;
-      const passRate = detections.length > 0 ? Math.round((passCount / detections.length) * 100) : 100;
-
-      res.json({
-        success: true,
-        passRate,
-        detections
-      });
-    }, 4000);
+  const proxy = http.request(options, (backendRes) => {
+    res.writeHead(backendRes.statusCode || 502, backendRes.headers);
+    backendRes.pipe(res, { end: true });
   });
 
+  proxy.on('error', () => {
+    res.status(502).json({
+      error: 'BACKEND_UNAVAILABLE',
+      message: `Cannot reach backend at ${BACKEND_URL}. Is element-iq-server running?`,
+    });
+  });
+
+  req.pipe(proxy, { end: true });
+}
+
+// ─── Mock fallback (dev without backend) ───────────────────────────────────
+function mockAnalyze(req: Request, res: Response) {
+  console.log('[MOCK] POST /api/v1/analyze');
+  const jobId = crypto.randomUUID();
+
+  // Immediately return 202
+  res.status(202).json({
+    job_id: jobId,
+    status: 'PENDING',
+    estimated_time: 3,
+    status_url: `/api/v1/jobs/${jobId}`,
+  });
+}
+
+function mockJob(req: Request, res: Response) {
+  const { id } = req.params;
+  console.log(`[MOCK] GET /api/v1/jobs/${id}`);
+  res.json({
+    job_id: id,
+    status: 'COMPLETED',
+    progress: 100,
+    filename: 'mock.pdf',
+    components: ['grout-tube'],
+    result: {
+      summary: { overall: 'PASS', total_components: 1, pass_rate: 85 },
+      components: [
+        {
+          component_id: 'grout-tube',
+          detected: 7,
+          validated: 6,
+          failures: 1,
+          summary: { faces: { NF: 4, FF: 3 }, overall: 'PASS' },
+          objects: [
+            { id: 1, type: 'grout_tube', face: 'NF', bbox: [100, 150, 140, 240], confidence: 0.92 },
+            { id: 2, type: 'grout_tube', face: 'FF', bbox: [200, 150, 240, 240], confidence: 0.88 },
+            { id: 3, type: 'grout_tube', face: 'NF', bbox: [300, 150, 340, 240], confidence: 0.76 },
+          ],
+          report: [],
+        },
+      ],
+      artifacts: {},
+    },
+    created_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+    completed_at: new Date().toISOString(),
+  });
+}
+
+function mockComponents(_req: Request, res: Response) {
+  res.json({
+    components: [
+      { id: 'grout-tube', name: 'Grout Tube', description: 'NF/FF detection', classes: ['FF', 'NF'], status: 'ready' },
+    ],
+  });
+}
+
+function mockHealth(_req: Request, res: Response) {
+  res.json({ status: 'healthy (mock)', timestamp: new Date().toISOString(), version: '0.1.0-mock' });
+}
+
+// ─── App setup ─────────────────────────────────────────────────────────────
+async function startServer() {
+  const app = express();
+  app.use(express.json());
+
+  if (USE_MOCK) {
+    // ── Mock mode (no backend needed) ──────────────────────────
+    console.log('[server] Running in MOCK mode — no backend required');
+    app.post('/api/v1/analyze', mockAnalyze);
+    app.get('/api/v1/jobs/:id', mockJob);
+    app.get('/api/v1/components', mockComponents);
+    app.get('/api/v1/health', mockHealth);
+  } else {
+    // ── Proxy all /api/v1/* to element-iq-server ──────────────
+    console.log(`[server] Proxying /api/v1/* → ${BACKEND_URL}`);
+    app.use('/api/v1', proxyToBackend);
+  }
+
+  // ── Vite dev middleware ─────────────────────────────────────
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -69,13 +125,14 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`\n  ElementIQ UI  →  http://localhost:${PORT}`);
+    console.log(`  Backend       →  ${USE_MOCK ? 'MOCK (no backend)' : BACKEND_URL}\n`);
   });
 }
 

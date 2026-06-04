@@ -21,6 +21,7 @@ interface AppContextType {
   clearSession: () => void;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
+  analyzeAll: () => Promise<void>;
   setSelectedComponents: (ids: string[]) => void;
   setComponentConfidence: (id: string, confidence: number) => void;
   toggleComponent: (id: string) => void;
@@ -37,7 +38,7 @@ const mockComponents: Component[] = [
     id: 'grout-tube',
     name: 'Grout Tube',
     description: 'NF (filled) / FF (hollow)',
-    modelFile: 'grout-tube-best.pt',
+    modelFile: 'grout-tube-v1.pt',
     classes: ['FF', 'NF'],
     accuracy: 0.92,
     status: 'ready',
@@ -288,44 +289,137 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const analyzeFile = useCallback(async (id: string) => {
-    updateFileStatus(id, { status: 'ANALYZING' });
+    updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
     const file = state.files.find(f => f.id === id)?.file;
     if (!file) return;
 
     try {
+      // ── 0. Quick health check ──────────────────────────────
+      try {
+        const hRes = await fetch('/api/v1/health');
+        if (!hRes.ok) throw new Error('Backend not healthy');
+      } catch {
+        throw new Error('Backend offline — run: uvicorn app.main:app --reload --port 8000');
+      }
+
+      // ── 1. Upload PDF to backend ───────────────────────────
       const formData = new FormData();
-      formData.append('document', file);
-      formData.append('threshold', state.confidenceThreshold.toString());
+      formData.append('file', file);
+      formData.append('components', JSON.stringify(state.selectedComponents));
+      formData.append('config', JSON.stringify({
+        conf_threshold: state.confidenceThreshold,
+        page_index: 0,
+      }));
 
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData,
+      updateFileStatus(id, { analysisProgress: 10, analysisStage: 'Queuing analysis job...' });
+
+      const res = await fetch('/api/v1/analyze', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail?.message || err?.message || `HTTP ${res.status}`);
+      }
+
+      const { status_url } = await res.json();
+      updateFileStatus(id, { analysisProgress: 20, analysisStage: 'Running YOLO detection...' });
+
+      // ── 2. Poll until COMPLETED or FAILED ──────────────────
+      const poll = async (): Promise<any> => {
+        const jobRes = await fetch(status_url);
+        if (!jobRes.ok) throw new Error(`Failed to fetch job status: ${jobRes.status}`);
+        const job = await jobRes.json();
+
+        // Mirror real backend progress into UI
+        if (job.progress) {
+          const stage =
+            job.progress < 20  ? 'Uploading PDF...' :
+            job.progress < 50  ? 'Running YOLO detection...' :
+            job.progress < 80  ? 'Parsing text notes...' :
+            job.progress < 95  ? 'Validating results...' :
+                                 'Saving artifacts...';
+          updateFileStatus(id, { analysisProgress: job.progress, analysisStage: stage });
+        }
+
+        if (job.status === 'COMPLETED') return job;
+        if (job.status === 'FAILED') throw new Error(job.error?.message || 'Analysis failed');
+
+        await new Promise(r => setTimeout(r, 1000));  // poll every 1s
+        return poll();
+      };
+
+      const result = await poll();
+
+      // ── DEBUG: log full result to browser console ──────────
+      console.group('[ElementIQ] Analysis Result');
+      console.log('status:', result.status);
+      console.log('result.result:', result.result);
+      console.log('components:', result.result?.components?.length, 'component(s)');
+      result.result?.components?.forEach((comp: any) => {
+        console.log(`  [${comp.component_id}] objects:`, comp.objects?.length ?? 0, comp.objects?.[0]);
+        console.log(`  [${comp.component_id}] summary:`, comp.summary);
+        console.log(`  [${comp.component_id}] report:`, comp.report?.length ?? 0, 'entries');
       });
+      console.groupEnd();
 
-      if (!res.ok) throw new Error('Analysis failed');
+      // Map backend result → frontend detections
+      // Backend bbox is in pixels at 300 DPI; PDF.js renders at 72 DPI (72/300 = 0.24 ratio)
+      const DPI_RATIO = 72 / 300;
 
-      const data = await res.json();
-      
+      const detections = (result.result?.components ?? []).flatMap((comp: any) =>
+        (comp.objects ?? []).map((obj: any, i: number) => {
+          const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
+          return {
+            id: `${comp.component_id}-${i}`,
+            page: 1,
+            x: x1 * DPI_RATIO,
+            y: y1 * DPI_RATIO,
+            width:  (x2 - x1) * DPI_RATIO,
+            height: (y2 - y1) * DPI_RATIO,
+            type: obj.face ?? 'UNKNOWN',
+            confidence: obj.confidence ?? 0,
+            status: 'PASS',
+            componentId: comp.component_id,
+          };
+        })
+      );
+
+      const passRate = result.result?.summary?.pass_rate ?? 100;
+      const overallStatus = result.result?.summary?.overall;
+
+      console.log('[ElementIQ] Mapped detections:', detections.length, detections[0]);
+      console.log('[ElementIQ] overallStatus:', overallStatus, 'passRate:', passRate);
+
       updateFileStatus(id, {
-        status: data.passRate === 100 ? 'PASS' : (data.passRate >= 50 ? 'WARN' : 'FAIL'), // Simplified logic
-        detections: data.detections,
+        status: overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : passRate >= 50 ? 'WARN' : 'FAIL',
+        detections,
+        analysisProgress: 100,
+        analysisStage: 'Complete',
         events: [
-          ...state.files.find(f => f.id === id)?.events || [],
-          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'Analysis complete', type: 'SUCCESS' }
+          ...(state.files.find(f => f.id === id)?.events ?? []),
+          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Analysis complete — ${overallStatus}`, type: 'SUCCESS' },
         ],
-        passRate: data.passRate,
+        passRate,
       });
 
     } catch (err) {
       updateFileStatus(id, {
         status: 'FAIL',
+        analysisProgress: 0,
+        analysisStage: 'Error',
         events: [
-          ...state.files.find(f => f.id === id)?.events || [],
-          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'Analysis engine error', type: 'ERROR' }
-        ]
+          ...(state.files.find(f => f.id === id)?.events ?? []),
+          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${err}`, type: 'ERROR' },
+        ],
       });
     }
-  }, [state.files, state.confidenceThreshold, updateFileStatus]);
+  }, [state.files, state.confidenceThreshold, state.selectedComponents, updateFileStatus]);
+
+  const analyzeAll = useCallback(async () => {
+    // Analyze all PENDING or already-analyzed files sequentially
+    const filesToAnalyze = state.files.filter(f => f.status !== 'ANALYZING');
+    for (const f of filesToAnalyze) {
+      await analyzeFile(f.id);
+    }
+  }, [state.files, analyzeFile]);
 
   return (
     <AppContext.Provider
@@ -346,6 +440,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         clearSession,
         updateFileStatus,
         analyzeFile,
+        analyzeAll,
         setSelectedComponents,
         setComponentConfidence,
         toggleComponent,

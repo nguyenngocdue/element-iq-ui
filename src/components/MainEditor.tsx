@@ -6,10 +6,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
 
-function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }) {
+function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
+  fileName: string;
+  pages: number;
+  progress?: number;
+  stage?: string;
+}) {
   const { state, closeFile } = useApp();
-  const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<{msg: string, type: 'info'|'debug'|'success'}[]>([]);
+  const progress = realProgress ?? 0;
 
   useEffect(() => {
     let isMounted = true;
@@ -22,25 +27,30 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
       }, delay);
     };
 
-    addLog(`Initializing parser for ${fileName}`, 'info', 100);
+    addLog(`Initializing analysis for ${fileName}`, 'info', 100);
     addLog(`Found ${pages} pages.`, 'info', 500);
-    addLog(`Extracting text layer (pages 1-${Math.min(10, pages)})... DONE`, 'debug', 1200);
-    addLog(`Scanning structural boundaries...`, 'debug', 2200);
-    addLog(`Identified nested tables on pages.`, 'success', 3200);
+    addLog(`Uploading to engine...`, 'debug', 1000);
 
-    const int = setInterval(() => {
-      if (!isMounted) return;
-      setProgress(p => {
-        const next = p + Math.random() * 8;
-        return next > 99 ? 99 : next;
-      });
-    }, 300);
-
-    return () => {
-      isMounted = false;
-      clearInterval(int);
-    };
+    return () => { isMounted = false; };
   }, [fileName, pages]);
+
+  // Add log entry when stage changes
+  useEffect(() => {
+    if (!stage) return;
+    const timeStr = new Date().toLocaleTimeString('en-US', {hour12: false});
+    setLogs(prev => {
+      const last = prev[prev.length - 1]?.msg ?? '';
+      if (last.includes(stage)) return prev;
+      return [...prev, { msg: `[${timeStr}] INFO: ${stage}`, type: 'info' }];
+    });
+  }, [stage]);
+
+  const operationLabel =
+    progress < 20 ? 'File Upload' :
+    progress < 50 ? 'YOLO Detection' :
+    progress < 80 ? 'Text Parsing' :
+    progress < 95 ? 'Validation' :
+                    'Saving Artifacts';
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] font-sans">
@@ -48,7 +58,7 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
          <div className="p-5 border-b border-[#3c3c3c] flex items-center justify-between bg-[#1e1e1e]">
            <div className="flex items-center gap-3">
              <div className="text-[#82aaff]"><ScanFace className="w-6 h-6" /></div>
-             <h3 className="text-white font-bold text-lg font-sans leading-tight">Parsing Document<br/>Structure</h3>
+             <h3 className="text-white font-bold text-lg font-sans leading-tight">ElementIQ Analysis<br/><span className="text-[#82aaff] text-sm font-normal">YOLO Detection Engine</span></h3>
            </div>
            <div className="bg-[#1e1e1e] border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase text-right leading-none">IN<br/>PROGRESS</div>
          </div>
@@ -58,22 +68,22 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
            <div className="grid grid-cols-2 gap-3">
              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded px-3 py-2">
                <div className="text-[#a0a5b5] text-[10px] font-bold tracking-widest uppercase mb-1">Current Operation</div>
-               <div className="text-white font-semibold text-xs truncate">Table Extraction</div>
+               <div className="text-white font-semibold text-xs truncate">{operationLabel}</div>
              </div>
              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded px-3 py-2">
                <div className="text-[#a0a5b5] text-[10px] font-bold tracking-widest uppercase mb-1">Engine</div>
-               <div className="text-white font-semibold text-xs truncate">ML_Vision_v2</div>
+               <div className="text-white font-semibold text-xs truncate">element-iq-core</div>
              </div>
            </div>
 
-           {/* Progress */}
+           {/* Progress — real value from backend */}
            <div>
              <div className="flex justify-between items-end mb-2">
-               <div className="text-white text-xs font-semibold">Processing page {Math.min(pages, Math.ceil((progress / 100) * pages))} of {pages}...</div>
+               <div className="text-white text-xs font-semibold">{stage ?? 'Initializing...'}</div>
                <div className="text-[#a0a5b5] text-xs font-mono">{Math.round(progress)}%</div>
              </div>
              <div className="w-full bg-[#1e1e1e] rounded-full h-1.5 relative overflow-hidden border border-[#3c3c3c]">
-               <div className="bg-[#82aaff] h-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+               <div className="bg-[#82aaff] h-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
              </div>
            </div>
 
@@ -81,20 +91,26 @@ function ParsingOverlay({ fileName, pages }: { fileName: string, pages: number }
            <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3 font-mono text-[10px] flex flex-col gap-1.5 h-[130px] overflow-y-auto">
              {logs.map((log, i) => (
                 <div key={i} className={
-                  log.type === 'info' ? 'text-[#a0a5b5]' : 
-                  log.type === 'debug' ? 'text-[#858585]' : 
-                  'text-[#22c55e] font-bold'
+                  log.type === 'info'    ? 'text-[#a0a5b5]' :
+                  log.type === 'debug'   ? 'text-[#858585]' :
+                                           'text-[#22c55e] font-bold'
                 }>
                   {log.msg}
                 </div>
              ))}
-             <div className="text-[#a0a5b5] animate-pulse">&gt; Scanning page for structural boundaries..._</div>
+             {progress < 100 && (
+               <div className="text-[#a0a5b5] animate-pulse">&gt; {stage ?? 'Waiting for engine...'}_</div>
+             )}
            </div>
          </div>
 
          <div className="p-4 border-t border-[#3c3c3c] bg-[#1e1e1e] flex justify-end gap-3">
-           <button onClick={() => {}} className="text-[#a0a5b5] hover:text-white px-3 py-1.5 text-xs font-semibold transition-colors">Pause</button>
-           <button onClick={() => { closeFile(state.activeFileId!); }} className="bg-[#3c3c3c] hover:bg-[#4d4d4d] text-white px-4 py-1.5 text-xs font-semibold rounded transition-colors">Cancel Analysis</button>
+           <button
+             onClick={() => { closeFile(state.activeFileId!); }}
+             className="bg-[#3c3c3c] hover:bg-[#4d4d4d] text-white px-4 py-1.5 text-xs font-semibold rounded transition-colors"
+           >
+             Cancel Analysis
+           </button>
          </div>
       </div>
     </div>
@@ -336,39 +352,45 @@ export function MainEditor() {
   }, []);
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (isAPressed.current || e.altKey || e.ctrlKey || e.metaKey) {
-      e.stopPropagation();
-      
-      const pane = e.currentTarget as HTMLDivElement;
-      const rect = pane.getBoundingClientRect();
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      
-      setScale((prevScale) => {
-        const nextScale = Math.min(4, Math.max(0.1, prevScale * zoomFactor));
-        if (nextScale === prevScale) return prevScale;
-        
-        const ratio = nextScale / prevScale;
-        const scrollLeft = pane.scrollLeft;
-        const scrollTop = pane.scrollTop;
-
-        const contentX = pointerX + scrollLeft;
-        const contentY = pointerY + scrollTop;
-
-        const newContentX = contentX * ratio;
-        const newContentY = contentY * ratio;
-
-        setTimeout(() => {
-          pane.scrollLeft = newContentX - pointerX;
-          pane.scrollTop = newContentY - pointerY;
-        }, 0);
-
-        return nextScale;
-      });
-    }
+    // Do nothing here — handled by native event listener below
   };
+
+  // Native wheel listener to prevent browser zoom and handle PDF zoom
+  useEffect(() => {
+    const pane = pane1Ref.current;
+    if (!pane) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault(); // Block browser zoom
+        e.stopPropagation();
+
+        const rect = pane.getBoundingClientRect();
+        const pointerX = e.clientX - rect.left;
+        const pointerY = e.clientY - rect.top;
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+
+        setScale((prevScale) => {
+          const nextScale = Math.min(4, Math.max(0.1, prevScale * zoomFactor));
+          if (nextScale === prevScale) return prevScale;
+
+          const ratio = nextScale / prevScale;
+          const contentX = pointerX + pane.scrollLeft;
+          const contentY = pointerY + pane.scrollTop;
+
+          setTimeout(() => {
+            pane.scrollLeft = contentX * ratio - pointerX;
+            pane.scrollTop = contentY * ratio - pointerY;
+          }, 0);
+
+          return nextScale;
+        });
+      }
+    };
+
+    pane.addEventListener('wheel', onWheel, { passive: false });
+    return () => pane.removeEventListener('wheel', onWheel);
+  }, []);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -466,16 +488,22 @@ export function MainEditor() {
           </div>
           <div className="flex items-center gap-3 text-[11px]">
             {file.status === 'PENDING' ? (
-              <button onClick={() => openConfigModal('reanalyze', file.id)} className="text-[#10b981] font-medium hover:underline flex items-center gap-1">
-                 Start Analysis
+              <button
+                onClick={() => analyzeFile(file.id)}
+                className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
+              >
+                ▶ Start Analysis
               </button>
             ) : file.status === 'ANALYZING' ? (
               <button disabled className="text-muted font-medium flex items-center gap-1">
-                 <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
+                <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
               </button>
             ) : (
-              <button onClick={() => openConfigModal('reanalyze', file.id)} className="text-[#10b981] font-medium hover:underline flex items-center gap-1">
-                 Re-analyze
+              <button
+                onClick={() => analyzeFile(file.id)}
+                className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
+              >
+                ↺ Re-analyze
               </button>
             )}
             <button 
@@ -523,7 +551,12 @@ export function MainEditor() {
           <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
             {file.status === 'ANALYZING' && (
               <>
-                <ParsingOverlay fileName={file.name} pages={file.pages} />
+                <ParsingOverlay
+                  fileName={file.name}
+                  pages={file.pages}
+                  progress={file.analysisProgress}
+                  stage={file.analysisStage}
+                />
                 <div className="absolute top-0 left-0 w-full h-[3px] bg-[#00ff41] shadow-[0_0_15px_3px_rgba(0,255,65,0.9),0_0_5px_1px_rgba(255,255,255,0.8)] animate-scan z-40 pointer-events-none" />
               </>
             )}
