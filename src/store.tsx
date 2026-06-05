@@ -134,24 +134,84 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       activePage: prev.activeFileId ? prev.activePage : 1,
     }));
     
-    // Async read PDF pages
+    // Async: read PDF pages + upload to backend
     newDocs.forEach(async (doc) => {
       try {
+        // Read page count
         const arrayBuffer = await doc.file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         updateFileStatus(doc.id, { pages: pdf.numPages });
+
+        // Upload to backend (associate with active project)
+        const projectId = state.activeProject?.id;
+        const formData = new FormData();
+        formData.append('file', doc.file);
+        if (projectId) {
+          formData.append('project_id', projectId);
+        }
+
+        const { authFetch } = await import('./lib/supabase');
+        const res = await authFetch('/api/v1/files', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          updateFileStatus(doc.id, {
+            events: [
+              { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Uploaded to server (file_id: ${data.file_id})`, type: 'SUCCESS' },
+            ],
+          });
+        } else {
+          const errBody = await res.json().catch(() => null);
+          const detail = errBody?.detail || `Upload failed: HTTP ${res.status}`;
+          updateFileStatus(doc.id, {
+            events: [
+              { id: Date.now().toString(), timestamp: new Date().toISOString(), message: detail, type: 'ERROR' },
+            ],
+          });
+        }
       } catch (e) {
-        console.error('Error reading PDF pages:', e);
+        console.error('Error processing file:', e);
+        updateFileStatus(doc.id, {
+          events: [
+            { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${e instanceof Error ? e.message : 'Unknown'}`, type: 'ERROR' },
+          ],
+        });
       }
     });
-  }, [updateFileStatus]);
+  }, [updateFileStatus, state.activeProject?.id]);
 
   const setActiveFile = useCallback((id: string, page: number = 1) => {
-    setState((prev) => {
-      const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
-      return { ...prev, activeFileId: id, activePage: page, openFiles };
-    });
-  }, []);
+    const file = state.files.find(f => f.id === id);
+    
+    // If file has no bytes (loaded from server), download first then activate
+    if (file && file.file.size === 0) {
+      (async () => {
+        try {
+          const { authFetch } = await import('./lib/supabase');
+          const res = await authFetch(`/api/v1/files/${id}/download`);
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const realFile = new File([blob], file.name, { type: 'application/pdf' });
+          updateFileStatus(id, { file: realFile });
+          // Now activate after file is ready
+          setState((prev) => {
+            const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
+            return { ...prev, activeFileId: id, activePage: page, openFiles };
+          });
+        } catch (err) {
+          console.error('Failed to download file:', err);
+        }
+      })();
+    } else {
+      setState((prev) => {
+        const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
+        return { ...prev, activeFileId: id, activePage: page, openFiles };
+      });
+    }
+  }, [state.files, updateFileStatus]);
 
   const closeFile = useCallback((id: string) => {
     setState((prev) => {
@@ -277,7 +337,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setActiveProject = useCallback((project: Project) => {
-    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor' }));
+    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor', files: [] }));
+
+    // Load project files from backend
+    (async () => {
+      try {
+        const { authFetch } = await import('./lib/supabase');
+        const res = await authFetch(`/api/v1/projects/${project.id}/files`);
+        if (!res.ok) return;
+        const files = await res.json();
+
+        // Convert backend files to DocumentFile format (without actual File blob — loaded on demand)
+        const docs: DocumentFile[] = files.map((f: any) => ({
+          id: f.id,
+          name: f.original_filename,
+          file: new File([], f.original_filename, { type: 'application/pdf' }),  // placeholder
+          status: 'PENDING' as const,
+          pages: f.page_count || 1,
+          detections: [],
+          events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
+        }));
+
+        setState((prev) => ({
+          ...prev,
+          files: docs,
+          activeFileId: docs.length > 0 ? docs[0].id : null,
+          openFiles: docs.length > 0 ? [docs[0].id] : [],
+        }));
+      } catch (err) {
+        console.error('Failed to load project files:', err);
+      }
+    })();
   }, []);
 
   const toggleBot = useCallback(() => {
@@ -294,9 +384,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!file) return;
 
     try {
+      const { authFetch } = await import('./lib/supabase');
+
       // ── 0. Quick health check ──────────────────────────────
       try {
-        const hRes = await fetch('/api/v1/health');
+        const hRes = await authFetch('/api/v1/health');
         if (!hRes.ok) throw new Error('Backend not healthy');
       } catch {
         throw new Error('Backend offline — run: uvicorn app.main:app --reload --port 8000');
@@ -305,7 +397,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // ── 1. Upload PDF to backend ───────────────────────────
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('components', JSON.stringify(state.selectedComponents));
+      formData.append('components', JSON.stringify(state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube']));
       formData.append('config', JSON.stringify({
         conf_threshold: state.confidenceThreshold,
         page_index: 0,
@@ -313,10 +405,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       updateFileStatus(id, { analysisProgress: 10, analysisStage: 'Queuing analysis job...' });
 
-      const res = await fetch('/api/v1/analyze', { method: 'POST', body: formData });
+      const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.detail?.message || err?.message || `HTTP ${res.status}`);
+        throw new Error(err?.detail?.message || err?.detail || err?.message || `HTTP ${res.status}`);
       }
 
       const { status_url } = await res.json();
@@ -324,7 +416,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // ── 2. Poll until COMPLETED or FAILED ──────────────────
       const poll = async (): Promise<any> => {
-        const jobRes = await fetch(status_url);
+        const jobRes = await authFetch(status_url);
         if (!jobRes.ok) throw new Error(`Failed to fetch job status: ${jobRes.status}`);
         const job = await jobRes.json();
 
@@ -340,7 +432,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (job.status === 'COMPLETED') return job;
-        if (job.status === 'FAILED') throw new Error(job.error?.message || 'Analysis failed');
+        if (job.status === 'FAILED') throw new Error(job.error?.message || job.error_message || 'Analysis failed');
 
         await new Promise(r => setTimeout(r, 1000));  // poll every 1s
         return poll();
