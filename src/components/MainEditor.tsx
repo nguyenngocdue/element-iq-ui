@@ -390,7 +390,7 @@ export function MainEditor() {
 
     pane.addEventListener('wheel', onWheel, { passive: false });
     return () => pane.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [file]);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
