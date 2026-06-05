@@ -4,6 +4,7 @@ import { cn } from '../lib/utils';
 import { CheckCircle, AlertCircle, Clock } from 'lucide-react';
 
 interface ComponentCardProps {
+  key?: React.Key;
   component: Component;
   selected: boolean;
   confidence: number;

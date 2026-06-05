@@ -33,7 +33,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
     e.stopPropagation();
     setDragActive(false);
     if (mode !== 'import') return;
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+    const droppedFiles = Array.from(e.dataTransfer.files).filter((f: File) => f.type === 'application/pdf');
     setFiles(prev => [...prev, ...droppedFiles].slice(0, 20));
   };
 

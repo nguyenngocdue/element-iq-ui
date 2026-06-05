@@ -1,20 +1,27 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store';
+import { useAuth } from '../lib/auth-context';
+import { authFetch } from '../lib/supabase';
 import { Search, ChevronDown, Plus, Download, Bell, User, LayoutGrid, MessageSquare, Box, FolderKanban, Users, History, FileText, Code, X, List, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
+interface ProjectItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+  role?: string;
+  hasImage?: boolean;
+}
+
 export function ProjectDashboard() {
   const { setCurrentView, setActiveProject } = useApp();
-  const [projects, setProjects] = useState([
-    { id: '1', name: 'Utility 147', role: 'Contributor', age: '9 days ago', hasImage: true },
-    { id: '2', name: 'Utility 26 (1)', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '3', name: 'Utility 25 (1)', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '4', name: 'Utility 24 (1)', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '5', name: 'Utility 23', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '6', name: 'Utility 21', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '7', name: 'Utility 19', role: 'Owner', age: '9 days ago', hasImage: false },
-    { id: '8', name: 'Utility 18', role: 'Owner', age: '9 days ago', hasImage: false },
-  ]);
+  const { user, signOut } = useAuth();
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'alphabetical' | 'recent' | 'oldest'>('alphabetical');
@@ -28,56 +35,108 @@ export function ProjectDashboard() {
         result.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case 'recent':
-        result.sort((a, b) => Number(b.id) - Number(a.id));
+        result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         break;
       case 'oldest':
-        result.sort((a, b) => Number(a.id) - Number(b.id));
+        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         break;
     }
     return result;
   }, [projects, searchQuery, sortBy]);
 
-  const handleOpenProject = (project: typeof projects[0]) => {
+  // ── Load projects from API ─────────────────────────────────
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  async function loadProjects() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/v1/projects');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setProjects(data.map((p: any) => ({ ...p, role: 'Owner', hasImage: false })));
+    } catch (err: any) {
+      setError(err.message || 'Failed to load projects');
+      // Fallback: show empty state
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleOpenProject = (project: ProjectItem) => {
     setActiveProject(project);
   };
 
-  const [editingProject, setEditingProject] = useState<typeof projects[0] | null>(null);
+  const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
 
-  const handleEditProject = (e: React.FormEvent) => {
+  const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim() || !editingProject) return;
 
-    setProjects(prev => prev.map(p => p.id === editingProject.id ? { ...p, name: newProjectName } : p));
+    try {
+      const res = await authFetch(`/api/v1/projects/${editingProject.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      const updated = await res.json();
+      setProjects(prev => prev.map(p => p.id === editingProject.id ? { ...p, ...updated } : p));
+    } catch (err) {
+      console.error('Edit project error:', err);
+    }
     setEditingProject(null);
     setNewProjectName('');
   };
 
-  const handleDeleteProject = (id: string, e: React.MouseEvent) => {
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setProjects(prev => prev.filter(p => p.id !== id));
+    if (!confirm('Delete this project?')) return;
+    try {
+      await authFetch(`/api/v1/projects/${id}`, { method: 'DELETE' });
+      setProjects(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error('Delete project error:', err);
+    }
   };
 
-  const openEditModal = (project: typeof projects[0], e: React.MouseEvent) => {
+  const openEditModal = (project: ProjectItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingProject(project);
     setNewProjectName(project.name);
   };
 
-  const handleCreateProject = (e: React.FormEvent) => {
+  const [createDescription, setCreateDescription] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
+    setCreateError(null);
 
-    const newProject = {
-      id: Date.now().toString(),
-      name: newProjectName,
-      role: 'Owner',
-      age: 'Just now',
-      hasImage: false
-    };
-
-    setProjects(prev => [newProject, ...prev]);
-    setIsCreateModalOpen(false);
-    setNewProjectName('');
+    try {
+      const res = await authFetch('/api/v1/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName, description: createDescription || null }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        const detail = errBody?.detail || `HTTP ${res.status}`;
+        throw new Error(detail);
+      }
+      const created = await res.json();
+      setProjects(prev => [{ ...created, role: 'Owner', hasImage: false }, ...prev]);
+      setIsCreateModalOpen(false);
+      setNewProjectName('');
+      setCreateDescription('');
+    } catch (err: any) {
+      console.error('Create project error:', err);
+      setCreateError(err.message || 'Failed to create project');
+    }
   };
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -124,13 +183,13 @@ export function ProjectDashboard() {
 
         </div>
 
-        <div className="border-t border-[#333] p-4 flex items-center gap-3 cursor-pointer hover:bg-[#252526]">
+        <div className="border-t border-[#333] p-4 flex items-center gap-3 cursor-pointer hover:bg-[#252526]" onClick={signOut}>
           <div className="w-8 h-8 rounded-full bg-[#10b981] flex flex-shrink-0 items-center justify-center text-xs font-bold text-white overflow-hidden">
              <User className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">due.nguyen</p>
-            <p className="text-xs text-[#858585] border-transparent truncate">duengocnguyen@gmail.com</p>
+            <p className="text-sm font-semibold truncate">{user?.user_metadata?.username || user?.email?.split('@')[0] || 'User'}</p>
+            <p className="text-xs text-[#858585] border-transparent truncate">{user?.email || ''}</p>
           </div>
           <ChevronDown className="w-4 h-4 text-[#858585] ml-auto" />
         </div>
@@ -141,7 +200,7 @@ export function ProjectDashboard() {
         <div className="p-8 pb-4 flex flex-col gap-6">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-semibold mb-1">Welcome, duengocnguyen@gmail.com</h1>
+              <h1 className="text-2xl font-semibold mb-1">Welcome, {user?.user_metadata?.username || user?.email || 'User'}</h1>
               <p className="text-[#858585]">What are you up for today?</p>
             </div>
             <div className="flex items-center gap-3">
@@ -229,8 +288,8 @@ export function ProjectDashboard() {
                     </div>
                     <h3 className="font-semibold text-white truncate mb-2 group-hover:text-[#10b981] transition-colors">{p.name}</h3>
                     <div className="flex items-center gap-4 text-xs text-[#858585]">
-                      <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {p.role}</span>
-                      <span className="flex items-center gap-1"><History className="w-3.5 h-3.5" /> {p.age}</span>
+                      <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {p.role || 'Owner'}</span>
+                      <span className="flex items-center gap-1"><History className="w-3.5 h-3.5" /> {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}</span>
                     </div>
                   </div>
                   
@@ -273,10 +332,10 @@ export function ProjectDashboard() {
                          <span className="font-semibold text-white truncate group-hover:text-[#10b981] transition-colors">{p.name}</span>
                       </div>
                       <div className="w-32 shrink-0 flex items-center gap-2 text-sm text-[#858585]">
-                         <Users className="w-3.5 h-3.5" /> <span className="truncate">{p.role}</span>
+                         <Users className="w-3.5 h-3.5" /> <span className="truncate">{p.role || 'Owner'}</span>
                       </div>
                       <div className="w-48 shrink-0 flex items-center gap-2 text-sm text-[#858585]">
-                         <History className="w-3.5 h-3.5" /> <span className="truncate">{p.age}</span>
+                         <History className="w-3.5 h-3.5" /> <span className="truncate">{p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}</span>
                       </div>
                       <div className="w-32 shrink-0 flex items-center justify-center gap-3">
                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#2eb886] border border-[#2eb886] bg-[#2eb886]/10 px-2 py-0.5 rounded">Active</span>
@@ -315,8 +374,13 @@ export function ProjectDashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#858585] uppercase tracking-wider mb-2">Description (Optional)</label>
-                  <textarea placeholder="Enter project description..." className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#555] h-24 resize-none"></textarea>
+                  <textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Enter project description..." className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#555] h-24 resize-none"></textarea>
                 </div>
+                {createError && (
+                  <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-md text-sm">
+                    {createError}
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-end p-5 border-t border-[#3c3c3c] bg-[#1e1e1e] gap-3">
                 <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-6 py-2 text-sm font-semibold rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors">
