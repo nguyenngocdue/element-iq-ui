@@ -848,15 +848,12 @@ export function MainEditor() {
         >
           <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
             {file.status === 'ANALYZING' && (
-              <>
-                <ParsingOverlay
-                  fileName={file.name}
-                  pages={file.pages}
-                  progress={file.analysisProgress}
-                  stage={file.analysisStage}
-                />
-                <div className="absolute top-0 left-0 w-full h-[3px] bg-[#00ff41] shadow-[0_0_15px_3px_rgba(0,255,65,0.9),0_0_5px_1px_rgba(255,255,255,0.8)] animate-scan z-40 pointer-events-none" />
-              </>
+              <ParsingOverlay
+                fileName={file.name}
+                pages={file.pages}
+                progress={file.analysisProgress}
+                stage={file.analysisStage}
+              />
             )}
             <PdfRenderer 
                file={file} 
@@ -876,6 +873,11 @@ export function MainEditor() {
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
           <span className="text-[#10b981]">{file.status}</span>
         </div>
+        )}
+
+        {/* Scan line animation — outside scrollable area to prevent scrollbar flicker */}
+        {file.status === 'ANALYZING' && (
+          <div className="absolute top-0 left-0 w-full h-[3px] bg-[#00ff41] shadow-[0_0_15px_3px_rgba(0,255,65,0.9),0_0_5px_1px_rgba(255,255,255,0.8)] animate-scan z-40 pointer-events-none" />
         )}
 
         {/* Floating Toolbar (inside Pane 1) — centered within this pane */}
