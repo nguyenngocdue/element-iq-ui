@@ -78,6 +78,17 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
 
            {/* Progress — real value from backend */}
            <div>
+             <div className="flex justify-between items-end mb-1">
+               <div className="text-[#a0a5b5] text-[10px] font-bold tracking-widest uppercase">Config</div>
+             </div>
+             <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded px-3 py-2 text-[11px] space-y-0.5">
+               <div className="flex justify-between"><span className="text-[#858585]">Components:</span><span className="text-white font-mono">{state.selectedComponents.join(', ') || 'grout-tube'}</span></div>
+               <div className="flex justify-between"><span className="text-[#858585]">Confidence:</span><span className="text-white font-mono">{((state.componentConfidence[state.selectedComponents[0]] ?? state.confidenceThreshold) * 100).toFixed(0)}%</span></div>
+               <div className="flex justify-between"><span className="text-[#858585]">File:</span><span className="text-white truncate ml-2">{fileName}</span></div>
+             </div>
+           </div>
+
+           <div>
              <div className="flex justify-between items-end mb-2">
                <div className="text-white text-xs font-semibold">{stage ?? 'Initializing...'}</div>
                <div className="text-[#a0a5b5] text-xs font-mono">{Math.round(progress)}%</div>
@@ -513,7 +524,7 @@ export function MainEditor() {
               </button>
             ) : (
               <button
-                onClick={() => analyzeFile(file.id)}
+                onClick={() => openConfigModal('reanalyze', file.id)}
                 className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
               >
                 ↺ Re-analyze

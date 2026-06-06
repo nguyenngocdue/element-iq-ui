@@ -12,7 +12,7 @@ export interface AnalysisConfigModalProps {
 }
 
 export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFileId }: AnalysisConfigModalProps) {
-  const { state, setSelectedComponents, setComponentConfidence, addFiles, analyzeFile } = useApp();
+  const { state, setSelectedComponents, setComponentConfidence, addFiles, analyzeFile, analyzeAll } = useApp();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -101,7 +101,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
         if (targetFileId) {
           analyzeFile(targetFileId);
         } else {
-          state.files.forEach(f => analyzeFile(f.id));
+          analyzeAll();
         }
         onClose();
       }

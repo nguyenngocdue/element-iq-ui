@@ -22,6 +22,7 @@ interface AppContextType {
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
   analyzeAll: () => Promise<void>;
+  stopAnalysis: () => void;
   setSelectedComponents: (ids: string[]) => void;
   setComponentConfidence: (id: string, confidence: number) => void;
   toggleComponent: (id: string) => void;
@@ -33,49 +34,13 @@ interface AppContextType {
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
-const mockComponents: Component[] = [
-  {
-    id: 'grout-tube',
-    name: 'Grout Tube',
-    description: 'NF (filled) / FF (hollow)',
-    modelFile: 'grout-tube-v1.pt',
-    classes: ['FF', 'NF'],
-    accuracy: 0.92,
-    status: 'ready',
-    lastTrained: '2026-05-20T10:30:00Z',
-    size: '12.4 MB',
-  },
-  {
-    id: 'm20-ferrule',
-    name: 'M20 Ferrule',
-    description: 'NF (filled) / FF (hollow)',
-    modelFile: 'm20-ferrule-best.pt',
-    classes: ['FF', 'NF'],
-    accuracy: 0.95,
-    status: 'ready',
-    lastTrained: '2026-05-22T14:20:00Z',
-    size: '10.8 MB',
-  },
-  {
-    id: 'void-tube',
-    name: 'Void Tube',
-    description: 'Void tube symbol',
-    modelFile: 'void-tube-best.pt',
-    classes: ['void'],
-    accuracy: null,
-    status: 'training',
-    trainingProgress: 0.75,
-  },
-  {
-    id: 'cast-in-plate',
-    name: 'Cast-in Plate',
-    description: 'CP3 (3 holes) / CP4 (4 holes)',
-    modelFile: 'cast-in-plate-best.pt',
-    classes: ['CP3', 'CP4'],
-    accuracy: null,
-    status: 'missing',
-  },
-];
+// Load saved config from localStorage
+const savedConfig = (() => {
+  try {
+    const raw = localStorage.getItem('elementiq:analysis-config');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+})();
 
 const initialState: SessionState = {
   id: 'session-1',
@@ -89,13 +54,10 @@ const initialState: SessionState = {
   isSidebarOpen: true,
   isValidationOpen: true,
   isEngineLive: true,
-  confidenceThreshold: 0.5,
-  availableComponents: mockComponents,
-  selectedComponents: ['grout-tube'],
-  componentConfidence: {
-    'grout-tube': 0.40,
-    'm20-ferrule': 0.35,
-  },
+  confidenceThreshold: savedConfig?.confidenceThreshold ?? 0.4,
+  availableComponents: [],  // loaded from API
+  selectedComponents: savedConfig?.selectedComponents ?? ['grout-tube'],
+  componentConfidence: savedConfig?.componentConfidence ?? { 'grout-tube': 0.40 },
   showConfigModal: false,
   configModalMode: 'import',
   currentView: 'projects',
@@ -108,6 +70,43 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SessionState>(initialState);
+
+  // Load components from backend API on mount
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { authFetch } = await import('./lib/supabase');
+        const res = await authFetch('/api/v1/components');
+        if (res.ok) {
+          const data = await res.json();
+          const components = (data.components || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description || '',
+            modelFile: c.model_file || '',
+            classes: c.classes || [],
+            accuracy: typeof c.accuracy === 'number' ? c.accuracy : null,
+            status: c.status || 'missing',
+            lastTrained: c.last_trained || null,
+            size: c.size || null,
+          }));
+          setState(prev => ({ ...prev, availableComponents: components.length > 0 ? components : prev.availableComponents }));
+        }
+      } catch {
+        // Fallback: keep empty or previously loaded
+      }
+    })();
+  }, []);
+
+  // Persist analysis config to localStorage when it changes
+  React.useEffect(() => {
+    const config = {
+      selectedComponents: state.selectedComponents,
+      componentConfidence: state.componentConfidence,
+      confidenceThreshold: state.confidenceThreshold,
+    };
+    localStorage.setItem('elementiq:analysis-config', JSON.stringify(config));
+  }, [state.selectedComponents, state.componentConfidence, state.confidenceThreshold]);
 
   const updateFileStatus = useCallback((id: string, updates: Partial<DocumentFile>) => {
     setState((prev) => ({
@@ -521,6 +520,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, files: [], activeFileId: null, openFiles: [], pinnedFiles: [] }));
   }, [state.files]);
 
+  const stopAnalysisRef = React.useRef(false);
+
   const analyzeFile = useCallback(async (id: string) => {
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
     let file = state.files.find(f => f.id === id)?.file;
@@ -548,15 +549,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // ── 1. Upload PDF to backend ───────────────────────────
+      const selectedComps = state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube'];
+      // Use per-component confidence (first selected component's confidence as primary)
+      const primaryComp = selectedComps[0];
+      const confThreshold = state.componentConfidence[primaryComp] ?? state.confidenceThreshold;
+      const analysisConfig = {
+        conf_threshold: confThreshold,
+        page_index: 0,
+      };
+
+      // console.group('[ElementIQ] Analysis Config');
+      // console.log('Components:', selectedComps);
+      // console.log('Confidence threshold:', confThreshold);
+      // console.log('Per-component confidence:', state.componentConfidence);
+      // console.log('File:', state.files.find(f => f.id === id)?.name);
+      // console.groupEnd();
+
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('components', JSON.stringify(state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube']));
-      formData.append('config', JSON.stringify({
-        conf_threshold: state.confidenceThreshold,
-        page_index: 0,
-      }));
+      formData.append('components', JSON.stringify(selectedComps));
+      formData.append('config', JSON.stringify(analysisConfig));
 
-      updateFileStatus(id, { analysisProgress: 10, analysisStage: 'Queuing analysis job...' });
+      updateFileStatus(id, { analysisProgress: 10, analysisStage: `Queuing: ${selectedComps.join(', ')} @ ${(analysisConfig.conf_threshold * 100).toFixed(0)}% conf` });
 
       const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData });
       if (!res.ok) {
@@ -587,6 +601,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (job.status === 'COMPLETED') return job;
         if (job.status === 'FAILED') throw new Error(job.error?.message || job.error_message || 'Analysis failed');
 
+        // Check if user clicked Stop
+        if (stopAnalysisRef.current) {
+          updateFileStatus(id, { status: 'PENDING', analysisProgress: 0, analysisStage: 'Stopped by user' });
+          throw new Error('Stopped by user');
+        }
+
         await new Promise(r => setTimeout(r, 1000));  // poll every 1s
         return poll();
       };
@@ -594,11 +614,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const result = await poll();
 
       // ── DEBUG: log full result to browser console ──────────
-      console.group('[ElementIQ] Analysis Result');
-      console.log('status:', result.status);
-      console.log('result.result:', result.result);
+      // console.group('[ElementIQ] Analysis Result');
+      // console.log('status:', result.status);
+      // console.log('result.result:', result.result);
       const components = result.result?.component_results ?? result.result?.components ?? [];
-      console.log('components:', components.length, 'component(s)');
+      // console.log('components:', components.length, 'component(s)');
       components.forEach((comp: any) => {
         console.log(`  [${comp.component_id}] objects:`, comp.objects?.length ?? 0, comp.objects?.[0]);
         console.log(`  [${comp.component_id}] summary:`, comp.summary);
@@ -629,13 +649,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       const passRate = result.result?.summary?.pass_rate ?? 100;
-      const overallStatus = result.result?.summary?.overall;
+      const overallStatus = (result.result?.summary?.overall || result.result?.overall_status || '').toUpperCase();
 
       console.log('[ElementIQ] Mapped detections:', detections.length, detections[0]);
       console.log('[ElementIQ] overallStatus:', overallStatus, 'passRate:', passRate);
 
+      const fileStatus = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : (detections.length > 0 ? 'PASS' : 'NO-NOTE');
+
       updateFileStatus(id, {
-        status: overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : passRate >= 50 ? 'WARN' : 'FAIL',
+        status: fileStatus as any,
         detections,
         analysisProgress: 100,
         analysisStage: 'Complete',
@@ -657,16 +679,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ],
       });
     }
-  }, [state.files, state.confidenceThreshold, state.selectedComponents, updateFileStatus]);
+  }, [state.files, state.confidenceThreshold, state.selectedComponents, state.componentConfidence, updateFileStatus]);
 
   const analyzeAll = useCallback(async () => {
-    // Only analyze files that finished uploading (skip UPLOADING and already ANALYZING)
+    stopAnalysisRef.current = false;
     const filesToAnalyze = state.files.filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING');
     if (filesToAnalyze.length === 0) return;
     for (const f of filesToAnalyze) {
+      if (stopAnalysisRef.current) break;
       await analyzeFile(f.id);
     }
   }, [state.files, analyzeFile]);
+
+  const stopAnalysis = useCallback(() => {
+    stopAnalysisRef.current = true;
+  }, []);
 
   return (
     <AppContext.Provider
@@ -688,6 +715,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateFileStatus,
         analyzeFile,
         analyzeAll,
+        stopAnalysis,
         setSelectedComponents,
         setComponentConfidence,
         toggleComponent,

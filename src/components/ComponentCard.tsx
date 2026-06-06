@@ -81,7 +81,7 @@ export function ComponentCard({
           <span className="text-white font-mono">{component.modelFile}</span>
         </div>
         <div className="flex items-center gap-3">
-          {component.accuracy !== null && (
+          {component.accuracy != null && !isNaN(component.accuracy) && (
             <span>
               <span>Accuracy:</span> <span className="text-[#22c55e] font-semibold">{(component.accuracy * 100).toFixed(0)}%</span>
             </span>

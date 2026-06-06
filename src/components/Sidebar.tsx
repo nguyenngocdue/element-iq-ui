@@ -7,11 +7,13 @@ import { useResizable } from '../hooks/useResizable';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function Sidebar() {
-  const { state, setActiveFile, clearSession, openConfigModal, analyzeAll } = useApp();
+  const { state, setActiveFile, clearSession, openConfigModal, analyzeAll, stopAnalysis } = useApp();
   const [showStatuses, setShowStatuses] = useState(true);
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [clearProgress, setClearProgress] = useState('');
+
+  const isAnalyzing = state.files.some(f => f.status === 'ANALYZING');
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const passList = state.files.filter(f => f.status === 'PASS');
@@ -60,14 +62,25 @@ export function Sidebar() {
             <CloudUpload className="w-3.5 h-3.5 text-[#858585]" />
             Import
           </button>
-          <button
-            onClick={analyzeAll}
-            disabled={state.files.length === 0}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Run All
-          </button>
+          {isAnalyzing ? (
+            <button
+              onClick={stopAnalysis}
+              className="flex-1 flex items-center justify-center gap-2 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#ef4444]/30 text-[#ef4444] py-1.5 rounded-md transition-colors"
+              title="Stop after current file finishes"
+            >
+              <X className="w-3.5 h-3.5" />
+              Stop Queue
+            </button>
+          ) : (
+            <button
+              onClick={() => openConfigModal('reanalyze')}
+              disabled={state.files.length === 0}
+              className="flex-1 flex items-center justify-center gap-2 bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Run All
+            </button>
+          )}
           <button onClick={() => setShowClearDialog(true)} className="px-3 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
             Clear
           </button>
@@ -155,6 +168,7 @@ export function Sidebar() {
 export function FileItem({ file, index, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, index?: number, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
   const [expanded, setExpanded] = React.useState(true);
   const [showTooltip, setShowTooltip] = React.useState(false);
+  const itemRef = React.useRef<HTMLDivElement>(null);
   
   const getBadge = () => {
     if (file.status === 'UPLOADING') {
@@ -184,6 +198,7 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
   return (
     <div className="flex flex-col">
       <div 
+        ref={itemRef}
         onClick={() => { onClick(); if(hasSheets) setExpanded(!expanded); }}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
@@ -195,17 +210,20 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
         )}
       >
         {/* Custom Tooltip */}
-        {showTooltip && (
-          <div className="absolute left-full top-0 ml-2 z-[100] pointer-events-none">
-            <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2 text-[10px] whitespace-nowrap space-y-0.5">
-              <div className="text-[#858585]">ID: <span className="text-white font-mono">{file.id.slice(0, 8)}...</span></div>
-              <div className="text-[#858585]">File: <span className="text-white">{file.name}</span></div>
-              <div className="text-[#858585]">Size: <span className="text-white">{file.file.size > 0 ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB` : 'Not loaded'}</span></div>
-              <div className="text-[#858585]">Pages: <span className="text-white">{file.pages}</span></div>
-              <div className="text-[#858585]">Status: <span className="text-white font-bold">{file.status}</span></div>
+        {showTooltip && itemRef.current && (() => {
+          const rect = itemRef.current!.getBoundingClientRect();
+          return (
+            <div className="fixed z-[300] pointer-events-none" style={{ left: rect.right + 8, top: rect.top }}>
+              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2 text-[10px] whitespace-nowrap space-y-0.5">
+                <div className="text-[#858585]">ID: <span className="text-white font-mono">{file.id.slice(0, 8)}...</span></div>
+                <div className="text-[#858585]">File: <span className="text-white">{file.name}</span></div>
+                <div className="text-[#858585]">Size: <span className="text-white">{file.file.size > 0 ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB` : 'Not loaded'}</span></div>
+                <div className="text-[#858585]">Pages: <span className="text-white">{file.pages}</span></div>
+                <div className="text-[#858585]">Status: <span className="text-white font-bold">{file.status}</span></div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
            {index && <span className="text-[9px] text-[#858585] font-mono w-4 shrink-0 text-right">{index}</span>}
