@@ -53,7 +53,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
                     'Saving Artifacts';
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] font-sans">
       <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-[460px] overflow-hidden text-sm flex flex-col relative z-10">
          <div className="p-5 border-b border-[#3c3c3c] flex items-center justify-between bg-[#1e1e1e]">
            <div className="flex items-center gap-3">
@@ -423,6 +423,26 @@ export function MainEditor() {
   }, []);
 
   if (!file) {
+    // Show skeleton when loading files
+    if (state.isLoadingFiles) {
+      return (
+        <div className="flex-1 bg-editor-bg flex items-center justify-center p-8">
+          <div className="w-full max-w-[800px] animate-pulse space-y-4">
+            {/* Toolbar skeleton */}
+            <div className="flex gap-2">
+              <div className="h-7 w-20 bg-[#2b2d35] rounded" />
+              <div className="h-7 w-16 bg-[#2b2d35] rounded" />
+              <div className="h-7 w-16 bg-[#2b2d35] rounded" />
+              <div className="flex-1" />
+              <div className="h-7 w-24 bg-[#2b2d35] rounded" />
+            </div>
+            {/* PDF area skeleton */}
+            <div className="h-[70vh] bg-[#2b2d35] rounded-lg border border-[#3c3c3c]" />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex-1 bg-editor-bg flex items-center justify-center text-muted flex-col relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>

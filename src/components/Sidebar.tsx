@@ -12,9 +12,62 @@ export function Sidebar() {
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [clearProgress, setClearProgress] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isAnalyzing = state.files.some(f => f.status === 'ANALYZING');
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
+
+  // Search results
+  const searchResults = searchQuery.trim()
+    ? state.files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : [];
+
+  // If search tab is active, show search panel
+  if (state.activeSidebarTab === 'search') {
+    return (
+      <div style={{ width }} className="bg-[#1a1b20] border-r border-[#2b2d35] flex flex-col shrink-0 text-[#cccccc] font-sans relative">
+        <div onMouseDown={handleMouseDown} className={cn("absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize z-50 hover:bg-[#10b981] transition-colors", isDragging && "bg-[#10b981]")} />
+        <div className="p-4 border-b border-[#2b2d35]">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#858585] mb-3">Search</h3>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search files..."
+            autoFocus
+            className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#10b981] placeholder-[#858585]"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {searchQuery.trim() && (
+            <div className="text-[10px] text-[#858585] px-2 mb-2">
+              {searchResults.length} result(s) in {state.files.length} file(s)
+            </div>
+          )}
+          {searchResults.map((file, i) => (
+            <div
+              key={file.id}
+              onClick={() => setActiveFile(file.id)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[#25272e] text-[12px]"
+            >
+              <FileIcon className="w-3.5 h-3.5 text-[#858585] shrink-0" />
+              <span className="truncate text-white">{file.name}</span>
+              <span className={cn("text-[9px] font-bold px-1 py-0.5 rounded shrink-0",
+                file.status === 'PASS' ? "text-[#2eb886] bg-[#2eb886]/10" :
+                file.status === 'FAIL' ? "text-[#ef4444] bg-[#ef4444]/10" :
+                "text-[#858585] bg-[#858585]/10"
+              )}>{file.status}</span>
+            </div>
+          ))}
+          {!searchQuery.trim() && (
+            <div className="text-center text-[#858585] text-xs mt-8">
+              <p>Type to search files</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const passList = state.files.filter(f => f.status === 'PASS');
   const failList = state.files.filter(f => f.status === 'FAIL');

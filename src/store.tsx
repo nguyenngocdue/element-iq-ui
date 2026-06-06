@@ -42,6 +42,13 @@ const savedConfig = (() => {
   } catch { return null; }
 })();
 
+const savedLayout = (() => {
+  try {
+    const raw = localStorage.getItem('elementiq:layout');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+})();
+
 const initialState: SessionState = {
   id: 'session-1',
   files: [],
@@ -51,8 +58,8 @@ const initialState: SessionState = {
   pinnedFiles: [],
   activePage: 1,
   activeSidebarTab: 'explorer',
-  isSidebarOpen: true,
-  isValidationOpen: true,
+  isSidebarOpen: savedLayout?.isSidebarOpen ?? true,
+  isValidationOpen: savedLayout?.isValidationOpen ?? true,
   isEngineLive: true,
   confidenceThreshold: savedConfig?.confidenceThreshold ?? 0.4,
   availableComponents: [],  // loaded from API
@@ -107,6 +114,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     localStorage.setItem('elementiq:analysis-config', JSON.stringify(config));
   }, [state.selectedComponents, state.componentConfidence, state.confidenceThreshold]);
+
+  // Persist layout preferences
+  React.useEffect(() => {
+    localStorage.setItem('elementiq:layout', JSON.stringify({
+      isSidebarOpen: state.isSidebarOpen,
+      isValidationOpen: state.isValidationOpen,
+    }));
+  }, [state.isSidebarOpen, state.isValidationOpen]);
 
   const updateFileStatus = useCallback((id: string, updates: Partial<DocumentFile>) => {
     setState((prev) => ({
