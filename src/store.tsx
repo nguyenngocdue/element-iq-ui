@@ -214,6 +214,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setActiveFile = useCallback((id: string, page: number = 1) => {
     const file = state.files.find(f => f.id === id);
     
+    // Clear artifact viewer when selecting a file
+    setState((prev) => prev.activeArtifact ? { ...prev, activeArtifact: null } : prev);
+
     // If file has no bytes (loaded from server), download first then activate
     if (file && file.file.size === 0) {
       (async () => {

@@ -533,6 +533,20 @@ export function MainEditor() {
     return () => pane.removeEventListener('wheel', onWheel);
   }, [file]);
 
+  // Prevent browser zoom when viewing artifact (pane1Ref not mounted)
+  useEffect(() => {
+    if (!state.activeArtifact) return;
+    
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+    
+    document.addEventListener('wheel', onWheel, { passive: false });
+    return () => document.removeEventListener('wheel', onWheel);
+  }, [state.activeArtifact]);
+
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
