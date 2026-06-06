@@ -82,4 +82,5 @@ export interface SessionState {
   isBotOpen: boolean;
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;
+  activeArtifact?: { id: string; type: string; downloadUrl: string; name: string } | null;
 }

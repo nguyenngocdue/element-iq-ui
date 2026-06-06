@@ -219,6 +219,7 @@ export function Sidebar() {
 }
 
 export function FileItem({ file, index, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, index?: number, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
+  const { state } = useApp();
   const [expanded, setExpanded] = React.useState(true);
   const [showTooltip, setShowTooltip] = React.useState(false);
   const itemRef = React.useRef<HTMLDivElement>(null);
@@ -301,6 +302,36 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
             />
           </div>
         </div>
+      )}
+
+      {/* Artifact files (shown when expanded and file has been analyzed) */}
+      {expanded && file.artifacts && file.artifacts.length > 0 && (
+        <>
+          {file.artifacts.map(a => {
+            const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+            const isArtifactActive = state.activeArtifact?.id === a.id;
+            return (
+              <div
+                key={a.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
+                    detail: { id: a.id, type: a.type, downloadUrl: a.downloadUrl, name: artifactName }
+                  }));
+                }}
+                className={cn(
+                  "pl-10 pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors",
+                  isArtifactActive
+                    ? "bg-[#333748] text-white border-l-2 border-[#10b981]"
+                    : "hover:bg-[#25272e] text-[#858585] hover:text-white border-l-2 border-transparent"
+                )}
+              >
+                <span>{a.type === 'ANNOTATED_PNG' ? '🖼️' : a.type === 'ANNOTATED_PDF' ? '📋' : '📊'}</span>
+                <span className="truncate">{artifactName}</span>
+              </div>
+            );
+          })}
+        </>
       )}
 
       {expanded && hasSheets && Array.from({ length: file.pages }).map((_, idx) => {

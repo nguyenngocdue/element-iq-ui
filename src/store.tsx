@@ -31,6 +31,7 @@ interface AppContextType {
   setCurrentView: (view: 'projects' | 'editor') => void;
   setActiveProject: (project: Project) => void;
   toggleBot: () => void;
+  setActiveArtifact: (artifact: SessionState['activeArtifact']) => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -487,6 +488,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
 
+  const setActiveArtifact = useCallback((artifact: SessionState['activeArtifact']) => {
+    setState((prev) => ({ ...prev, activeArtifact: artifact }));
+  }, []);
+
   // Listen for reload-files event (triggered after import completes)
   React.useEffect(() => {
     const handleReload = () => {
@@ -511,11 +516,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, files: [...prev.files, newFile] };
       });
     };
+    const handleViewArtifact = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setState((prev) => ({ ...prev, activeArtifact: detail }));
+    };
     window.addEventListener('elementiq:reload-files', handleReload);
     window.addEventListener('elementiq:file-uploaded', handleFileUploaded);
+    window.addEventListener('elementiq:view-artifact', handleViewArtifact);
     return () => {
       window.removeEventListener('elementiq:reload-files', handleReload);
       window.removeEventListener('elementiq:file-uploaded', handleFileUploaded);
+      window.removeEventListener('elementiq:view-artifact', handleViewArtifact);
     };
   }, [state.activeProject]);
 
@@ -752,6 +763,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setCurrentView,
         setActiveProject,
         toggleBot,
+        setActiveArtifact,
       }}
     >
       {children}

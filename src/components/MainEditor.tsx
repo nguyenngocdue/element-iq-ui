@@ -251,8 +251,61 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
   );
 }
 
+function ArtifactViewer({ artifact, onClose }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void }) {
+  const [content, setContent] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { authFetch } = await import('../lib/supabase');
+        const res = await authFetch(artifact.downloadUrl);
+        if (res.ok) {
+          if (artifact.type === 'REPORT_JSON') {
+            const text = await res.text();
+            setContent(text);
+          } else {
+            const blob = await res.blob();
+            setContent(URL.createObjectURL(blob));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load artifact:', err);
+      }
+      setLoading(false);
+    })();
+  }, [artifact.id]);
+
+  return (
+    <div className="flex-1 overflow-auto bg-[#121212] flex flex-col">
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : artifact.type === 'ANNOTATED_PNG' && content ? (
+        <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+          <img src={content} alt="Annotated" className="max-w-full h-auto shadow-2xl border border-[#3c3c3c]" />
+        </div>
+      ) : artifact.type === 'ANNOTATED_PDF' && content ? (
+        <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+          <iframe src={content} className="w-full h-full min-h-[80vh] border border-[#3c3c3c] rounded" />
+        </div>
+      ) : artifact.type === 'REPORT_JSON' && content ? (
+        <div className="flex-1 overflow-auto p-4">
+          <pre className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg p-4 text-[11px] font-mono text-[#a0a5b5] overflow-auto max-h-[80vh] whitespace-pre-wrap">
+            {(() => { try { return JSON.stringify(JSON.parse(content), null, 2); } catch { return content; } })()}
+          </pre>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-[#858585]">Failed to load artifact</div>
+      )}
+    </div>
+  );
+}
+
 export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation } = useApp();
+  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact } = useApp();
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const [scale, setScale] = useState(0.5);
@@ -467,6 +520,19 @@ export function MainEditor() {
         {/* Editor Tabs (Pane 1) */}
         <div className="h-[35px] bg-[#252526] flex items-center justify-between shrink-0 border-b border-[#1e1e1e]">
           <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar">
+            {state.activeArtifact && (
+              <>
+                <button
+                  onClick={() => setActiveArtifact(null)}
+                  className="px-3 h-full flex items-center text-[11px] text-[#10b981] hover:bg-[#333] font-medium shrink-0"
+                >
+                  ← Back to PDF
+                </button>
+                <div className="px-3 h-full flex items-center text-[12px] text-white font-semibold border-t-2 border-t-[#10b981] bg-[#1e1e1e] shrink-0">
+                  {state.activeArtifact.name}
+                </div>
+              </>
+            )}
             {state.openFiles.map(fid => {
               const f = state.files.find(f => f.id === fid);
               if (!f) return null;
@@ -519,6 +585,7 @@ export function MainEditor() {
         </div>
 
         {/* Editor Toolbar (Pane 1) */}
+        {!state.activeArtifact && (
         <div className="h-[40px] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e]">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -620,8 +687,12 @@ export function MainEditor() {
             </button>
           </div>
         </div>
+        )}
 
         {/* Canvas (Pane 1) */}
+        {state.activeArtifact ? (
+          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} />
+        ) : (
         <div 
           ref={pane1Ref}
           onWheel={handleWheel}
@@ -652,13 +723,16 @@ export function MainEditor() {
             />
           </div>
         </div>
+        )}
 
-        {/* Footer (Pane 1) */}
+        {/* Footer (Pane 1) — hidden when viewing artifact */}
+        {!state.activeArtifact && (
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
           <span className="text-[#10b981]">{file.status}</span>
         </div>
+        )}
       </div>
 
       {/* PANE 2 (Split Mode) */}
