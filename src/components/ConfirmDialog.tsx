@@ -47,7 +47,7 @@ export function ConfirmDialog({
   const styles = variantStyles[variant];
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onCancel}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={loading ? undefined : onCancel}>
       <div
         className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
@@ -60,8 +60,11 @@ export function ConfirmDialog({
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-white mb-1">{title}</h3>
             <p className="text-sm text-[#858585] leading-relaxed">{description}</p>
+            {loading && (
+              <p className="text-xs text-[#f59e0b] mt-2 animate-pulse">Please wait while processing completes...</p>
+            )}
           </div>
-          <button onClick={onCancel} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#858585] hover:text-white shrink-0">
+          <button onClick={onCancel} disabled={loading} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#858585] hover:text-white shrink-0 disabled:opacity-30 disabled:pointer-events-none">
             <X className="w-4 h-4" />
           </button>
         </div>

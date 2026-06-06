@@ -34,13 +34,13 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
     setDragActive(false);
     if (mode !== 'import') return;
     const droppedFiles = Array.from(e.dataTransfer.files).filter((f: File) => f.type === 'application/pdf');
-    setFiles(prev => [...prev, ...droppedFiles].slice(0, 20));
+    setFiles(prev => [...prev, ...droppedFiles].slice(0, 100));
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && mode === 'import') {
       const selectedFiles = Array.from(e.target.files);
-      setFiles(prev => [...prev, ...selectedFiles].slice(0, 20));
+      setFiles(prev => [...prev, ...selectedFiles].slice(0, 100));
     }
   };
 
@@ -127,13 +127,13 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                   Browse Files
                   <input type="file" multiple accept=".pdf" onChange={handleFileInput} className="hidden" />
                 </label>
-                <p className="text-[#858585] text-xs mt-4">Maximum 20 files, 50MB each</p>
+                <p className="text-[#858585] text-xs mt-4">Maximum 100 files, 100MB each</p>
               </div>
 
               {files.length > 0 && (
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#858585] uppercase">Selected Files ({files.length}/20)</span>
+                    <span className="text-xs font-bold text-[#858585] uppercase">Selected Files ({files.length}/100)</span>
                     <button onClick={() => setFiles([])} className="text-xs text-[#ef4444] hover:underline">Clear All</button>
                   </div>
                   <div className="max-h-40 overflow-y-auto space-y-1">

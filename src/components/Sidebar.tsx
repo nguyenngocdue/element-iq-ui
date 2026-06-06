@@ -4,10 +4,13 @@ import { ChevronDown, CloudUpload, File as FileIcon, X, RefreshCw, Eye, EyeOff }
 import { cn } from '../lib/utils';
 import { DocumentFile } from '../types';
 import { useResizable } from '../hooks/useResizable';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export function Sidebar() {
   const { state, setActiveFile, clearSession, openConfigModal, analyzeAll } = useApp();
   const [showStatuses, setShowStatuses] = useState(true);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [clearLoading, setClearLoading] = useState(false);
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const passList = state.files.filter(f => f.status === 'PASS');
@@ -64,7 +67,7 @@ export function Sidebar() {
             <RefreshCw className="w-3.5 h-3.5" />
             Run All
           </button>
-          <button onClick={clearSession} className="px-3 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
+          <button onClick={() => setShowClearDialog(true)} className="px-3 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
             Clear
           </button>
         </div>
@@ -82,7 +85,18 @@ export function Sidebar() {
           </div>
         </div>
         
-        {state.files.length === 0 ? (
+        {state.files.length === 0 && state.activeProject ? (
+          <div className="px-4 py-6 space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-2.5 animate-pulse">
+                <div className="w-3.5 h-3.5 bg-[#2b2d35] rounded" />
+                <div className="h-3 bg-[#2b2d35] rounded flex-1" />
+                <div className="w-12 h-4 bg-[#2b2d35] rounded" />
+              </div>
+            ))}
+            <p className="text-center text-[#858585] text-[11px] mt-3">Loading files...</p>
+          </div>
+        ) : state.files.length === 0 ? (
           <div className="px-4 py-8 text-center text-[#858585] text-[12px]">
             <FileIcon className="w-6 h-6 mx-auto mb-2 opacity-30" />
             <p>No drawings found.</p>
@@ -103,6 +117,22 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showClearDialog}
+        title="Clear All Files"
+        description={`Delete all ${state.files.length} file(s) from this project? All analysis data will be permanently removed.`}
+        confirmLabel="Clear All"
+        variant="danger"
+        loading={clearLoading}
+        onConfirm={async () => {
+          setClearLoading(true);
+          await clearSession();
+          setClearLoading(false);
+          setShowClearDialog(false);
+        }}
+        onCancel={() => setShowClearDialog(false)}
+      />
     </div>
   );
 }
@@ -111,14 +141,20 @@ export function FileItem({ file, isActive, activePage, onClick, onPageClick, hid
   const [expanded, setExpanded] = React.useState(true);
   
   const getBadge = () => {
+    if (file.status === 'UPLOADING') {
+      return <span className="text-[#3b82f6] font-bold text-[9px] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded border border-[#3b82f6]/30 tracking-wider">{file.uploadProgress || 0}%</span>;
+    }
     if (file.status === 'PASS') {
       return <span className="text-[#2eb886] font-bold text-[9px] bg-[#2eb886]/10 px-1.5 py-0.5 rounded border border-[#2eb886]/30 tracking-wider">PASS</span>;
     }
     if (file.status === 'FAIL') {
       return <span className="text-[#ef4444] font-bold text-[9px] bg-[#ef4444]/10 px-1.5 py-0.5 rounded border border-[#ef4444]/30 tracking-wider">FAIL</span>;
     }
-    if (file.status === 'PENDING' || file.status === 'WARN' || file.status === 'NO-NOTE') {
+    if (file.status === 'NO-NOTE') {
       return <span className="text-[#bba438] font-bold text-[9px] bg-[#bba438]/10 px-1.5 py-0.5 rounded border border-[#bba438]/30 tracking-wider">NO-NOTE</span>;
+    }
+    if (file.status === 'PENDING') {
+      return <span className="text-[#858585] font-bold text-[9px] bg-[#858585]/10 px-1.5 py-0.5 rounded border border-[#858585]/30 tracking-wider">READY</span>;
     }
     if (file.status === 'ANALYZING') {
       return <RefreshCw className="w-3.5 h-3.5 text-[#10b981] animate-spin" />;
@@ -151,6 +187,18 @@ export function FileItem({ file, isActive, activePage, onClick, onPageClick, hid
           {!hideBadge && getBadge()}
         </div>
       </div>
+
+      {/* Upload progress bar */}
+      {file.status === 'UPLOADING' && (
+        <div className="px-4 pb-1">
+          <div className="h-1 bg-[#2b2d35] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#3b82f6] rounded-full transition-all duration-300"
+              style={{ width: `${file.uploadProgress || 0}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {expanded && hasSheets && Array.from({ length: file.pages }).map((_, idx) => {
          const pageNum = idx + 1;

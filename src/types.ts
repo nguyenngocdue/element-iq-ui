@@ -15,7 +15,8 @@ export interface DocumentFile {
   id: string;
   name: string;
   file: File;
-  status: 'PENDING' | 'ANALYZING' | 'PASS' | 'FAIL' | 'WARN' | 'NO-NOTE';
+  status: 'UPLOADING' | 'PENDING' | 'ANALYZING' | 'PASS' | 'FAIL' | 'WARN' | 'NO-NOTE';
+  uploadProgress?: number;  // 0-100 for upload progress
   pages: number;
   passRate?: number;
   detections: Detection[];

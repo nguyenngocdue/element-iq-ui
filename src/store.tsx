@@ -120,10 +120,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: Math.random().toString(36).substring(7),
       name: f.name,
       file: f,
-      status: 'PENDING',
-      pages: 1, // Will be updated when PDF is loaded
+      status: 'UPLOADING',
+      uploadProgress: 0,
+      pages: 1,
       detections: [],
-      events: [{ id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'File imported', type: 'INFO' }],
+      events: [{ id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'Uploading...', type: 'INFO' }],
     }));
 
     setState((prev) => ({
@@ -137,10 +138,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Async: read PDF pages + upload to backend
     newDocs.forEach(async (doc) => {
       try {
+        updateFileStatus(doc.id, { uploadProgress: 10 });
+
         // Read page count
         const arrayBuffer = await doc.file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-        updateFileStatus(doc.id, { pages: pdf.numPages });
+        updateFileStatus(doc.id, { pages: pdf.numPages, uploadProgress: 30 });
 
         // Upload to backend (associate with active project)
         const projectId = state.activeProject?.id;
@@ -149,6 +152,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (projectId) {
           formData.append('project_id', projectId);
         }
+
+        updateFileStatus(doc.id, { uploadProgress: 50 });
 
         const { authFetch } = await import('./lib/supabase');
         const res = await authFetch('/api/v1/files', {
@@ -159,14 +164,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           updateFileStatus(doc.id, {
+            status: 'PENDING',
+            uploadProgress: 100,
+            id: data.id || doc.id,
             events: [
-              { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Uploaded to server (file_id: ${data.file_id})`, type: 'SUCCESS' },
+              { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Uploaded successfully`, type: 'SUCCESS' },
             ],
           });
         } else {
           const errBody = await res.json().catch(() => null);
           const detail = errBody?.detail || `Upload failed: HTTP ${res.status}`;
           updateFileStatus(doc.id, {
+            status: 'PENDING',
+            uploadProgress: 0,
             events: [
               { id: Date.now().toString(), timestamp: new Date().toISOString(), message: detail, type: 'ERROR' },
             ],
@@ -175,6 +185,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.error('Error processing file:', e);
         updateFileStatus(doc.id, {
+          status: 'PENDING',
+          uploadProgress: 0,
           events: [
             { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${e instanceof Error ? e.message : 'Unknown'}`, type: 'ERROR' },
           ],
@@ -344,8 +356,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const { authFetch } = await import('./lib/supabase');
         const res = await authFetch(`/api/v1/projects/${project.id}/files`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.error(`[ElementIQ] Failed to load project files: HTTP ${res.status}`, await res.text().catch(() => ''));
+          return;
+        }
         const files = await res.json();
+        console.log(`[ElementIQ] Loaded ${files.length} files for project ${project.id}`);
 
         const DPI_RATIO = 72 / 300;
         const docs: DocumentFile[] = files.map((f: any) => {
@@ -583,8 +599,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.files, state.confidenceThreshold, state.selectedComponents, updateFileStatus]);
 
   const analyzeAll = useCallback(async () => {
-    // Analyze all PENDING or already-analyzed files sequentially
-    const filesToAnalyze = state.files.filter(f => f.status !== 'ANALYZING');
+    // Only analyze files that finished uploading (skip UPLOADING and already ANALYZING)
+    const filesToAnalyze = state.files.filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING');
+    if (filesToAnalyze.length === 0) return;
     for (const f of filesToAnalyze) {
       await analyzeFile(f.id);
     }
