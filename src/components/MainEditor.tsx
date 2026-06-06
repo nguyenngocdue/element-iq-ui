@@ -251,13 +251,17 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
   );
 }
 
-function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void; scale: number; toolMode: string; onScaleChange: (s: number) => void }) {
+function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onImageDimensions }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void; scale: number; toolMode: string; onScaleChange: (s: number) => void; onImageDimensions?: (w: number, h: number) => void }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const imgRef = React.useRef<HTMLImageElement>(null);
   const isDragging = React.useRef(false);
+  const isDrawingZoom = React.useRef(false);
   const startDragPos = React.useRef({ x: 0, y: 0 });
   const startScrollPos = React.useRef({ left: 0, top: 0 });
+  const [zoomRect, setZoomRect] = React.useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  const [imgNaturalSize, setImgNaturalSize] = React.useState<{ w: number, h: number }>({ w: 0, h: 0 });
 
   React.useEffect(() => {
     (async () => {
@@ -300,6 +304,15 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: {
     return () => el.removeEventListener('wheel', onWheel);
   }, [artifact.type, scale, onScaleChange]);
 
+  const handleImgLoad = () => {
+    if (imgRef.current) {
+      const w = imgRef.current.naturalWidth;
+      const h = imgRef.current.naturalHeight;
+      setImgNaturalSize({ w, h });
+      if (onImageDimensions) onImageDimensions(w, h);
+    }
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!containerRef.current) return;
     if (toolMode === 'pan') {
@@ -307,24 +320,69 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: {
       startDragPos.current = { x: e.clientX, y: e.clientY };
       startScrollPos.current = { left: containerRef.current.scrollLeft, top: containerRef.current.scrollTop };
       containerRef.current.style.cursor = 'grabbing';
+    } else if (toolMode === 'zoom') {
+      isDrawingZoom.current = true;
+      startDragPos.current = { x: e.clientX, y: e.clientY };
+      setZoomRect({ x: e.clientX, y: e.clientY, w: 0, h: 0 });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!containerRef.current || !isDragging.current) return;
-    const dx = e.clientX - startDragPos.current.x;
-    const dy = e.clientY - startDragPos.current.y;
-    containerRef.current.scrollLeft = startScrollPos.current.left - dx;
-    containerRef.current.scrollTop = startScrollPos.current.top - dy;
+    if (!containerRef.current) return;
+    if (isDragging.current) {
+      const dx = e.clientX - startDragPos.current.x;
+      const dy = e.clientY - startDragPos.current.y;
+      containerRef.current.scrollLeft = startScrollPos.current.left - dx;
+      containerRef.current.scrollTop = startScrollPos.current.top - dy;
+    } else if (isDrawingZoom.current) {
+      setZoomRect({
+        x: Math.min(startDragPos.current.x, e.clientX),
+        y: Math.min(startDragPos.current.y, e.clientY),
+        w: Math.abs(e.clientX - startDragPos.current.x),
+        h: Math.abs(e.clientY - startDragPos.current.y)
+      });
+    }
   };
 
   const handleMouseUp = () => {
-    isDragging.current = false;
-    if (containerRef.current) containerRef.current.style.cursor = '';
+    if (isDragging.current) {
+      isDragging.current = false;
+      if (containerRef.current) containerRef.current.style.cursor = '';
+    } else if (isDrawingZoom.current && zoomRect && containerRef.current) {
+      isDrawingZoom.current = false;
+      if (zoomRect.w > 20 && zoomRect.h > 20) {
+        const container = containerRef.current;
+        const paneRect = container.getBoundingClientRect();
+        
+        // Calculate the center of the zoom rect in content coordinates
+        const zoomCenterX = (zoomRect.x + zoomRect.w / 2) - paneRect.left + container.scrollLeft;
+        const zoomCenterY = (zoomRect.y + zoomRect.h / 2) - paneRect.top + container.scrollTop;
+        
+        // Calculate new scale
+        const scaleX = paneRect.width / zoomRect.w;
+        const scaleY = paneRect.height / zoomRect.h;
+        const scaleMultiplier = Math.min(scaleX, scaleY);
+        const prevScale = scale;
+        const nextScale = Math.min(4, Math.max(0.1, scale * scaleMultiplier));
+        onScaleChange(nextScale);
+        
+        // After scale change, scroll to center on the selected area
+        setTimeout(() => {
+          const ratio = nextScale / prevScale;
+          container.scrollLeft = zoomCenterX * ratio - paneRect.width / 2;
+          container.scrollTop = zoomCenterY * ratio - paneRect.height / 2;
+        }, 10);
+      }
+      setZoomRect(null);
+    }
   };
 
+  // Compute rendered image size
+  const imgWidth = imgNaturalSize.w > 0 ? imgNaturalSize.w * scale : undefined;
+  const imgHeight = imgNaturalSize.h > 0 ? imgNaturalSize.h * scale : undefined;
+
   return (
-    <div className="flex-1 overflow-hidden bg-[#121212] flex flex-col">
+    <div className="flex-1 overflow-hidden bg-[#121212] flex flex-col relative">
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
@@ -332,19 +390,32 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: {
       ) : artifact.type === 'ANNOTATED_PNG' && content ? (
         <div 
           ref={containerRef}
-          className={`flex-1 overflow-auto bg-[#0a0a0a] ${toolMode === 'pan' ? 'cursor-grab' : ''}`}
+          data-artifact-container=""
+          className={`flex-1 overflow-auto bg-[#0a0a0a] ${toolMode === 'pan' ? 'cursor-grab' : toolMode === 'zoom' ? 'cursor-crosshair' : ''}`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-          <div className="min-w-full min-h-full flex items-center justify-center p-8">
+          <div 
+            className="flex items-center justify-center"
+            style={{ 
+              minWidth: '100%', 
+              minHeight: '100%',
+              width: imgWidth && imgWidth > (containerRef.current?.clientWidth || 0) ? imgWidth + 64 : '100%',
+              height: imgHeight && imgHeight > (containerRef.current?.clientHeight || 0) ? imgHeight + 64 : '100%',
+              padding: 32,
+            }}
+          >
             <img 
+              ref={imgRef}
               src={content} 
               alt="Annotated"
               draggable={false}
+              onLoad={handleImgLoad}
               style={{ 
-                width: `${scale * 100}%`,
+                width: imgWidth || 'auto',
+                height: imgHeight || 'auto',
                 maxWidth: 'none',
                 userSelect: 'none',
               }}
@@ -364,6 +435,14 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: {
       ) : (
         <div className="flex-1 flex items-center justify-center text-[#858585]">Failed to load artifact</div>
       )}
+
+      {/* Zoom rect overlay for PNG */}
+      {zoomRect && (
+        <div 
+          className="fixed border-2 border-[#10b981] bg-[#10b981]/20 pointer-events-none z-50 rounded-[2px]"
+          style={{ left: zoomRect.x, top: zoomRect.y, width: zoomRect.w, height: zoomRect.h }}
+        />
+      )}
     </div>
   );
 }
@@ -377,13 +456,30 @@ export function MainEditor() {
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
   const [zoomRect, setZoomRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
   const [pdfDimensions, setPdfDimensions] = useState<{ w: number, h: number } | null>(null);
+  const [pngDimensions, setPngDimensions] = useState<{ w: number, h: number } | null>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId: string } | null>(null);
 
   const fitScreen = () => {
+    // For PNG artifact — use pngDimensions
+    if (state.activeArtifact && state.activeArtifact.type === 'ANNOTATED_PNG' && pngDimensions) {
+      // Approximate available space (full pane minus padding)
+      const pane = document.querySelector('[data-artifact-container]') as HTMLElement;
+      if (pane) {
+        const padding = 64;
+        const availableWidth = pane.clientWidth - padding;
+        const availableHeight = pane.clientHeight - padding;
+        const newScale = Math.min(availableWidth / pngDimensions.w, availableHeight / pngDimensions.h);
+        if (!isNaN(newScale) && newScale > 0) {
+          setScale(Math.max(0.1, Math.min(4, newScale)));
+        }
+      }
+      return;
+    }
+    // For PDF
     if (pane1Ref.current && pdfDimensions) {
       const pane = pane1Ref.current;
-      const padding = 64; // Two sides of 32px padding roughly
+      const padding = 64;
       const availableWidth = pane.clientWidth - padding;
       const availableHeight = pane.clientHeight - padding;
       const newScale = Math.min(availableWidth / pdfDimensions.w, availableHeight / pdfDimensions.h);
@@ -638,6 +734,81 @@ export function MainEditor() {
             })}
           </div>
           <div className="flex items-center h-full">
+            {/* Editor toolbar items — inline with tab bar */}
+            {!state.activeArtifact && (
+            <>
+              <button 
+                onClick={() => setShowAnnotations(!showAnnotations)}
+                className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showAnnotations ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+              >
+                <ShieldCheck className="w-3 h-3" /> QA Overlay
+              </button>
+              <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
+              {file.status === 'PENDING' ? (
+                <button
+                  onClick={() => openConfigModal('reanalyze', file.id)}
+                  className="h-full px-3 flex items-center gap-1 text-[11px] text-[#10b981] font-medium hover:bg-[#333] transition-colors border-t-2 border-t-transparent"
+                >
+                  ▶ Start Analysis
+                </button>
+              ) : file.status === 'ANALYZING' ? (
+                <button disabled className="h-full px-3 flex items-center gap-1 text-[11px] text-muted font-medium border-t-2 border-t-transparent">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
+                </button>
+              ) : (
+                <button
+                  onClick={() => openConfigModal('reanalyze', file.id)}
+                  className="h-full px-3 flex items-center gap-1 text-[11px] text-[#10b981] font-medium hover:bg-[#333] transition-colors border-t-2 border-t-transparent"
+                >
+                  ↺ Re-analyze
+                </button>
+              )}
+              <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
+              <div
+                className="h-full px-3 flex items-center text-[11px] text-white relative group cursor-pointer hover:bg-[#333] transition-colors border-t-2 border-t-transparent"
+              >
+                Export
+                <div className="absolute right-0 top-full mt-0 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl py-1 w-48 hidden group-hover:block z-50">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (file?.file) {
+                        const url = URL.createObjectURL(file.file);
+                        const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
+                  >
+                    📄 Original PDF
+                  </button>
+                  {file?.artifacts?.map(a => (
+                    <button
+                      key={a.id}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const { authFetch } = await import('../lib/supabase');
+                        const res = await authFetch(a.downloadUrl);
+                        if (res.ok) {
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = a.type === 'ANNOTATED_PNG' ? `${file.name.replace('.pdf','')}_annotated.png` : a.type === 'ANNOTATED_PDF' ? `${file.name.replace('.pdf','')}_annotated.pdf` : `${file.name.replace('.pdf','')}_report.json`;
+                          document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+                        }
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
+                    >
+                      {a.type === 'ANNOTATED_PNG' ? '🖼️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
+                    </button>
+                  ))}
+                  {(!file?.artifacts || file.artifacts.length === 0) && (
+                    <div className="px-3 py-1.5 text-[11px] text-[#858585]">No artifacts — run analysis first</div>
+                  )}
+                </div>
+              </div>
+            </>
+            )}
             <button 
               onClick={() => splitEditor('right')}
               className="h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 border-t-transparent text-[#858585] hover:text-white"
@@ -662,90 +833,9 @@ export function MainEditor() {
           </div>
         </div>
 
-        {/* Editor Toolbar (Pane 1) */}
-        {!state.activeArtifact && (
-        <div className="h-[40px] border-b border-[#3c3c3c] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e]">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowAnnotations(!showAnnotations)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] border ${showAnnotations ? 'bg-[#37373d] border-[#10b981] text-white' : 'bg-transparent border-[#3c3c3c] text-muted hover:text-white'}`}
-              >
-                <ShieldCheck className="w-3 h-3" /> QA Overlay
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 text-[11px]">
-            {file.status === 'PENDING' ? (
-              <button
-                onClick={() => openConfigModal('reanalyze', file.id)}
-                className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
-              >
-                ▶ Start Analysis
-              </button>
-            ) : file.status === 'ANALYZING' ? (
-              <button disabled className="text-muted font-medium flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
-              </button>
-            ) : (
-              <button
-                onClick={() => openConfigModal('reanalyze', file.id)}
-                className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
-              >
-                ↺ Re-analyze
-              </button>
-            )}
-            <div
-              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white relative group cursor-pointer text-[11px]"
-            >
-              Export
-              {/* Dropdown */}
-              <div className="absolute right-0 top-full mt-1 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl py-1 w-48 hidden group-hover:block z-50">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (file?.file) {
-                      const url = URL.createObjectURL(file.file);
-                      const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                    }
-                  }}
-                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
-                >
-                  📄 Original PDF
-                </button>
-                {file?.artifacts?.map(a => (
-                  <button
-                    key={a.id}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const { authFetch } = await import('../lib/supabase');
-                      const res = await authFetch(a.downloadUrl);
-                      if (res.ok) {
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = a.type === 'ANNOTATED_PNG' ? `${file.name.replace('.pdf','')}_annotated.png` : a.type === 'ANNOTATED_PDF' ? `${file.name.replace('.pdf','')}_annotated.pdf` : `${file.name.replace('.pdf','')}_report.json`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
-                      }
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
-                  >
-                    {a.type === 'ANNOTATED_PNG' ? '�️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
-                  </button>
-                ))}
-                {(!file?.artifacts || file.artifacts.length === 0) && (
-                  <div className="px-3 py-1.5 text-[11px] text-[#858585]">No artifacts — run analysis first</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-
         {/* Canvas (Pane 1) */}
         {state.activeArtifact ? (
-          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={scale} toolMode={toolMode} onScaleChange={setScale} />
+          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={scale} toolMode={toolMode} onScaleChange={setScale} onImageDimensions={(w, h) => setPngDimensions({ w, h })} />
         ) : (
         <div 
           ref={pane1Ref}

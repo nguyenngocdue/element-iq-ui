@@ -126,17 +126,6 @@ export function TopBar() {
             <div className={`w-2 h-2 rounded-full ${state.isEngineLive ? 'bg-green-500 animate-pulse' : 'bg-[#858585]'}`}></div>
             <span className="uppercase">{state.isEngineLive ? 'ENGINE: GPU LIVE' : 'ENGINE: OFFLINE'}</span>
           </div>
-          
-          <button 
-            onClick={clearSession}
-            className="bg-[#10b981] text-white px-3 py-1 text-[11px] rounded hover:bg-[#059669] flex items-center gap-1 transition-colors"
-          >
-            + New Session
-          </button>
-
-          <div className="w-6 h-6 rounded-full bg-[#555] flex items-center justify-center text-[10px] text-white">
-            EQ
-          </div>
         </div>
       </div>
 
