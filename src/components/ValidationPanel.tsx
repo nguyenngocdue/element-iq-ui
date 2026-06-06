@@ -73,6 +73,37 @@ export function ValidationPanel() {
         )}
 
         <div className="mt-auto border-t border-[#3c3c3c] pt-4">
+          {/* Artifacts Download */}
+          {file.artifacts && file.artifacts.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[11px] text-[#858585] mb-2 uppercase">Artifacts</div>
+              <div className="space-y-1">
+                {file.artifacts.map(a => (
+                  <button
+                    key={a.id}
+                    onClick={async () => {
+                      const { authFetch } = await import('../lib/supabase');
+                      const res = await authFetch(a.downloadUrl);
+                      if (res.ok) {
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = a.type === 'ANNOTATED_PNG' ? 'annotated.png' : a.type === 'ANNOTATED_PDF' ? 'annotated.pdf' : 'report.json';
+                        document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+                      }
+                    }}
+                    className="w-full text-left px-2 py-1.5 bg-[#1e1e1e] border border-[#3c3c3c] rounded text-[10px] text-white hover:bg-[#25272e] flex items-center gap-2"
+                  >
+                    <span>{a.type === 'ANNOTATED_PNG' ? '🖼️' : a.type === 'ANNOTATED_PDF' ? '📋' : '📊'}</span>
+                    <span>{a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'JSON Report'}</span>
+                    <span className="ml-auto text-[#10b981]">↓</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="text-[11px] text-[#858585] mb-2 uppercase">Active Annotations</div>
           <div className="flex gap-2">
             <div className="bg-[#22c55e]/20 text-[#22c55e] px-2 py-1 rounded text-[10px] font-mono">

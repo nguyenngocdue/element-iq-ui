@@ -442,6 +442,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             detections,
             passRate,
             analyzedComponents,
+            artifacts: (f.analysis?.artifacts ?? []).map((a: any) => ({
+              id: a.id,
+              type: a.artifact_type,
+              downloadUrl: a.download_url,
+            })),
             events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
           };
         });
@@ -671,9 +676,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const fileStatus = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : (detections.length > 0 ? 'PASS' : 'NO-NOTE');
 
+      // Extract artifacts from result
+      const artifacts = (result.result?.artifacts ?? []).map((a: any) => ({
+        id: a.id,
+        type: a.artifact_type,
+        downloadUrl: a.download_url,
+      }));
+
       updateFileStatus(id, {
         status: fileStatus as any,
         detections,
+        artifacts,
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [

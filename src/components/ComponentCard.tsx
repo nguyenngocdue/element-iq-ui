@@ -105,7 +105,7 @@ export function ComponentCard({
             step="0.05"
             value={confidence}
             onChange={(e) => onConfidenceChange(component.id, parseFloat(e.target.value))}
-            className="w-full h-2 bg-[#3c3c3c] rounded-lg appearance-none cursor-pointer accent-[#10b981]"
+            className="w-full h-3 bg-[#3c3c3c] rounded-lg appearance-none cursor-pointer accent-[#10b981] [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#10b981] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer"
           />
           <div className="flex justify-between text-[10px] text-[#858585] mt-1">
             <span>↑ More detections</span>

@@ -22,6 +22,7 @@ export interface DocumentFile {
   detections: Detection[];
   events: AppEvent[];
   analyzedComponents?: string[];
+  artifacts?: { id: string; type: string; downloadUrl: string }[];
   // Real progress from backend
   analysisProgress?: number;   // 0–100
   analysisStage?: string;      // e.g. "Running YOLO detection..."

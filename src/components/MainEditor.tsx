@@ -533,7 +533,7 @@ export function MainEditor() {
           <div className="flex items-center gap-3 text-[11px]">
             {file.status === 'PENDING' ? (
               <button
-                onClick={() => analyzeFile(file.id)}
+                onClick={() => openConfigModal('reanalyze', file.id)}
                 className="text-[#10b981] font-medium hover:underline flex items-center gap-1"
               >
                 ▶ Start Analysis
@@ -575,9 +575,48 @@ export function MainEditor() {
                   setTimeout(() => document.body.removeChild(tooltip), 300);
                 }, 1500);
               }}
-              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white"
+              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white relative group"
             >
               Export
+              {/* Dropdown */}
+              <div className="absolute right-0 top-full mt-1 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl py-1 w-48 hidden group-hover:block z-50">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (file?.file) {
+                      const url = URL.createObjectURL(file.file);
+                      const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
+                >
+                  📄 Original PDF
+                </button>
+                {file?.artifacts?.map(a => (
+                  <button
+                    key={a.id}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const { authFetch } = await import('../lib/supabase');
+                      const res = await authFetch(a.downloadUrl);
+                      if (res.ok) {
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = a.type === 'ANNOTATED_PNG' ? `${file.name.replace('.pdf','')}_annotated.png` : a.type === 'ANNOTATED_PDF' ? `${file.name.replace('.pdf','')}_annotated.pdf` : `${file.name.replace('.pdf','')}_report.json`;
+                        document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
+                  >
+                    {a.type === 'ANNOTATED_PNG' ? '🖼️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
+                  </button>
+                ))}
+                {(!file?.artifacts || file.artifacts.length === 0) && (
+                  <div className="px-3 py-1.5 text-[11px] text-[#858585]">No artifacts — run analysis first</div>
+                )}
+              </div>
             </button>
           </div>
         </div>
