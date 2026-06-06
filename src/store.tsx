@@ -18,7 +18,7 @@ interface AppContextType {
   toggleSidebar: () => void;
   toggleValidation: () => void;
   setConfidenceThreshold: (val: number) => void;
-  clearSession: () => void;
+  clearSession: () => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
   analyzeAll: () => Promise<void>;
@@ -339,7 +339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setActiveProject = useCallback((project: Project) => {
     setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor', files: [] }));
 
-    // Load project files from backend
+    // Load project files + analysis results in ONE API call
     (async () => {
       try {
         const { authFetch } = await import('./lib/supabase');
@@ -347,16 +347,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) return;
         const files = await res.json();
 
-        // Convert backend files to DocumentFile format (without actual File blob — loaded on demand)
-        const docs: DocumentFile[] = files.map((f: any) => ({
-          id: f.id,
-          name: f.original_filename,
-          file: new File([], f.original_filename, { type: 'application/pdf' }),  // placeholder
-          status: 'PENDING' as const,
-          pages: f.page_count || 1,
-          detections: [],
-          events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
-        }));
+        const DPI_RATIO = 72 / 300;
+        const docs: DocumentFile[] = files.map((f: any) => {
+          let status: DocumentFile['status'] = 'PENDING';
+          let detections: any[] = [];
+          let passRate: number | undefined;
+          let analyzedComponents: string[] | undefined;
+
+          // Use batch analysis data from endpoint (no extra API calls needed)
+          if (f.analysis) {
+            const overallStatus = f.analysis.overall_status || f.analysis.summary?.overall;
+            status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : 'FAIL';
+            passRate = f.analysis.summary?.pass_rate ?? (overallStatus === 'PASS' ? 100 : 0);
+            analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
+            detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
+              (comp.objects ?? []).map((obj: any, i: number) => {
+                const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
+                return {
+                  id: `${comp.component_id}-${i}`,
+                  page: 1,
+                  x: x1 * DPI_RATIO,
+                  y: y1 * DPI_RATIO,
+                  width: (x2 - x1) * DPI_RATIO,
+                  height: (y2 - y1) * DPI_RATIO,
+                  type: obj.face ?? 'UNKNOWN',
+                  confidence: obj.confidence ?? 0,
+                  status: 'PASS',
+                  componentId: comp.component_id,
+                };
+              })
+            );
+          }
+
+          return {
+            id: f.id,
+            name: f.original_filename,
+            file: new File([], f.original_filename, { type: 'application/pdf' }),
+            status,
+            pages: f.page_count || 1,
+            detections,
+            passRate,
+            analyzedComponents,
+            events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
+          };
+        });
 
         setState((prev) => ({
           ...prev,
@@ -364,6 +398,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activeFileId: docs.length > 0 ? docs[0].id : null,
           openFiles: docs.length > 0 ? [docs[0].id] : [],
         }));
+
+        // Auto-download the first file so PDF renders immediately
+        if (docs.length > 0) {
+          const firstDoc = docs[0];
+          try {
+            const dlRes = await authFetch(`/api/v1/files/${firstDoc.id}/download`);
+            if (dlRes.ok) {
+              const blob = await dlRes.blob();
+              const realFile = new File([blob], firstDoc.name, { type: 'application/pdf' });
+              setState((prev) => ({
+                ...prev,
+                files: prev.files.map(f => f.id === firstDoc.id ? { ...f, file: realFile } : f),
+              }));
+            }
+          } catch {
+            // Non-blocking
+          }
+        }
       } catch (err) {
         console.error('Failed to load project files:', err);
       }
@@ -374,19 +426,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
 
-  const clearSession = useCallback(() => {
-    setState({ ...initialState, id: `session-${Date.now()}` });
-  }, []);
+  const clearSession = useCallback(async () => {
+    if (!confirm('Delete all files from this project? This cannot be undone.')) return;
+
+    // Delete all files from backend
+    const filesToDelete = state.files;
+    const { authFetch } = await import('./lib/supabase');
+    
+    for (const f of filesToDelete) {
+      try {
+        await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
+      } catch {
+        // Continue deleting others even if one fails
+      }
+    }
+
+    setState((prev) => ({ ...prev, files: [], activeFileId: null, openFiles: [], pinnedFiles: [] }));
+  }, [state.files]);
 
   const analyzeFile = useCallback(async (id: string) => {
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
-    const file = state.files.find(f => f.id === id)?.file;
+    let file = state.files.find(f => f.id === id)?.file;
     if (!file) return;
 
     try {
       const { authFetch } = await import('./lib/supabase');
 
-      // ── 0. Quick health check ──────────────────────────────
+      // ── 0. Ensure file bytes are loaded (download if placeholder) ──
+      if (file.size === 0) {
+        updateFileStatus(id, { analysisProgress: 5, analysisStage: 'Downloading PDF from server...' });
+        const dlRes = await authFetch(`/api/v1/files/${id}/download`);
+        if (!dlRes.ok) throw new Error('Failed to download file for analysis');
+        const blob = await dlRes.blob();
+        file = new File([blob], file.name, { type: 'application/pdf' });
+        updateFileStatus(id, { file });
+      }
+
+      // ── 1. Quick health check ──────────────────────────────
       try {
         const hRes = await authFetch('/api/v1/health');
         if (!hRes.ok) throw new Error('Backend not healthy');
@@ -444,8 +520,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.group('[ElementIQ] Analysis Result');
       console.log('status:', result.status);
       console.log('result.result:', result.result);
-      console.log('components:', result.result?.components?.length, 'component(s)');
-      result.result?.components?.forEach((comp: any) => {
+      const components = result.result?.component_results ?? result.result?.components ?? [];
+      console.log('components:', components.length, 'component(s)');
+      components.forEach((comp: any) => {
         console.log(`  [${comp.component_id}] objects:`, comp.objects?.length ?? 0, comp.objects?.[0]);
         console.log(`  [${comp.component_id}] summary:`, comp.summary);
         console.log(`  [${comp.component_id}] report:`, comp.report?.length ?? 0, 'entries');
@@ -456,7 +533,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Backend bbox is in pixels at 300 DPI; PDF.js renders at 72 DPI (72/300 = 0.24 ratio)
       const DPI_RATIO = 72 / 300;
 
-      const detections = (result.result?.components ?? []).flatMap((comp: any) =>
+      const detections = components.flatMap((comp: any) =>
         (comp.objects ?? []).map((obj: any, i: number) => {
           const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
           return {

@@ -130,6 +130,7 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
 
   useEffect(() => {
     if (!file || !file.file || !canvasRef.current) return;
+    if (file.file.size === 0) return; // Not yet downloaded — skip render
 
     let isMounted = true;
 
@@ -190,6 +191,18 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
       }
     };
   }, [file?.file, renderScale, pageNum]);
+
+  // Show loading state when file not yet downloaded
+  if (file.file.size === 0) {
+    return (
+      <div className="relative shadow-2xl origin-top-left border border-[#444] bg-[#1e1e1e] flex items-center justify-center" style={{ width: 600, height: 400 }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm text-[#858585]">Loading PDF...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 

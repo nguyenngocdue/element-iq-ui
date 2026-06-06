@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { ActivityBar } from './components/ActivityBar';
 import { Sidebar } from './components/Sidebar';
@@ -14,15 +14,83 @@ import { ElementIQBot } from './components/ElementIQBot';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { LoginPage } from './components/LoginPage';
 
+/**
+ * URL sync: updates browser URL when project/file changes.
+ * Format: ?project={projectId}&file={fileId}&page={page}
+ * Users can share these URLs directly. Easy to add more filters later.
+ */
+function UrlSync() {
+  const { state, setActiveProject, setActiveFile } = useApp();
+
+  // Sync state → URL query params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (state.activeProject) {
+      params.set('project', state.activeProject.id);
+      if (state.activeFileId) {
+        params.set('file', state.activeFileId);
+      }
+      if (state.activePage && state.activePage > 1) {
+        params.set('page', String(state.activePage));
+      }
+    }
+    const search = params.toString();
+    const newUrl = search ? `?${search}` : '/';
+    if (window.location.search !== `?${search}` && !(newUrl === '/' && !window.location.search)) {
+      window.history.replaceState(null, '', newUrl);
+    }
+  }, [state.activeProject?.id, state.activeFileId, state.activePage]);
+
+  // On mount: parse URL query params → restore state
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    if (projectId && !state.activeProject) {
+      setActiveProject({ id: projectId, name: '', role: 'Owner', age: '', hasImage: false });
+    }
+  }, []);
+
+  return null;
+}
+
 function AppContent() {
-  const { state, closeConfigModal } = useApp();
+  const { state, closeConfigModal, setActiveProject } = useApp();
+  const [initialLoad, setInitialLoad] = React.useState(true);
+
+  // On mount: if URL has ?project=..., restore project view immediately
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    if (projectId && !state.activeProject) {
+      setActiveProject({ id: projectId, name: '', role: 'Owner', age: '', hasImage: false });
+    }
+    setInitialLoad(false);
+  }, []);
+
+  // While checking URL on first load, show nothing (prevents flash of ProjectDashboard)
+  if (initialLoad && window.location.search.includes('project=')) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm text-[#858585]">Loading project...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (state.currentView === 'projects') {
-    return <ProjectDashboard />;
+    return (
+      <>
+        <UrlSync />
+        <ProjectDashboard />
+      </>
+    );
   }
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-editor-bg text-fg font-sans antialiased text-[14px]">
+      <UrlSync />
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <ActivityBar />

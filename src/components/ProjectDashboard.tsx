@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth-context';
 import { authFetch } from '../lib/supabase';
 import { Search, ChevronDown, Plus, Download, Bell, User, LayoutGrid, MessageSquare, Box, FolderKanban, Users, History, FileText, Code, X, List, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface ProjectItem {
   id: string;
@@ -92,14 +93,30 @@ export function ProjectDashboard() {
     setNewProjectName('');
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<ProjectItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Delete this project?')) return;
+    const project = projects.find(p => p.id === id);
+    if (project) setDeleteTarget(project);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      await authFetch(`/api/v1/projects/${id}`, { method: 'DELETE' });
-      setProjects(prev => prev.filter(p => p.id !== id));
+      const res = await authFetch(`/api/v1/projects/${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+      const data = await res.json();
+      setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
+      showToast(`Deleted: ${data.deleted_files} file(s), ${data.deleted_jobs} job(s) removed`);
     } catch (err) {
       console.error('Delete project error:', err);
+      showToast('Failed to delete project');
+    } finally {
+      setDeleteLoading(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -433,6 +450,18 @@ export function ProjectDashboard() {
           {toastMessage}
         </div>
       )}
+
+      {/* Delete Project Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Project"
+        description={`Are you sure you want to delete "${deleteTarget?.name}"? All files, analysis results, and artifacts will be permanently removed. This action cannot be undone.`}
+        confirmLabel="Delete Project"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
