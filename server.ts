@@ -1,11 +1,15 @@
 import express, { Request, Response } from 'express';
 import http from 'http';
 import path from 'path';
+import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
+// Load .env
+dotenv.config();
+
 // ─── Config ────────────────────────────────────────────────────────────────
-const PORT = 3000;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || 'http://localhost:8001';
 const USE_MOCK = process.env.USE_MOCK === 'true';
 
 // ─── Proxy helper ──────────────────────────────────────────────────────────
