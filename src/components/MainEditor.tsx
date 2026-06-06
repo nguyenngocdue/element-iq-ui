@@ -251,9 +251,13 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
   );
 }
 
-function ArtifactViewer({ artifact, onClose }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void }) {
+function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void; scale: number; toolMode: string; onScaleChange: (s: number) => void }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const isDragging = React.useRef(false);
+  const startDragPos = React.useRef({ x: 0, y: 0 });
+  const startScrollPos = React.useRef({ left: 0, top: 0 });
 
   React.useEffect(() => {
     (async () => {
@@ -277,19 +281,79 @@ function ArtifactViewer({ artifact, onClose }: { artifact: { id: string; type: s
     })();
   }, [artifact.id]);
 
+  // Ctrl+Wheel zoom for PNG
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el || artifact.type !== 'ANNOTATED_PNG') return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const nextScale = Math.min(4, Math.max(0.1, scale * zoomFactor));
+        onScaleChange(nextScale);
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [artifact.type, scale, onScaleChange]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    if (toolMode === 'pan') {
+      isDragging.current = true;
+      startDragPos.current = { x: e.clientX, y: e.clientY };
+      startScrollPos.current = { left: containerRef.current.scrollLeft, top: containerRef.current.scrollTop };
+      containerRef.current.style.cursor = 'grabbing';
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!containerRef.current || !isDragging.current) return;
+    const dx = e.clientX - startDragPos.current.x;
+    const dy = e.clientY - startDragPos.current.y;
+    containerRef.current.scrollLeft = startScrollPos.current.left - dx;
+    containerRef.current.scrollTop = startScrollPos.current.top - dy;
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+    if (containerRef.current) containerRef.current.style.cursor = '';
+  };
+
   return (
-    <div className="flex-1 overflow-auto bg-[#121212] flex flex-col">
+    <div className="flex-1 overflow-hidden bg-[#121212] flex flex-col">
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : artifact.type === 'ANNOTATED_PNG' && content ? (
-        <div className="flex-1 overflow-auto flex items-center justify-center p-4">
-          <img src={content} alt="Annotated" className="max-w-full h-auto shadow-2xl border border-[#3c3c3c]" />
+        <div 
+          ref={containerRef}
+          className={`flex-1 overflow-auto bg-[#0a0a0a] ${toolMode === 'pan' ? 'cursor-grab' : ''}`}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <div className="min-w-full min-h-full flex items-center justify-center p-8">
+            <img 
+              src={content} 
+              alt="Annotated"
+              draggable={false}
+              style={{ 
+                width: `${scale * 100}%`,
+                maxWidth: 'none',
+                userSelect: 'none',
+              }}
+            />
+          </div>
         </div>
-      ) : artifact.type === 'ANNOTATED_PDF' && content ? (
-        <div className="flex-1 overflow-auto flex items-center justify-center p-4">
-          <iframe src={content} className="w-full h-full min-h-[80vh] border border-[#3c3c3c] rounded" />
+      ) : (artifact.type === 'ANNOTATED_PDF') && content ? (
+        <div className="flex-1 overflow-hidden flex items-center justify-center bg-[#0a0a0a] relative">
+          <iframe src={`${content}#page=1&view=Fit`} className="w-full h-full border-0" style={{ minHeight: 'calc(100vh - 80px)' }} />
         </div>
       ) : artifact.type === 'REPORT_JSON' && content ? (
         <div className="flex-1 overflow-auto p-4">
@@ -617,32 +681,8 @@ export function MainEditor() {
                 ↺ Re-analyze
               </button>
             )}
-            <button 
-              onClick={(e) => {
-                if (file && file.file) {
-                  const url = URL.createObjectURL(file.file);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = file.name || 'document.pdf';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }
-                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                const tooltip = document.createElement('div');
-                tooltip.textContent = 'Exported!';
-                tooltip.className = 'fixed bg-[#2eb886] text-white text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-50 animate-bounce';
-                tooltip.style.left = `${rect.left}px`;
-                tooltip.style.top = `${rect.bottom + 8}px`;
-                document.body.appendChild(tooltip);
-                setTimeout(() => {
-                  tooltip.style.opacity = '0';
-                  tooltip.style.transition = 'opacity 0.3s';
-                  setTimeout(() => document.body.removeChild(tooltip), 300);
-                }, 1500);
-              }}
-              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white relative group"
+            <div
+              className="bg-white/5 hover:bg-white/10 px-3 py-1 rounded border border-[#3c3c3c] text-white relative group cursor-pointer text-[11px]"
             >
               Export
               {/* Dropdown */}
@@ -677,21 +717,21 @@ export function MainEditor() {
                     }}
                     className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
                   >
-                    {a.type === 'ANNOTATED_PNG' ? '🖼️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
+                    {a.type === 'ANNOTATED_PNG' ? '�️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
                   </button>
                 ))}
                 {(!file?.artifacts || file.artifacts.length === 0) && (
                   <div className="px-3 py-1.5 text-[11px] text-[#858585]">No artifacts — run analysis first</div>
                 )}
               </div>
-            </button>
+            </div>
           </div>
         </div>
         )}
 
         {/* Canvas (Pane 1) */}
         {state.activeArtifact ? (
-          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} />
+          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={scale} toolMode={toolMode} onScaleChange={setScale} />
         ) : (
         <div 
           ref={pane1Ref}
@@ -731,6 +771,46 @@ export function MainEditor() {
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
           <span className="text-[#10b981]">{file.status}</span>
+        </div>
+        )}
+
+        {/* Floating Toolbar (inside Pane 1) — centered within this pane */}
+        {(!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
+          <button 
+            onClick={() => setToolMode('select')}
+            className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'select' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+            title="Select (V)"
+          >
+            <MousePointer2 className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={() => setToolMode(toolMode === 'pan' ? 'select' : 'pan')}
+            className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'pan' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+            title="Pan (H)"
+          >
+            <Hand className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={() => setToolMode(toolMode === 'zoom' ? 'select' : 'zoom')}
+            className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'zoom' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
+            title="Zoom (Z)"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+          <div className="w-[1px] h-5 bg-[#3c3c3c] mx-2"></div>
+          <button 
+            onClick={fitScreen}
+            className="px-2 py-1.5 rounded text-[#a0a5b5] hover:text-white hover:bg-[#333] transition-colors"
+            title="Fit to Screen"
+          >
+            <Maximize className="w-4 h-4" />
+          </button>
+          <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent rounded bg-[#121212] border border-[#3c3c3c] ml-1">
+            <button onClick={() => setScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
+            <span className="w-[45px] text-center">{!isNaN(scale) ? Math.round((scale || 0.5) * 100) : 100}%</span>
+            <button onClick={() => setScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
+          </div>
         </div>
         )}
       </div>
@@ -811,44 +891,6 @@ export function MainEditor() {
           }}
         />
       )}
-
-      {/* Floating Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
-        <button 
-          onClick={() => setToolMode('select')}
-          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'select' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
-          title="Select (V)"
-        >
-          <MousePointer2 className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={() => setToolMode(toolMode === 'pan' ? 'select' : 'pan')}
-          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'pan' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
-          title="Pan (H)"
-        >
-          <Hand className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={() => setToolMode(toolMode === 'zoom' ? 'select' : 'zoom')}
-          className={`px-3 py-1.5 rounded flex items-center gap-2 text-xs font-medium transition-colors ${toolMode === 'zoom' ? 'bg-[#10b981]/10 text-[#10b981]' : 'text-[#a0a5b5] hover:text-white hover:bg-[#333]'}`}
-          title="Zoom (Z)"
-        >
-          <Search className="w-4 h-4" />
-        </button>
-        <div className="w-[1px] h-5 bg-[#3c3c3c] mx-2"></div>
-        <button 
-          onClick={fitScreen}
-          className="px-2 py-1.5 rounded text-[#a0a5b5] hover:text-white hover:bg-[#333] transition-colors"
-          title="Fit to Screen"
-        >
-          <Maximize className="w-4 h-4" />
-        </button>
-        <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent rounded bg-[#121212] border border-[#3c3c3c] ml-1">
-          <button onClick={() => setScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
-          <span className="w-[45px] text-center">{!isNaN(scale) ? Math.round((scale || 0.5) * 100) : 100}%</span>
-          <button onClick={() => setScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
-        </div>
-      </div>
 
       {/* Context Menu */}
       {contextMenu && (
