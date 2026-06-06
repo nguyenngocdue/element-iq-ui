@@ -80,6 +80,7 @@ const mockComponents: Component[] = [
 const initialState: SessionState = {
   id: 'session-1',
   files: [],
+  isLoadingFiles: false,
   activeFileId: null,
   openFiles: [],
   pinnedFiles: [],
@@ -345,19 +346,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setCurrentView = useCallback((view: 'projects' | 'editor') => {
-    setState((prev) => ({ ...prev, currentView: view }));
+    if (view === 'projects') {
+      setState((prev) => ({ ...prev, currentView: view, activeProject: undefined, files: [], activeFileId: null, openFiles: [] }));
+    } else {
+      setState((prev) => ({ ...prev, currentView: view }));
+    }
   }, []);
 
   const setActiveProject = useCallback((project: Project) => {
-    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor', files: [] }));
+    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor', files: [], isLoadingFiles: true }));
 
     // Load project files + analysis results in ONE API call
     (async () => {
       try {
         const { authFetch } = await import('./lib/supabase');
+
+        // Fetch project details (name) if not provided
+        if (!project.name) {
+          try {
+            const projRes = await authFetch('/api/v1/projects');
+            if (projRes.ok) {
+              const projects = await projRes.json();
+              const found = projects.find((p: any) => p.id === project.id);
+              if (found) {
+                setState((prev) => ({
+                  ...prev,
+                  activeProject: { ...prev.activeProject!, name: found.name },
+                }));
+              }
+            }
+          } catch { /* non-blocking */ }
+        }
+
         const res = await authFetch(`/api/v1/projects/${project.id}/files`);
         if (!res.ok) {
           console.error(`[ElementIQ] Failed to load project files: HTTP ${res.status}`, await res.text().catch(() => ''));
+          setState((prev) => ({ ...prev, isLoadingFiles: false }));
           return;
         }
         const files = await res.json();
@@ -411,6 +435,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setState((prev) => ({
           ...prev,
           files: docs,
+          isLoadingFiles: false,
           activeFileId: docs.length > 0 ? docs[0].id : null,
           openFiles: docs.length > 0 ? [docs[0].id] : [],
         }));
@@ -434,6 +459,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error('Failed to load project files:', err);
+        setState((prev) => ({ ...prev, isLoadingFiles: false }));
       }
     })();
   }, []);

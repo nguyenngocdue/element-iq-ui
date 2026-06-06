@@ -85,7 +85,7 @@ export function Sidebar() {
           </div>
         </div>
         
-        {state.files.length === 0 && state.activeProject ? (
+        {state.isLoadingFiles ? (
           <div className="px-4 py-6 space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center gap-2.5 animate-pulse">
@@ -96,6 +96,11 @@ export function Sidebar() {
             ))}
             <p className="text-center text-[#858585] text-[11px] mt-3">Loading files...</p>
           </div>
+        ) : state.files.length === 0 && state.activeProject ? (
+          <div className="px-4 py-8 text-center text-[#858585] text-[12px]">
+            <FileIcon className="w-6 h-6 mx-auto mb-2 opacity-30" />
+            <p>No drawings found.</p>
+          </div>
         ) : state.files.length === 0 ? (
           <div className="px-4 py-8 text-center text-[#858585] text-[12px]">
             <FileIcon className="w-6 h-6 mx-auto mb-2 opacity-30" />
@@ -103,10 +108,11 @@ export function Sidebar() {
           </div>
         ) : (
           <div className="flex flex-col mt-1">
-            {state.files.map((file) => (
+            {state.files.map((file, index) => (
               <FileItem 
                 key={file.id} 
-                file={file} 
+                file={file}
+                index={index + 1}
                 isActive={state.activeFileId === file.id}
                 activePage={state.activePage || 1}
                 onClick={() => setActiveFile(file.id, 1)}
@@ -114,6 +120,9 @@ export function Sidebar() {
                 hideBadge={!showStatuses}
               />
             ))}
+            <div className="px-4 py-2 text-[10px] text-[#858585] border-t border-[#2b2d35] mt-1">
+              Total: {state.files.length} file(s)
+            </div>
           </div>
         )}
       </div>
@@ -137,8 +146,9 @@ export function Sidebar() {
   );
 }
 
-export function FileItem({ file, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
+export function FileItem({ file, index, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, index?: number, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
   const [expanded, setExpanded] = React.useState(true);
+  const [showTooltip, setShowTooltip] = React.useState(false);
   
   const getBadge = () => {
     if (file.status === 'UPLOADING') {
@@ -169,14 +179,30 @@ export function FileItem({ file, isActive, activePage, onClick, onPageClick, hid
     <div className="flex flex-col">
       <div 
         onClick={() => { onClick(); if(hasSheets) setExpanded(!expanded); }}
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
         className={cn(
-          "px-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium",
+          "px-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium relative",
           isActive && !hasSheets
             ? "bg-[#333748] text-white border-l-2 border-[#1e5cdc]" 
             : "hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent"
         )}
       >
+        {/* Custom Tooltip */}
+        {showTooltip && (
+          <div className="absolute left-full top-0 ml-2 z-[100] pointer-events-none">
+            <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2 text-[10px] whitespace-nowrap space-y-0.5">
+              <div className="text-[#858585]">ID: <span className="text-white font-mono">{file.id.slice(0, 8)}...</span></div>
+              <div className="text-[#858585]">File: <span className="text-white">{file.name}</span></div>
+              <div className="text-[#858585]">Size: <span className="text-white">{file.file.size > 0 ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB` : 'Not loaded'}</span></div>
+              <div className="text-[#858585]">Pages: <span className="text-white">{file.pages}</span></div>
+              <div className="text-[#858585]">Status: <span className="text-white font-bold">{file.status}</span></div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
+           {index && <span className="text-[9px] text-[#858585] font-mono w-4 shrink-0 text-right">{index}</span>}
            {hasSheets && (
               <ChevronDown className={cn("w-3 h-3 shrink-0 transition-transform", !expanded && "-rotate-90")} />
            )}

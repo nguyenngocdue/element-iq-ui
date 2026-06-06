@@ -60,6 +60,7 @@ export interface Project {
 export interface SessionState {
   id: string;
   files: DocumentFile[];
+  isLoadingFiles: boolean;
   activeFileId: string | null;
   openFiles: string[];
   pinnedFiles: string[];

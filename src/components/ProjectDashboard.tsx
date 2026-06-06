@@ -283,7 +283,20 @@ export function ProjectDashboard() {
         </div>
 
         <div className="px-8 pb-8 flex-1 overflow-y-auto">
-          {viewMode === 'grid' ? (
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="bg-[#252526] border border-[#333] rounded-lg overflow-hidden flex flex-col h-[280px] animate-pulse">
+                  <div className="p-4 flex flex-col flex-1 border-b border-[#333] bg-[#1e1e1e]">
+                    <div className="h-4 bg-[#333] rounded w-16 mb-3" />
+                    <div className="h-5 bg-[#333] rounded w-3/4 mb-2" />
+                    <div className="h-3 bg-[#333] rounded w-1/2" />
+                  </div>
+                  <div className="h-[140px] bg-[#121212]" />
+                </div>
+              ))}
+            </div>
+          ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredAndSortedProjects.map(p => (
                 <div 
