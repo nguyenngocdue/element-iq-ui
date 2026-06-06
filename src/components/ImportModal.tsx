@@ -15,6 +15,21 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   const { state, setSelectedComponents, setComponentConfidence, addFiles, analyzeFile } = useApp();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedCount, setUploadedCount] = useState(0);
+
+  // Warn browser if upload in progress
+  React.useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (uploading) {
+        e.preventDefault();
+        e.returnValue = 'File upload is in progress. Leaving will cancel remaining uploads.';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [uploading]);
 
   if (!open) return null;
 
@@ -44,16 +59,43 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
     }
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (mode === 'import') {
-      if (files.length > 0) {
-        addFiles(files);
-        // addFiles handles setting active file, but doesn't auto-analyze.
-        // Actually we might want to auto-analyze if they import from this modal?
-        // Let's just do what we did before.
-        onClose();
-        setFiles([]);
+      if (files.length === 0) return;
+      setUploading(true);
+      setUploadedCount(0);
+
+      const { authFetch } = await import('../lib/supabase');
+      const projectId = state.activeProject?.id;
+
+      // Upload files sequentially — modal stays open showing progress
+      for (let i = 0; i < files.length; i++) {
+        setUploadedCount(i + 1);
+        const file = files[i];
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          if (projectId) formData.append('project_id', projectId);
+          const res = await authFetch('/api/v1/files', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            // Dispatch event so sidebar shows file immediately
+            window.dispatchEvent(new CustomEvent('elementiq:file-uploaded', {
+              detail: { id: data.id, name: file.name, size: file.size, file }
+            }));
+          }
+        } catch (err) {
+          console.error(`Upload error: ${file.name}`, err);
+        }
       }
+
+      // All done — reload project files from server (no page reload needed)
+      setUploading(false);
+      setFiles([]);
+      setUploadedCount(0);
+      onClose();
+      // Trigger reload of project files in store
+      window.dispatchEvent(new CustomEvent('elementiq:reload-files'));
     } else {
       if (state.selectedComponents.length > 0) {
         if (targetFileId) {
@@ -112,46 +154,68 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
 
           {mode === 'import' && (
             <section>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Upload PDF Files</h3>
-              <div
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                className={cn('border-2 border-dashed rounded-lg p-12 text-center transition-all', dragActive ? 'border-[#10b981] bg-[#10b981]/10' : 'border-[#3c3c3c] bg-[#1e1e1e] hover:border-[#858585]')}
-              >
-                <Upload className={cn('w-12 h-12 mx-auto mb-4', dragActive ? 'text-[#10b981]' : 'text-[#858585]')} />
-                <p className="text-white font-semibold mb-2">{dragActive ? 'Drop files here' : 'Drag & drop PDF files here'}</p>
-                <p className="text-[#858585] text-sm mb-4">or</p>
-                <label className="inline-block bg-[#10b981] hover:bg-[#059669] text-white px-6 py-2 rounded cursor-pointer transition-colors font-semibold shadow-lg">
-                  Browse Files
-                  <input type="file" multiple accept=".pdf" onChange={handleFileInput} className="hidden" />
-                </label>
-                <p className="text-[#858585] text-xs mt-4">Maximum 100 files, 100MB each</p>
-              </div>
-
-              {files.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#858585] uppercase">Selected Files ({files.length}/100)</span>
-                    <button onClick={() => setFiles([])} className="text-xs text-[#ef4444] hover:underline">Clear All</button>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {files.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-[#1e1e1e] border border-[#3c3c3c] rounded p-2 hover:bg-[#25272e] transition-colors">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <FileText className="w-4 h-4 text-[#10b981] shrink-0" />
-                          <span className="text-sm text-white truncate">{file.name}</span>
-                          <span className="text-xs text-[#858585] shrink-0">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                        </div>
-                        <button onClick={() => removeFile(index)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#ef4444] hover:bg-[#ef4444]/10 shrink-0">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+              <div className="flex gap-4 h-full">
+                {/* Left: Drag & Drop */}
+                <div className="w-1/3 shrink-0">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Upload</h3>
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                    className={cn('border-2 border-dashed rounded-lg text-center transition-all h-[200px] flex flex-col items-center justify-center', dragActive ? 'border-[#10b981] bg-[#10b981]/10' : 'border-[#3c3c3c] bg-[#1e1e1e] hover:border-[#858585]')}
+                  >
+                    <Upload className={cn('w-8 h-8 mb-2', dragActive ? 'text-[#10b981]' : 'text-[#858585]')} />
+                    <p className="text-white font-semibold text-xs mb-1">{dragActive ? 'Drop here' : 'Drag & drop'}</p>
+                    <p className="text-[#858585] text-[10px] mb-2">or</p>
+                    <label className="bg-[#10b981] hover:bg-[#059669] text-white px-4 py-1.5 rounded cursor-pointer text-xs font-semibold">
+                      Browse
+                      <input type="file" multiple accept=".pdf" onChange={handleFileInput} className="hidden" />
+                    </label>
+                    <p className="text-[#858585] text-[9px] mt-2">Max 100 files, 100MB each</p>
                   </div>
                 </div>
-              )}
+
+                {/* Right: File List */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Files ({files.length}/100)</h3>
+                    {files.length > 0 && !uploading && <button onClick={() => setFiles([])} className="text-xs text-[#ef4444] hover:underline">Clear All</button>}
+                  </div>
+                  {files.length === 0 ? (
+                    <div className="h-[200px] flex items-center justify-center border border-[#3c3c3c] rounded-lg bg-[#1e1e1e]">
+                      <p className="text-[#858585] text-xs">No files selected</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-y-auto space-y-1 max-h-[300px]">
+                      {files.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between bg-[#1e1e1e] border border-[#3c3c3c] rounded px-2 py-1.5 text-[12px]">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {uploading ? (
+                              index < uploadedCount ? (
+                                <svg className="w-3.5 h-3.5 text-[#22c55e] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                              ) : index === uploadedCount ? (
+                                <div className="w-3.5 h-3.5 border-2 border-[#3b82f6] border-t-transparent rounded-full animate-spin shrink-0" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5 text-[#858585] shrink-0" />
+                              )
+                            ) : (
+                              <FileText className="w-3.5 h-3.5 text-[#10b981] shrink-0" />
+                            )}
+                            <span className={cn("truncate", uploading && index < uploadedCount ? "text-[#858585]" : "text-white")}>{file.name}</span>
+                            <span className="text-[10px] text-[#858585] shrink-0 ml-1">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
+                          </div>
+                          {!uploading && (
+                            <button onClick={() => removeFile(index)} className="p-0.5 hover:bg-[#3c3c3c] rounded text-[#ef4444] shrink-0 ml-1">
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </section>
           )}
         </div>
@@ -160,7 +224,11 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
           <div className="text-sm text-[#858585]">
             {canAnalyze ? (
               mode === 'import' ? (
-                <span>Ready to import <span className="text-white font-semibold">{files.length}</span> file(s)</span>
+                uploading ? (
+                  <span className="text-[#3b82f6]">Uploading <span className="text-white font-semibold">{uploadedCount}/{files.length}</span> file(s) • {(files.reduce((a, f) => a + f.size, 0) / 1024 / 1024).toFixed(1)} MB</span>
+                ) : (
+                  <span>Ready to import <span className="text-white font-semibold">{files.length}</span> file(s) • {(files.reduce((a, f) => a + f.size, 0) / 1024 / 1024).toFixed(1)} MB total</span>
+                )
               ) : (
                 <span>Ready to analyze {targetFileId ? '1' : state.files.length} file(s) with <span className="text-white font-semibold">{selectedCount}</span> component(s)</span>
               )
@@ -170,9 +238,10 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
           </div>
           <div className="flex gap-3">
             <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-[#858585] hover:text-white transition-colors">Cancel</button>
-            <button onClick={handleAnalyze} disabled={!canAnalyze} className={cn('px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg', canAnalyze ? 'bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20' : 'bg-[#3c3c3c] text-[#858585] cursor-not-allowed')}>
+            <button onClick={handleAnalyze} disabled={!canAnalyze || uploading} className={cn('px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg', canAnalyze && !uploading ? 'bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20' : 'bg-[#3c3c3c] text-[#858585] cursor-not-allowed')}>
+              {uploading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               {mode !== 'import' && <RefreshCw className="w-4 h-4" />}
-              {mode === 'import' ? 'Import Files' : 'Start Analysis'}
+              {uploading ? `${uploadedCount}/${files.length}` : mode === 'import' ? 'Import Files' : 'Start Analysis'}
             </button>
           </div>
         </div>

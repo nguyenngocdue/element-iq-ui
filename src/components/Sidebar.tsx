@@ -11,6 +11,7 @@ export function Sidebar() {
   const [showStatuses, setShowStatuses] = useState(true);
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
+  const [clearProgress, setClearProgress] = useState('');
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const passList = state.files.filter(f => f.status === 'PASS');
@@ -134,10 +135,15 @@ export function Sidebar() {
         confirmLabel="Clear All"
         variant="danger"
         loading={clearLoading}
+        progressText={clearProgress}
         onConfirm={async () => {
           setClearLoading(true);
-          await clearSession();
+          setClearProgress(`Deleting ${state.files.length} file(s)...`);
+          await clearSession((current, total, filename) => {
+            setClearProgress(`Deleting "${filename}" (${current}/${total})`);
+          });
           setClearLoading(false);
+          setClearProgress('');
           setShowClearDialog(false);
         }}
         onCancel={() => setShowClearDialog(false)}

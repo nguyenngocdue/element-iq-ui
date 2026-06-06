@@ -18,7 +18,7 @@ interface AppContextType {
   toggleSidebar: () => void;
   toggleValidation: () => void;
   setConfidenceThreshold: (val: number) => void;
-  clearSession: () => Promise<void>;
+  clearSession: (onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
   analyzeAll: () => Promise<void>;
@@ -468,14 +468,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
 
-  const clearSession = useCallback(async () => {
-    if (!confirm('Delete all files from this project? This cannot be undone.')) return;
+  // Listen for reload-files event (triggered after import completes)
+  React.useEffect(() => {
+    const handleReload = () => {
+      if (state.activeProject) {
+        setActiveProject(state.activeProject);
+      }
+    };
+    const handleFileUploaded = (e: Event) => {
+      const { id, name, size, file } = (e as CustomEvent).detail;
+      setState((prev) => {
+        // Don't add if already exists
+        if (prev.files.some(f => f.id === id)) return prev;
+        const newFile: DocumentFile = {
+          id,
+          name,
+          file: file || new File([], name, { type: 'application/pdf' }),
+          status: 'PENDING',
+          pages: 1,
+          detections: [],
+          events: [{ id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'Uploaded', type: 'SUCCESS' }],
+        };
+        return { ...prev, files: [...prev.files, newFile] };
+      });
+    };
+    window.addEventListener('elementiq:reload-files', handleReload);
+    window.addEventListener('elementiq:file-uploaded', handleFileUploaded);
+    return () => {
+      window.removeEventListener('elementiq:reload-files', handleReload);
+      window.removeEventListener('elementiq:file-uploaded', handleFileUploaded);
+    };
+  }, [state.activeProject]);
+
+  const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
+    // No confirm here — ConfirmDialog in Sidebar handles confirmation
 
     // Delete all files from backend
-    const filesToDelete = state.files;
+    const filesToDelete = [...state.files];
+    const total = filesToDelete.length;
     const { authFetch } = await import('./lib/supabase');
     
-    for (const f of filesToDelete) {
+    for (let i = 0; i < filesToDelete.length; i++) {
+      const f = filesToDelete[i];
+      onProgress?.(i + 1, total, f.name);
       try {
         await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
       } catch {

@@ -9,6 +9,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   variant?: 'danger' | 'warning' | 'info';
   loading?: boolean;
+  progressText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   variant = 'danger',
   loading = false,
+  progressText,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -61,7 +63,7 @@ export function ConfirmDialog({
             <h3 className="text-lg font-semibold text-white mb-1">{title}</h3>
             <p className="text-sm text-[#858585] leading-relaxed">{description}</p>
             {loading && (
-              <p className="text-xs text-[#f59e0b] mt-2 animate-pulse">Please wait while processing completes...</p>
+              <p className="text-xs text-[#f59e0b] mt-2 animate-pulse">{progressText || 'Please wait while processing completes...'}</p>
             )}
           </div>
           <button onClick={onCancel} disabled={loading} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#858585] hover:text-white shrink-0 disabled:opacity-30 disabled:pointer-events-none">

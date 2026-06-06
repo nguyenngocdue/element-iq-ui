@@ -57,6 +57,20 @@ function AppContent() {
   const { state, closeConfigModal, setActiveProject } = useApp();
   const [initialLoad, setInitialLoad] = React.useState(true);
 
+  // Warn user before leaving if upload/analysis is in progress
+  useEffect(() => {
+    const hasActiveProcess = state.files.some(f => f.status === 'UPLOADING' || f.status === 'ANALYZING');
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasActiveProcess) {
+        e.preventDefault();
+        e.returnValue = 'Upload or analysis is still in progress. Changes may be lost if you leave.';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [state.files]);
+
   // On mount: if URL has ?project=..., restore project view immediately
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
