@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { ChevronDown, CloudUpload, File as FileIcon, X, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronRight, CloudUpload, File as FileIcon, X, RefreshCw, Eye, EyeOff, Image, FileText, BarChart2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { DocumentFile } from '../types';
 import { useResizable } from '../hooks/useResizable';
@@ -221,6 +221,7 @@ export function Sidebar() {
 export function FileItem({ file, index, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, index?: number, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
   const { state } = useApp();
   const [expanded, setExpanded] = React.useState(true);
+  const [artifactsExpanded, setArtifactsExpanded] = React.useState(true);
   const [showTooltip, setShowTooltip] = React.useState(false);
   const itemRef = React.useRef<HTMLDivElement>(null);
   
@@ -266,14 +267,28 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
         {/* Custom Tooltip */}
         {showTooltip && itemRef.current && (() => {
           const rect = itemRef.current!.getBoundingClientRect();
+          const sizeStr = file.fileSizeBytes
+            ? `${(file.fileSizeBytes / 1024 / 1024).toFixed(2)} MB`
+            : file.file.size > 0
+            ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB`
+            : 'N/A';
+          const uploadedStr = file.uploadedAt
+            ? new Date(file.uploadedAt).toLocaleString()
+            : '—';
           return (
             <div className="fixed z-[300] pointer-events-none" style={{ left: rect.right + 8, top: rect.top }}>
-              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2 text-[10px] whitespace-nowrap space-y-0.5">
+              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2.5 text-[10px] space-y-1 min-w-[220px]">
                 <div className="text-[#858585]">ID: <span className="text-white font-mono">{file.id.slice(0, 8)}...</span></div>
-                <div className="text-[#858585]">File: <span className="text-white">{file.name}</span></div>
-                <div className="text-[#858585]">Size: <span className="text-white">{file.file.size > 0 ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB` : 'Not loaded'}</span></div>
+                <div className="text-[#858585]">File: <span className="text-white font-medium">{file.name}</span></div>
+                <div className="text-[#858585]">Size: <span className="text-white">{sizeStr}</span></div>
                 <div className="text-[#858585]">Pages: <span className="text-white">{file.pages}</span></div>
                 <div className="text-[#858585]">Status: <span className="text-white font-bold">{file.status}</span></div>
+                <div className="text-[#858585]">Uploaded: <span className="text-white">{uploadedStr}</span></div>
+                {file.localPath && (
+                  <div className="text-[#858585] border-t border-[#333] pt-1 mt-1">
+                    Path: <span className="text-[#6b9af5] font-mono break-all">{file.localPath}</span>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -281,8 +296,19 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
 
         <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
            {index && <span className="text-[9px] text-[#858585] font-mono w-4 shrink-0 text-right">{index}</span>}
-           {hasSheets && (
-              <ChevronDown className={cn("w-3 h-3 shrink-0 transition-transform", !expanded && "-rotate-90")} />
+           {/* Expand/collapse toggle — shows when file has artifacts or sheets */}
+           {(hasSheets || (file.artifacts && file.artifacts.length > 0)) ? (
+             <button
+               onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+               className="shrink-0 text-[#858585] hover:text-white transition-colors"
+             >
+               {expanded
+                 ? <ChevronDown className="w-3 h-3" />
+                 : <ChevronRight className="w-3 h-3" />
+               }
+             </button>
+           ) : (
+             <span className="w-3 shrink-0" />
            )}
           <FileIcon className={cn("w-3.5 h-3.5 shrink-0 opacity-80", isActive && !hasSheets ? "text-[#82aaff] fill-current/20" : "")} />
           <span className="truncate">{file.name}</span>
@@ -304,35 +330,63 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
         </div>
       )}
 
-      {/* Artifact files (shown when expanded and file has been analyzed) */}
-      {expanded && file.artifacts && file.artifacts.length > 0 && (
-        <>
-          {file.artifacts.map(a => {
-            const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
-            const isArtifactActive = state.activeArtifact?.id === a.id;
-            return (
+      {/* Artifacts group node — collapsible */}
+      {file.artifacts && file.artifacts.length > 0 && (() => {
+        const hasArtifacts = true;
+        return (
+          <>
+            {/* Artifacts header node */}
+            {expanded && (
               <div
-                key={a.id}
                 onClick={(e) => {
                   e.stopPropagation();
-                  window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
-                    detail: { id: a.id, type: a.type, downloadUrl: a.downloadUrl, name: artifactName }
-                  }));
+                  setExpanded(prev => {
+                    // We reuse expanded for file, need separate state for artifacts
+                    return prev;
+                  });
                 }}
-                className={cn(
-                  "pl-10 pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors",
-                  isArtifactActive
-                    ? "bg-[#333748] text-white border-l-2 border-[#10b981]"
-                    : "hover:bg-[#25272e] text-[#858585] hover:text-white border-l-2 border-transparent"
-                )}
+                className="pl-9 pr-4 py-1 flex items-center gap-1.5 cursor-pointer text-[10px] text-[#858585] hover:text-white hover:bg-[#25272e] border-l-2 border-transparent transition-colors select-none"
+                onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(v => !v); }}
               >
-                <span>{a.type === 'ANNOTATED_PNG' ? '🖼️' : a.type === 'ANNOTATED_PDF' ? '📋' : '📊'}</span>
-                <span className="truncate">{artifactName}</span>
+                {artifactsExpanded
+                  ? <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                  : <ChevronRight className="w-2.5 h-2.5 shrink-0" />
+                }
+                <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
+                <span className="ml-auto text-[9px] text-[#555]">{file.artifacts.length}</span>
               </div>
-            );
-          })}
-        </>
-      )}
+            )}
+
+            {/* Artifact items */}
+            {expanded && artifactsExpanded && file.artifacts.map(a => {
+              const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+              const isArtifactActive = state.activeArtifact?.id === a.id;
+              const ArtifactIcon = a.type === 'ANNOTATED_PNG' ? Image : a.type === 'ANNOTATED_PDF' ? FileText : BarChart2;
+              const iconColor = a.type === 'ANNOTATED_PNG' ? 'text-[#10b981]' : a.type === 'ANNOTATED_PDF' ? 'text-[#3b82f6]' : 'text-[#f59e0b]';
+              return (
+                <div
+                  key={a.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
+                      detail: { id: a.id, type: a.type, downloadUrl: a.downloadUrl, name: artifactName }
+                    }));
+                  }}
+                  className={cn(
+                    "pl-14 pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors",
+                    isArtifactActive
+                      ? "bg-[#333748] text-white border-l-2 border-[#10b981]"
+                      : "hover:bg-[#25272e] text-[#858585] hover:text-white border-l-2 border-transparent"
+                  )}
+                >
+                  <ArtifactIcon className={cn("w-3.5 h-3.5 shrink-0", iconColor)} />
+                  <span className="truncate">{artifactName}</span>
+                </div>
+              );
+            })}
+          </>
+        );
+      })()}
 
       {expanded && hasSheets && Array.from({ length: file.pages }).map((_, idx) => {
          const pageNum = idx + 1;

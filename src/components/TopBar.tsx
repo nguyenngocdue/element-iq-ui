@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Search, Bell, User, LayoutGrid, BarChart2, FolderArchive, Play, RefreshCw, Check, HelpCircle } from 'lucide-react';
+import { Check, HelpCircle, LogOut } from 'lucide-react';
 import { useApp } from '../store';
 import { AboutModal, ReportIssueModal } from './Modals';
+import { useAuth } from '../lib/auth-context';
 
 export function TopBar() {
   const { state, clearSession, setActiveSidebarTab, setCurrentView } = useApp();
+  const { user, signOut } = useAuth();
   
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -22,6 +25,7 @@ export function TopBar() {
 
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const helpMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -31,10 +35,20 @@ export function TopBar() {
       if (helpMenuRef.current && !helpMenuRef.current.contains(event.target as Node)) {
         setIsHelpMenuOpen(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const username = user?.user_metadata?.username ?? user?.email?.split('@')[0] ?? 'User';
+  const fullName = user?.user_metadata?.full_name ?? username;
+  const email = user?.email ?? '—';
+  const uid = user?.id ?? '—';
+  // Avatar initials: first letter of full name
+  const initials = fullName.charAt(0).toUpperCase();
 
   return (
     <>
@@ -126,6 +140,57 @@ export function TopBar() {
             <div className={`w-2 h-2 rounded-full ${state.isEngineLive ? 'bg-green-500 animate-pulse' : 'bg-[#858585]'}`}></div>
             <span className="uppercase">{state.isEngineLive ? 'ENGINE: GPU LIVE' : 'ENGINE: OFFLINE'}</span>
           </div>
+
+          {/* User avatar + dropdown */}
+          {user && (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="w-6 h-6 rounded-full bg-[#10b981] flex items-center justify-center text-white text-[11px] font-bold hover:opacity-80 transition-opacity"
+                title={fullName}
+              >
+                {initials}
+              </button>
+
+              {isUserMenuOpen && (
+                <div className="absolute top-[calc(100%+6px)] right-0 w-[260px] bg-[#1e1e1e] border border-[#333] rounded-md shadow-2xl py-3 z-50">
+                  {/* Avatar + name header */}
+                  <div className="flex items-center gap-3 px-4 pb-3 border-b border-[#333]">
+                    <div className="w-9 h-9 rounded-full bg-[#10b981] flex items-center justify-center text-white text-[15px] font-bold shrink-0">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-white text-[12px] font-semibold truncate">{fullName}</div>
+                      <div className="text-[#858585] text-[11px] truncate">{username}</div>
+                    </div>
+                  </div>
+
+                  {/* User details */}
+                  <div className="px-4 py-2 space-y-2">
+                    <div>
+                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">Email</div>
+                      <div className="text-[#cccccc] text-[11px] truncate">{email}</div>
+                    </div>
+                    <div>
+                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">User ID</div>
+                      <div className="text-[#cccccc] text-[10px] font-mono truncate opacity-70">{uid}</div>
+                    </div>
+                  </div>
+
+                  {/* Sign out */}
+                  <div className="border-t border-[#333] mt-2 pt-1">
+                    <button
+                      onClick={() => { signOut(); setIsUserMenuOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-1.5 text-[12px] text-[#f87171] hover:bg-[#2d2d2d] transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

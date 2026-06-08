@@ -454,6 +454,15 @@ export function MainEditor() {
   const [scale, setScale] = useState(0.5);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
+
+  // Reset scale when switching to/from artifact
+  useEffect(() => {
+    if (state.activeArtifact?.type === 'ANNOTATED_PNG') {
+      setScale(0.21);
+    } else if (!state.activeArtifact) {
+      setScale(0.5);
+    }
+  }, [state.activeArtifact?.id]);
   const [zoomRect, setZoomRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
   const [pdfDimensions, setPdfDimensions] = useState<{ w: number, h: number } | null>(null);
   const [pngDimensions, setPngDimensions] = useState<{ w: number, h: number } | null>(null);

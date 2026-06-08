@@ -26,6 +26,10 @@ export interface DocumentFile {
   // Real progress from backend
   analysisProgress?: number;   // 0–100
   analysisStage?: string;      // e.g. "Running YOLO detection..."
+  // Server metadata
+  uploadedAt?: string;         // ISO timestamp from server
+  localPath?: string;          // server storage path
+  fileSizeBytes?: number;      // original file size in bytes
 }
 
 export interface Detection {

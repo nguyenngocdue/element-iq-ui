@@ -414,13 +414,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
           // Use batch analysis data from endpoint (no extra API calls needed)
           if (f.analysis) {
-            const overallStatus = f.analysis.overall_status || f.analysis.summary?.overall;
-            status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : 'FAIL';
+            const overallStatus = (f.analysis.overall_status || f.analysis.summary?.overall || '').toUpperCase();
+            status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : 'PENDING';
             passRate = f.analysis.summary?.pass_rate ?? (overallStatus === 'PASS' ? 100 : 0);
             analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
             detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
               (comp.objects ?? []).map((obj: any, i: number) => {
                 const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
+                const report = (comp.report ?? []).find((r: any) => {
+                  const ids = r.matched_cluster?.object_ids ?? [];
+                  return ids.includes(i + 1);
+                });
+                const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
                 return {
                   id: `${comp.component_id}-${i}`,
                   page: 1,
@@ -430,7 +435,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   height: (y2 - y1) * DPI_RATIO,
                   type: obj.face ?? 'UNKNOWN',
                   confidence: obj.confidence ?? 0,
-                  status: 'PASS',
+                  status: detStatus,
+                  reason: report?.reason,
                   componentId: comp.component_id,
                 };
               })
@@ -446,6 +452,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             detections,
             passRate,
             analyzedComponents,
+            uploadedAt: f.uploaded_at,
+            localPath: f.local_path,
+            fileSizeBytes: f.file_size_bytes,
             artifacts: (f.analysis?.artifacts ?? []).map((a: any) => ({
               id: a.id,
               type: a.artifact_type,
@@ -667,6 +676,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const detections = components.flatMap((comp: any) =>
         (comp.objects ?? []).map((obj: any, i: number) => {
           const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
+          // Match object to report entry by cluster proximity
+          const report = (comp.report ?? []).find((r: any) => {
+            const ids = r.matched_cluster?.object_ids ?? [];
+            return ids.includes(i + 1);  // object id is 1-indexed
+          });
+          const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
           return {
             id: `${comp.component_id}-${i}`,
             page: 1,
@@ -676,7 +691,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             height: (y2 - y1) * DPI_RATIO,
             type: obj.face ?? 'UNKNOWN',
             confidence: obj.confidence ?? 0,
-            status: 'PASS',
+            status: detStatus,
+            reason: report?.reason,
             componentId: comp.component_id,
           };
         })
