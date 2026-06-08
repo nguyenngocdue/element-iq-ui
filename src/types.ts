@@ -58,6 +58,20 @@ export interface Detection {
   componentId?: string;
 }
 
+export interface AnalysisLogLine {
+  id: string;
+  ts: string;
+  level: 'info' | 'success' | 'warn' | 'error' | 'dim';
+  message: string;
+  fileId?: string;
+}
+
+export interface AnalysisQueueState {
+  current: number;
+  total: number;
+  currentFileName?: string;
+}
+
 export interface AppEvent {
   id: string;
   timestamp: string;
@@ -92,10 +106,14 @@ export interface SessionState {
   showConfigModal: boolean;
   configModalMode: 'import' | 'reanalyze';
   configTargetFileId?: string;
+  configTargetFileIds?: string[];
   currentView: 'projects' | 'editor';
   activeProject?: Project;
   isBotOpen: boolean;
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;
   activeArtifact?: { id: string; type: string; downloadUrl: string; name: string } | null;
+  isAnalysisTerminalOpen: boolean;
+  analysisLogs: AnalysisLogLine[];
+  analysisQueue: AnalysisQueueState | null;
 }

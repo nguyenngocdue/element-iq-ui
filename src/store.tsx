@@ -1,8 +1,28 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { SessionState, DocumentFile, Component, Project } from './types';
+import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
+
+function buildModelLogLines(
+  selectedComps: string[],
+  availableComponents: Component[],
+  componentConfidence: Record<string, number>,
+  confidenceThreshold: number,
+): string[] {
+  return selectedComps.map((compId) => {
+    const meta = availableComponents.find((c) => c.id === compId);
+    const conf = ((componentConfidence[compId] ?? confidenceThreshold) * 100).toFixed(0);
+    const modelFile = meta?.modelFile?.trim();
+    const label = meta?.name ?? compId;
+    if (modelFile) {
+      const statusTag =
+        meta?.status === 'missing' ? ' · MISSING' : meta?.status === 'training' ? ' · TRAINING' : '';
+      return `${label} (${compId}) → ${modelFile} @ ${conf}%${statusTag}`;
+    }
+    return `${label} (${compId}) @ ${conf}% · model file unknown`;
+  });
+}
 
 interface AppContextType {
   state: SessionState;
@@ -21,12 +41,16 @@ interface AppContextType {
   clearSession: (onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
-  analyzeAll: () => Promise<void>;
+  analyzeAll: (orderedIds?: string[]) => Promise<void>;
+  analyzeSelected: (ids: string[]) => Promise<void>;
   stopAnalysis: () => void;
+  appendAnalysisLog: (entry: Omit<AnalysisLogLine, 'id' | 'ts'>) => void;
+  clearAnalysisLogs: () => void;
+  toggleAnalysisTerminal: () => void;
   setSelectedComponents: (ids: string[]) => void;
   setComponentConfidence: (id: string, confidence: number) => void;
   toggleComponent: (id: string) => void;
-  openConfigModal: (mode: 'import' | 'reanalyze', fileId?: string) => void;
+  openConfigModal: (mode: 'import' | 'reanalyze', fileId?: string, fileIds?: string[]) => void;
   closeConfigModal: () => void;
   setCurrentView: (view: 'projects' | 'editor') => void;
   setActiveProject: (project: Project) => void;
@@ -72,6 +96,9 @@ const initialState: SessionState = {
   isBotOpen: false,
   splitMode: 'none',
   splitFileId: null,
+  isAnalysisTerminalOpen: false,
+  analysisLogs: [],
+  analysisQueue: null,
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -156,15 +183,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         updateFileStatus(doc.id, { uploadProgress: 10 });
 
-        // Read page count
+        // Read page count (reuse buffer for upload — File blob must not be read twice)
         const arrayBuffer = await doc.file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         updateFileStatus(doc.id, { pages: pdf.numPages, uploadProgress: 30 });
 
         // Upload to backend (associate with active project)
         const projectId = state.activeProject?.id;
+        const uploadFile = new File([arrayBuffer], doc.file.name, {
+          type: doc.file.type || 'application/pdf',
+        });
         const formData = new FormData();
-        formData.append('file', doc.file);
+        formData.append('file', uploadFile, doc.file.name);
         if (projectId) {
           formData.append('project_id', projectId);
         }
@@ -355,12 +385,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const openConfigModal = useCallback((mode: 'import' | 'reanalyze', fileId?: string) => {
-    setState((prev) => ({ ...prev, showConfigModal: true, configModalMode: mode, configTargetFileId: fileId }));
+  const openConfigModal = useCallback((mode: 'import' | 'reanalyze', fileId?: string, fileIds?: string[]) => {
+    setState((prev) => ({
+      ...prev,
+      showConfigModal: true,
+      configModalMode: mode,
+      configTargetFileId: fileId,
+      configTargetFileIds: fileIds,
+    }));
   }, []);
 
   const closeConfigModal = useCallback(() => {
-    setState((prev) => ({ ...prev, showConfigModal: false }));
+    setState((prev) => ({
+      ...prev,
+      showConfigModal: false,
+      configTargetFileId: undefined,
+      configTargetFileIds: undefined,
+    }));
   }, []);
 
   const setCurrentView = useCallback((view: 'projects' | 'editor') => {
@@ -572,18 +613,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.files]);
 
   const stopAnalysisRef = React.useRef(false);
+  const filesRef = React.useRef(state.files);
+  filesRef.current = state.files;
+
+  const appendAnalysisLog = useCallback((entry: Omit<AnalysisLogLine, 'id' | 'ts'>) => {
+    setState((prev) => ({
+      ...prev,
+      isAnalysisTerminalOpen: true,
+      analysisLogs: [
+        ...prev.analysisLogs,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          ts: new Date().toLocaleTimeString('en-US', { hour12: false }),
+          ...entry,
+        },
+      ].slice(-800),
+    }));
+  }, []);
+
+  const clearAnalysisLogs = useCallback(() => {
+    setState((prev) => ({ ...prev, analysisLogs: [] }));
+  }, []);
+
+  const toggleAnalysisTerminal = useCallback(() => {
+    setState((prev) => ({ ...prev, isAnalysisTerminalOpen: !prev.isAnalysisTerminalOpen }));
+  }, []);
+
+  const getFileName = (id: string) =>
+    filesRef.current.find((f) => f.id === id)?.name ?? id.slice(0, 8);
 
   const analyzeFile = useCallback(async (id: string) => {
+    const fileName = getFileName(id);
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
-    let file = state.files.find(f => f.id === id)?.file;
+    appendAnalysisLog({ level: 'dim', message: `Connecting to backend…`, fileId: id });
+    let file = filesRef.current.find(f => f.id === id)?.file;
     if (!file) return;
 
     try {
-      const { authFetch } = await import('./lib/supabase');
+      const { authFetch, isServerFileId } = await import('./lib/supabase');
+      const useServerReRun = isServerFileId(id);
 
-      // ── 0. Ensure file bytes are loaded (download if placeholder) ──
-      if (file.size === 0) {
+      // ── 0. Ensure file bytes are loaded (only needed for raw multipart upload) ──
+      if (!useServerReRun && file.size === 0) {
         updateFileStatus(id, { analysisProgress: 5, analysisStage: 'Downloading PDF from server...' });
+        appendAnalysisLog({ level: 'dim', message: 'Downloading PDF from server…', fileId: id });
         const dlRes = await authFetch(`/api/v1/files/${id}/download`);
         if (!dlRes.ok) throw new Error('Failed to download file for analysis');
         const blob = await dlRes.blob();
@@ -609,28 +682,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         page_index: 0,
       };
 
-      // console.group('[ElementIQ] Analysis Config');
-      // console.log('Components:', selectedComps);
-      // console.log('Confidence threshold:', confThreshold);
-      // console.log('Per-component confidence:', state.componentConfidence);
-      // console.log('File:', state.files.find(f => f.id === id)?.name);
-      // console.groupEnd();
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('components', JSON.stringify(selectedComps));
-      formData.append('config', JSON.stringify(analysisConfig));
-
       updateFileStatus(id, { analysisProgress: 10, analysisStage: `Queuing: ${selectedComps.join(', ')} @ ${(analysisConfig.conf_threshold * 100).toFixed(0)}% conf` });
+      buildModelLogLines(
+        selectedComps,
+        state.availableComponents,
+        state.componentConfidence,
+        state.confidenceThreshold,
+      ).forEach((line) => {
+        appendAnalysisLog({ level: 'info', message: `Model: ${line}`, fileId: id });
+      });
 
-      const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData });
-      if (!res.ok) {
+      const parseApiError = async (res: Response) => {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.detail?.message || err?.detail || err?.message || `HTTP ${res.status}`);
-      }
+        const detail = err?.detail;
+        if (typeof detail === 'string') return detail;
+        if (detail?.message) return detail.message;
+        if (Array.isArray(detail)) return detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join('; ') || `HTTP ${res.status}`;
+        return err?.message || `HTTP ${res.status}`;
+      };
 
-      const { status_url } = await res.json();
+      let status_url: string;
+
+      // Files already on server (UUID) → re-run via JSON (no multipart re-upload)
+      if (useServerReRun) {
+        appendAnalysisLog({ level: 'dim', message: 'Submitting re-analysis job…', fileId: id });
+        const res = await authFetch('/api/v1/analyze/re-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_id: id,
+            components: selectedComps,
+            config: analysisConfig,
+          }),
+        });
+        if (!res.ok) throw new Error(await parseApiError(res));
+        ({ status_url } = await res.json());
+      } else {
+        const formData = new FormData();
+        formData.append('file', file, file.name || 'drawing.pdf');
+        formData.append('components', JSON.stringify(selectedComps));
+        formData.append('config', JSON.stringify(analysisConfig));
+
+        const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(await parseApiError(res));
+        ({ status_url } = await res.json());
+      }
       updateFileStatus(id, { analysisProgress: 20, analysisStage: 'Running YOLO detection...' });
+      appendAnalysisLog({ level: 'dim', message: 'Job queued — polling status…', fileId: id });
+
+      let lastLoggedStage = '';
 
       // ── 2. Poll until COMPLETED or FAILED ──────────────────
       const poll = async (): Promise<any> => {
@@ -638,7 +738,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!jobRes.ok) throw new Error(`Failed to fetch job status: ${jobRes.status}`);
         const job = await jobRes.json();
 
-        // Mirror real backend progress into UI
         if (job.progress) {
           const stage =
             job.progress < 20  ? 'Uploading PDF...' :
@@ -647,6 +746,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             job.progress < 95  ? 'Validating results...' :
                                  'Saving artifacts...';
           updateFileStatus(id, { analysisProgress: job.progress, analysisStage: stage });
+          if (stage !== lastLoggedStage) {
+            lastLoggedStage = stage;
+            appendAnalysisLog({ level: 'dim', message: `${stage} (${job.progress}%)`, fileId: id });
+          }
         }
 
         if (job.status === 'COMPLETED') return job;
@@ -655,6 +758,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Check if user clicked Stop
         if (stopAnalysisRef.current) {
           updateFileStatus(id, { status: 'PENDING', analysisProgress: 0, analysisStage: 'Stopped by user' });
+          appendAnalysisLog({ level: 'warn', message: `${fileName} — stopped by user`, fileId: id });
           throw new Error('Stopped by user');
         }
 
@@ -733,38 +837,95 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [
-          ...(state.files.find(f => f.id === id)?.events ?? []),
+          ...(filesRef.current.find(f => f.id === id)?.events ?? []),
           { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Analysis complete — ${overallStatus}`, type: 'SUCCESS' },
         ],
         passRate,
       });
 
+      appendAnalysisLog({
+        level: fileStatus === 'PASS' ? 'success' : fileStatus === 'FAIL' ? 'error' : 'warn',
+        message: `${fileName} → ${overallStatus} · ${detections.length} detection(s) · ${Number(passRate).toFixed(1)}% pass`,
+        fileId: id,
+      });
+
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'Stopped by user') return;
+      appendAnalysisLog({ level: 'error', message: `${fileName} → ${msg}`, fileId: id });
       updateFileStatus(id, {
         status: 'FAIL',
         analysisProgress: 0,
         analysisStage: 'Error',
         events: [
-          ...(state.files.find(f => f.id === id)?.events ?? []),
-          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${err}`, type: 'ERROR' },
+          ...(filesRef.current.find(f => f.id === id)?.events ?? []),
+          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${msg}`, type: 'ERROR' },
         ],
       });
     }
-  }, [state.files, state.confidenceThreshold, state.selectedComponents, state.componentConfidence, updateFileStatus]);
+  }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.availableComponents, updateFileStatus, appendAnalysisLog]);
 
-  const analyzeAll = useCallback(async () => {
+  const runAnalysisQueue = useCallback(async (orderedIds: string[]) => {
     stopAnalysisRef.current = false;
-    const filesToAnalyze = state.files.filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING');
-    if (filesToAnalyze.length === 0) return;
-    for (const f of filesToAnalyze) {
-      if (stopAnalysisRef.current) break;
-      await analyzeFile(f.id);
+    const ids = orderedIds.filter((id) => {
+      const f = filesRef.current.find((ff) => ff.id === id);
+      return f && f.status !== 'ANALYZING' && f.status !== 'UPLOADING';
+    });
+    if (ids.length === 0) return;
+
+    clearAnalysisLogs();
+    setState((prev) => ({
+      ...prev,
+      isAnalysisTerminalOpen: true,
+      analysisQueue: { current: 0, total: ids.length },
+    }));
+    appendAnalysisLog({ level: 'info', message: `Queue started — ${ids.length} file(s) in explorer sort order` });
+    const queueModels = buildModelLogLines(
+      state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube'],
+      state.availableComponents,
+      state.componentConfidence,
+      state.confidenceThreshold,
+    );
+    queueModels.forEach((line) => {
+      appendAnalysisLog({ level: 'info', message: `Model: ${line}` });
+    });
+
+    for (let i = 0; i < ids.length; i++) {
+      if (stopAnalysisRef.current) {
+        appendAnalysisLog({ level: 'warn', message: 'Queue stopped by user' });
+        break;
+      }
+      const id = ids[i];
+      const name = getFileName(id);
+      setState((prev) => ({
+        ...prev,
+        analysisQueue: { current: i + 1, total: ids.length, currentFileName: name },
+      }));
+      appendAnalysisLog({ level: 'info', message: `[${i + 1}/${ids.length}] ▶ ${name}`, fileId: id });
+      await analyzeFile(id);
     }
-  }, [state.files, analyzeFile]);
+
+    if (!stopAnalysisRef.current) {
+      appendAnalysisLog({ level: 'success', message: 'Queue finished' });
+    }
+    setState((prev) => ({ ...prev, analysisQueue: null }));
+  }, [analyzeFile, appendAnalysisLog, clearAnalysisLogs, state.selectedComponents, state.availableComponents, state.componentConfidence, state.confidenceThreshold]);
+
+  const analyzeAll = useCallback(async (orderedIds?: string[]) => {
+    const ids = orderedIds ?? filesRef.current
+      .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
+      .map(f => f.id);
+    await runAnalysisQueue(ids);
+  }, [runAnalysisQueue]);
+
+  const analyzeSelected = useCallback(async (ids: string[]) => {
+    await runAnalysisQueue(ids);
+  }, [runAnalysisQueue]);
 
   const stopAnalysis = useCallback(() => {
     stopAnalysisRef.current = true;
-  }, []);
+    appendAnalysisLog({ level: 'warn', message: 'Stop requested — finishing current file…' });
+  }, [appendAnalysisLog]);
 
   return (
     <AppContext.Provider
@@ -786,7 +947,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateFileStatus,
         analyzeFile,
         analyzeAll,
+        analyzeSelected,
         stopAnalysis,
+        appendAnalysisLog,
+        clearAnalysisLogs,
+        toggleAnalysisTerminal,
         setSelectedComponents,
         setComponentConfidence,
         toggleComponent,

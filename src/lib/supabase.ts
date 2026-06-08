@@ -25,6 +25,10 @@ export async function getAccessToken(): Promise<string | null> {
  */
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined) || '';
 
+function isServerFileId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
 /**
  * Wrapper for fetch that automatically attaches the Supabase JWT.
  * Use this instead of raw fetch() for all /api/v1 calls.
@@ -35,7 +39,12 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  // Prepend backend URL if the path is relative and BACKEND_URL is set
+  // FormData must not set Content-Type manually — browser adds multipart boundary.
+  if (options.body instanceof FormData) {
+    headers.delete('Content-Type');
+  }
   const fullUrl = url.startsWith('/') && BACKEND_URL ? `${BACKEND_URL}${url}` : url;
   return fetch(fullUrl, { ...options, headers });
 }
+
+export { isServerFileId };

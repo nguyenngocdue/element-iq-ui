@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../store';
+import { AnalysisTerminalToggle } from './AnalysisTerminal';
 
 export function BottomBar() {
   const { state } = useApp();
@@ -34,6 +35,7 @@ export function BottomBar() {
   return (
     <footer className={`h-[22px] ${barColor} text-white flex items-center justify-between px-3 text-[10px] shrink-0 font-sans select-none transition-colors`}>
       <div className="flex items-center gap-4">
+        <AnalysisTerminalToggle />
         <div className="flex items-center gap-1">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm12-3a1 1 0 10-2 0 1 1 0 002 0zM9 11V9H7v2h2zm0 2v-2h2v2H9z" clipRule="evenodd"></path></svg>
           <span>{getStatusText()}</span>

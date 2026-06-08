@@ -59,7 +59,7 @@ export function ExplorerArtifactRow({
   continuingGuides,
   isLast,
   className,
-}: {
+}: React.Attributes & {
   artifact: FileArtifact;
   sourceFileName: string;
   isActive: boolean;

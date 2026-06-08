@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../store';
 import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
@@ -53,9 +54,11 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
     progress < 95 ? 'Validation' :
                     'Saving Artifacts';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] font-sans">
-      <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-[460px] overflow-hidden text-sm flex flex-col relative z-10">
+  const selectedComps = state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube'];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-[3px] font-sans">
+      <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-[460px] overflow-hidden text-sm flex flex-col relative">
          <div className="p-5 border-b border-[#3c3c3c] flex items-center justify-between bg-[#1e1e1e]">
            <div className="flex items-center gap-3">
              <div className="text-[#82aaff]"><ScanFace className="w-6 h-6" /></div>
@@ -83,9 +86,27 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
                <div className="text-[#a0a5b5] text-[10px] font-bold tracking-widest uppercase">Config</div>
              </div>
              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded px-3 py-2 text-[11px] space-y-0.5">
-               <div className="flex justify-between"><span className="text-[#858585]">Components:</span><span className="text-white font-mono">{state.selectedComponents.join(', ') || 'grout-tube'}</span></div>
-               <div className="flex justify-between"><span className="text-[#858585]">Confidence:</span><span className="text-white font-mono">{((state.componentConfidence[state.selectedComponents[0]] ?? state.confidenceThreshold) * 100).toFixed(0)}%</span></div>
-               <div className="flex justify-between"><span className="text-[#858585]">File:</span><span className="text-white truncate ml-2">{fileName}</span></div>
+               {selectedComps.map((compId) => {
+                 const meta = state.availableComponents.find((c) => c.id === compId);
+                 const conf = ((state.componentConfidence[compId] ?? state.confidenceThreshold) * 100).toFixed(0);
+                 return (
+                   <div key={compId} className="space-y-0.5 pb-1 last:pb-0 border-b border-[#3c3c3c]/40 last:border-0">
+                     <div className="flex justify-between gap-2">
+                       <span className="text-[#858585] shrink-0">Component:</span>
+                       <span className="text-white font-mono truncate">{meta?.name ?? compId}</span>
+                     </div>
+                     <div className="flex justify-between gap-2">
+                       <span className="text-[#858585] shrink-0">Model:</span>
+                       <span className="text-[#82aaff] font-mono truncate" title={meta?.modelFile}>{meta?.modelFile || '—'}</span>
+                     </div>
+                     <div className="flex justify-between gap-2">
+                       <span className="text-[#858585] shrink-0">Confidence:</span>
+                       <span className="text-white font-mono">{conf}%</span>
+                     </div>
+                   </div>
+                 );
+               })}
+               <div className="flex justify-between pt-1"><span className="text-[#858585]">File:</span><span className="text-white truncate ml-2">{fileName}</span></div>
              </div>
            </div>
 
@@ -125,7 +146,8 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
            </button>
          </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -449,7 +471,7 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
 }
 
 export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact } = useApp();
+  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact, toggleAnalysisTerminal } = useApp();
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const { getScale, setScaleForKey } = usePerViewZoom();
@@ -685,7 +707,7 @@ export function MainEditor() {
     // Show skeleton when loading files
     if (state.isLoadingFiles) {
       return (
-        <div className="flex-1 bg-editor-bg flex items-center justify-center p-8">
+        <div className="flex-1 min-h-0 bg-editor-bg flex items-center justify-center p-8">
           <div className="w-full max-w-[800px] animate-pulse space-y-4">
             {/* Toolbar skeleton */}
             <div className="flex gap-2">
@@ -703,7 +725,7 @@ export function MainEditor() {
     }
 
     return (
-      <div className="flex-1 bg-editor-bg flex items-center justify-center text-muted flex-col relative overflow-hidden">
+      <div className="flex-1 min-h-0 bg-editor-bg flex items-center justify-center text-muted flex-col relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
         <div className="w-64 h-64 border-2 border-dashed border-panel-border rounded-lg flex flex-col items-center justify-center text-center p-6 bg-sidebar-bg">
            <svg className="w-12 h-12 mb-4 text-[#10b981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
@@ -718,7 +740,7 @@ export function MainEditor() {
   }
 
   return (
-    <div className={`flex-1 bg-editor-bg flex overflow-hidden text-[#cccccc] ${state.splitMode === 'up' || state.splitMode === 'down' ? 'flex-col' : 'flex-row'}`}>
+    <div className={`flex-1 min-h-0 bg-editor-bg flex overflow-hidden text-[#cccccc] ${state.splitMode === 'up' || state.splitMode === 'down' ? 'flex-col' : 'flex-row'}`}>
       
       {/* PANE 1 */}
       <div className={`flex flex-col relative overflow-hidden ${state.splitMode === 'none' ? 'flex-1' : 'flex-1 border-[#3c3c3c] border-r'}`}>
@@ -855,6 +877,13 @@ export function MainEditor() {
             >
               <Brain className="w-4 h-4" />
             </button>
+            <button
+              onClick={toggleAnalysisTerminal}
+              className={`h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 ${state.isAnalysisTerminalOpen ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585]'}`}
+              title="Toggle Analysis Log"
+            >
+              <Terminal className="w-4 h-4" />
+            </button>
             <button 
               onClick={toggleValidation}
               className={`h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 ${state.isValidationOpen ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585]'}`}
@@ -898,8 +927,8 @@ export function MainEditor() {
         </div>
         )}
 
-        {/* Footer (Pane 1) — hidden when viewing artifact */}
-        {!state.activeArtifact && (
+        {/* Footer (Pane 1) — hidden when viewing artifact or analyzing */}
+        {!state.activeArtifact && file.status !== 'ANALYZING' && (
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
@@ -912,8 +941,8 @@ export function MainEditor() {
           <div className="absolute top-0 left-0 w-full h-[3px] bg-[#00ff41] shadow-[0_0_15px_3px_rgba(0,255,65,0.9),0_0_5px_1px_rgba(255,255,255,0.8)] animate-scan z-40 pointer-events-none" />
         )}
 
-        {/* Floating Toolbar (inside Pane 1) — centered within this pane */}
-        {(!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') && (
+        {/* Floating Toolbar (Pane 1) — hidden while analyzing */}
+        {(!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') && file.status !== 'ANALYZING' && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
           <button 
             onClick={() => setToolMode('select')}

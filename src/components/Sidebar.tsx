@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { CalendarDays, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { highlightMatch } from '../lib/fileSearch';
 import {
@@ -12,6 +12,7 @@ import {
   formatFileCreatedAt,
   formatFileSizeBytes,
   getFileSizeBytes,
+  sortFiles,
   statusFilterColorClass,
   statusFilterLabel,
 } from '../lib/fileView';
@@ -42,6 +43,10 @@ export function Sidebar() {
   const explorerSearchRef = React.useRef<HTMLInputElement>(null);
   const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
   const [artifactsExpandedFileIds, setArtifactsExpandedFileIds] = useState<Set<string>>(new Set());
+
+  // Select mode state
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
 
   // Keep expansion sets in sync when files are added or removed.
   React.useEffect(() => {
@@ -128,7 +133,31 @@ export function Sidebar() {
   }, [state.activeSidebarTab]);
 
   const isAnalyzing = state.files.some(f => f.status === 'ANALYZING');
-  const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
+  const selectableFileIds = state.files
+    .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
+    .map(f => f.id);
+
+  const exitSelectMode = () => {
+    setIsSelectMode(false);
+    setSelectedFileIds(new Set());
+  };
+
+  const selectAllFiles = () => {
+    setSelectedFileIds(new Set(selectableFileIds));
+  };
+  const getRunnableIdsInSortOrder = (ids?: Set<string>) =>
+    sortFiles(
+      state.files.filter(
+        (f) =>
+          (ids ? ids.has(f.id) : true) &&
+          f.status !== 'ANALYZING' &&
+          f.status !== 'UPLOADING',
+      ),
+      explorerSort,
+    ).map((f) => f.id);
+
+  const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 350, minWidth: 200, maxWidth: 600, direction: 'left' });
+  const compactToolbar = width < 300;
 
   const renderFileList = (
     files: DocumentFile[],
@@ -178,6 +207,17 @@ export function Sidebar() {
                 return next;
               });
             }}
+            selectMode={isSelectMode}
+            isSelected={selectedFileIds.has(file.id)}
+            onToggleSelect={() => {
+              if (file.status === 'ANALYZING' || file.status === 'UPLOADING') return;
+              setSelectedFileIds(prev => {
+                const next = new Set(prev);
+                if (next.has(file.id)) next.delete(file.id);
+                else next.add(file.id);
+                return next;
+              });
+            }}
           />
         ))}
       </div>
@@ -195,7 +235,7 @@ export function Sidebar() {
             <div className="flex items-center gap-1 shrink-0">
               <ExplorerViewMenu
                 compact
-                align="right"
+                align="outside-right"
                 sort={explorerSort}
                 status={explorerStatus}
                 onSortChange={setExplorerSort}
@@ -315,42 +355,152 @@ export function Sidebar() {
           <span className="text-[#2eb886] font-medium">{displayPassRate}% pass</span>
         </div>
         
-        <div className="flex gap-2 text-[12px] font-medium">
+        <div className={cn('flex text-[12px] font-medium', compactToolbar ? 'gap-1' : 'gap-2')}>
           <button
             onClick={() => openConfigModal('import')}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors"
+            title="Import"
+            className={cn(
+              'flex items-center justify-center bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors',
+              compactToolbar ? 'px-2' : 'flex-1 gap-2',
+            )}
           >
-            <CloudUpload className="w-3.5 h-3.5 text-[#858585]" />
-            Import
+            <CloudUpload className="w-3.5 h-3.5 text-[#858585] shrink-0" />
+            {!compactToolbar && 'Import'}
           </button>
           {isAnalyzing ? (
             <button
               onClick={stopAnalysis}
-              className="flex-1 flex items-center justify-center gap-2 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#ef4444]/30 text-[#ef4444] py-1.5 rounded-md transition-colors"
               title="Stop after current file finishes"
+              className={cn(
+                'flex items-center justify-center bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#ef4444]/30 text-[#ef4444] py-1.5 rounded-md transition-colors',
+                compactToolbar ? 'px-2' : 'flex-1 gap-2',
+              )}
             >
-              <X className="w-3.5 h-3.5" />
-              Stop Queue
+              <X className="w-3.5 h-3.5 shrink-0" />
+              {!compactToolbar && 'Stop Queue'}
+            </button>
+          ) : isSelectMode ? (
+            <button
+              onClick={() => {
+                if (selectedFileIds.size === 0) return;
+                openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                exitSelectMode();
+              }}
+              disabled={selectedFileIds.size === 0}
+              title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected file(s)`}
+              className={cn(
+                'flex items-center justify-center bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+                compactToolbar ? 'px-2' : 'flex-1 gap-2',
+              )}
+            >
+              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+              {!compactToolbar && <>Run Selected{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}</>}
             </button>
           ) : (
             <button
-              onClick={() => openConfigModal('reanalyze')}
+              onClick={() => {
+                const ids = getRunnableIdsInSortOrder();
+                if (ids.length === 0) return;
+                openConfigModal('reanalyze', undefined, ids);
+              }}
               disabled={state.files.length === 0}
-              className="flex-1 flex items-center justify-center gap-2 bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Run All"
+              className={cn(
+                'flex items-center justify-center bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+                compactToolbar ? 'px-2' : 'flex-1 gap-2',
+              )}
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Run All
+              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+              {!compactToolbar && 'Run All'}
             </button>
           )}
-          <button onClick={() => setShowClearDialog(true)} className="px-3 bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors">
-            Clear
+          <button
+            onClick={() => {
+              if (isSelectMode) exitSelectMode();
+              else setIsSelectMode(true);
+            }}
+            disabled={state.files.length === 0 || isAnalyzing}
+            title={isSelectMode ? 'Exit select mode' : 'Choose specific files to run'}
+            className={cn(
+              'flex items-center justify-center rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+              compactToolbar ? 'px-2' : 'px-2 gap-1',
+              isSelectMode
+                ? 'bg-[#2a2a1a] border-[#f59e0b]/40 text-[#f59e0b] hover:bg-[#3a3a20]'
+                : 'bg-[#262831] border-[#3b3d46] text-[#858585] hover:bg-[#31333d] hover:text-white',
+            )}
+          >
+            <ListChecks className="w-3.5 h-3.5 shrink-0" />
+            {!compactToolbar && <span className="text-[11px] font-medium">{isSelectMode ? 'Cancel' : 'Select'}</span>}
+          </button>
+          <button
+            onClick={() => setShowClearDialog(true)}
+            title="Clear All Files"
+            className={cn(
+              'flex items-center justify-center bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors',
+              compactToolbar ? 'px-2 py-1.5' : 'px-3 gap-1.5',
+            )}
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+            {!compactToolbar && 'Clear'}
           </button>
         </div>
+
+        {isSelectMode && !isAnalyzing && (
+          <div className="mt-2 rounded-md border border-[#f59e0b]/35 bg-[#f59e0b]/10 px-3 py-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-[#f59e0b]">Select mode</p>
+                <p className="text-[10px] text-[#b4b4b4] mt-0.5 leading-snug">
+                  <span className="text-[#f59e0b] font-medium">Step 1:</span> click drawings below (or checkboxes)
+                  <br />
+                  <span className="text-[#f59e0b] font-medium">Step 2:</span> press Run Selected, then pick model(s)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exitSelectMode}
+                className="shrink-0 p-0.5 text-[#858585] hover:text-white rounded transition-colors"
+                title="Exit select mode"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-[#f59e0b]">
+                {selectedFileIds.size} / {selectableFileIds.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={selectAllFiles}
+                disabled={selectableFileIds.length === 0}
+                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedFileIds(new Set())}
+                disabled={selectedFileIds.size === 0}
+                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Drawings Explorer */}
       <div className="flex-1 overflow-y-auto flex flex-col pb-4 bg-[#1a1b20]">
         <div className="sticky top-0 bg-[#1a1b20] z-10 border-b border-[#2b2d35]/60">
+          {isSelectMode && !isAnalyzing && (
+            <div className="px-3 py-1.5 bg-[#f59e0b]/10 border-b border-[#f59e0b]/20 flex items-center gap-2">
+              <ListChecks className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
+              <span className="text-[10px] text-[#f59e0b] font-medium">
+                Click a drawing to select · checkboxes on the left
+              </span>
+            </div>
+          )}
           <div className="px-3 py-2 flex items-center justify-between gap-2 min-h-[32px]">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#858585] truncate">
               Drawings explorer
@@ -360,7 +510,7 @@ export function Sidebar() {
                 <div className="flex items-center gap-1">
                   <ExplorerViewMenu
                     compact
-                    align="right"
+                    align="outside-right"
                     sort={explorerSort}
                     status={explorerStatus}
                     onSortChange={setExplorerSort}
@@ -537,6 +687,9 @@ export function FileItem({
   onExpandedChange,
   onArtifactsExpandedChange,
   nameHighlight = '',
+  selectMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: {
   key?: React.Key;
   file: DocumentFile;
@@ -555,6 +708,9 @@ export function FileItem({
   artifactsExpanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   onArtifactsExpandedChange?: (expanded: boolean) => void;
+  selectMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { state } = useApp();
   const [internalExpanded, setInternalExpanded] = React.useState(true);
@@ -598,6 +754,14 @@ export function FileItem({
   const hasChildren = hasSheets || hasArtifacts;
   const showSheets = expanded && hasSheets;
   const showArtifactsBlock = expanded && hasArtifacts;
+  const selectDisabled = file.status === 'ANALYZING' || file.status === 'UPLOADING';
+  const isAnalyzing = file.status === 'ANALYZING';
+  const isUploading = file.status === 'UPLOADING';
+  const runningRowClass = isAnalyzing
+    ? 'bg-[#10b981]/15 text-[#d1fae5] border-l-2 border-[#10b981]'
+    : isUploading
+      ? 'bg-[#3b82f6]/12 text-[#bfdbfe] border-l-2 border-[#3b82f6]'
+      : null;
 
   const openArtifact = (artifact: NonNullable<DocumentFile['artifacts']>[number], name: string) => {
     window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
@@ -622,6 +786,30 @@ export function FileItem({
 
   const fileRowContent = (
     <>
+      {/* Checkbox — only visible in select mode */}
+      {selectMode && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={isSelected}
+          aria-label={`Select ${file.name}`}
+          disabled={selectDisabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!selectDisabled) onToggleSelect?.();
+          }}
+          className={cn(
+            'w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors',
+            selectDisabled && 'opacity-25 cursor-not-allowed',
+            !selectDisabled && 'cursor-pointer',
+            isSelected
+              ? 'bg-[#f59e0b] border-[#f59e0b] text-[#1a1b20]'
+              : 'border-[#666] bg-[#12141a] hover:border-[#f59e0b]',
+          )}
+        >
+          {isSelected && <Check className="w-3 h-3" strokeWidth={3} />}
+        </button>
+      )}
       {index != null && (
         <span className="text-[9px] text-[#555] font-mono w-4 shrink-0 text-right">{index}</span>
       )}
@@ -671,12 +859,26 @@ export function FileItem({
     <div
       ref={fileRowRef}
       {...tooltipHoverProps}
-      onClick={() => { onClick(); if (hasSheets) setExpanded(!expanded); }}
+      onClick={() => {
+        if (selectMode) {
+          if (!selectDisabled) onToggleSelect?.();
+          return;
+        }
+        onClick();
+        if (hasSheets) setExpanded(!expanded);
+      }}
       className={cn(
-        'px-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium relative',
-        isActive && !hasSheets
-          ? 'bg-[#333748] text-white border-l-2 border-[#1e5cdc]'
-          : 'hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent',
+        'px-4 py-1.5 flex items-center justify-between transition-colors text-[13px] font-medium relative',
+        selectMode && !selectDisabled && 'cursor-pointer',
+        selectMode && selectDisabled && 'cursor-not-allowed opacity-50',
+        !selectMode && 'cursor-pointer',
+        selectMode && isSelected
+          ? 'bg-[#2a2a1a] text-white border-l-2 border-[#f59e0b]'
+          : runningRowClass
+            ? runningRowClass
+            : isActive && !hasSheets && !selectMode
+              ? 'bg-[#333748] text-white border-l-2 border-[#1e5cdc]'
+              : 'hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent',
       )}
     >
       <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">{fileRowContent}</div>
@@ -757,9 +959,21 @@ export function FileItem({
         <TreeRow
           continuingGuides={[]}
           isLast={isLastFile && !fileBranchContinues}
-          active={isActive && !hasSheets}
-          onClick={() => { onClick(); if (hasSheets) setExpanded(!expanded); }}
-          className="text-[13px] font-medium"
+          active={isSelected ? true : (isActive && !hasSheets && !isAnalyzing && !isUploading)}
+          onClick={() => {
+            if (selectMode) {
+              if (!selectDisabled) onToggleSelect?.();
+              return;
+            }
+            onClick();
+            if (hasSheets) setExpanded(!expanded);
+          }}
+          className={cn(
+            'text-[13px] font-medium',
+            selectMode && isSelected && 'border-l-2 border-[#f59e0b] bg-[#2a2a1a]',
+            selectMode && selectDisabled && 'opacity-50',
+            !selectMode && runningRowClass,
+          )}
         >
           {fileRowContent}
         </TreeRow>

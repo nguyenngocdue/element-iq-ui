@@ -9,10 +9,11 @@ export interface AnalysisConfigModalProps {
   onClose: () => void;
   mode?: 'import' | 'reanalyze';
   targetFileId?: string;
+  targetFileIds?: string[];
 }
 
-export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFileId }: AnalysisConfigModalProps) {
-  const { state, setSelectedComponents, setComponentConfidence, addFiles, analyzeFile, analyzeAll } = useApp();
+export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFileId, targetFileIds }: AnalysisConfigModalProps) {
+  const { state, setSelectedComponents, setComponentConfidence, addFiles, analyzeFile, analyzeAll, analyzeSelected } = useApp();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -74,7 +75,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
         const file = files[i];
         try {
           const formData = new FormData();
-          formData.append('file', file);
+          formData.append('file', file, file.name || 'drawing.pdf');
           if (projectId) formData.append('project_id', projectId);
           const res = await authFetch('/api/v1/files', { method: 'POST', body: formData });
           if (res.ok) {
@@ -98,12 +99,14 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
       window.dispatchEvent(new CustomEvent('elementiq:reload-files'));
     } else {
       if (state.selectedComponents.length > 0) {
-        if (targetFileId) {
-          analyzeFile(targetFileId);
-        } else {
-          analyzeAll();
-        }
         onClose();
+        if (targetFileIds && targetFileIds.length > 0) {
+          void analyzeSelected(targetFileIds);
+        } else if (targetFileId) {
+          void analyzeFile(targetFileId);
+        } else {
+          void analyzeAll();
+        }
       }
     }
   };
@@ -115,6 +118,8 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   const selectedCount = state.selectedComponents.length;
   const readyComponents = state.availableComponents.filter(c => c.status === 'ready');
   const canAnalyze = mode === 'import' ? files.length > 0 : (selectedCount > 0);
+  const targetFileCount = targetFileIds?.length
+    ?? (targetFileId ? 1 : state.files.length);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm shadow-2xl">
@@ -230,7 +235,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                   <span>Ready to import <span className="text-white font-semibold">{files.length}</span> file(s) • {(files.reduce((a, f) => a + f.size, 0) / 1024 / 1024).toFixed(1)} MB total</span>
                 )
               ) : (
-                <span>Ready to analyze {targetFileId ? '1' : state.files.length} file(s) with <span className="text-white font-semibold">{selectedCount}</span> component(s)</span>
+                <span>Ready to analyze <span className="text-white font-semibold">{targetFileCount}</span> file(s) with <span className="text-white font-semibold">{selectedCount}</span> component(s)</span>
               )
             ) : (
               <span>{mode === 'import' ? 'Select files' : 'Select components '}to continue</span>

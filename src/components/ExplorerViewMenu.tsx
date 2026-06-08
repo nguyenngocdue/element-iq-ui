@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, ListFilter } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
@@ -36,18 +37,27 @@ export function ExplorerViewMenu({
   onSortChange: (sort: ExplorerSortKey) => void;
   onStatusChange: (status: ExplorerStatusFilter) => void;
   compact?: boolean;
-  align?: 'left' | 'right';
+  align?: 'left' | 'right' | 'outside-right';
 }) {
   const [open, setOpen] = React.useState(false);
+  const [menuPos, setMenuPos] = React.useState({ top: 0, left: 0 });
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
   const isActive = explorerViewIsActive(sort, status);
+
+  React.useEffect(() => {
+    if (!open || align !== 'outside-right' || !rootRef.current) return;
+    const rect = rootRef.current.getBoundingClientRect();
+    setMenuPos({ top: rect.top, left: rect.right + 6 });
+  }, [open, align]);
 
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -59,6 +69,79 @@ export function ExplorerViewMenu({
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  const menuClassName =
+    'z-[200] min-w-[176px] rounded border border-[#3c3c3c] bg-[#1e1f24] shadow-2xl py-1 text-[11px]';
+
+  const menuContent = (
+    <>
+      <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#666]">
+        Sort by
+      </div>
+      {SORT_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          role="menuitemradio"
+          aria-checked={sort === opt.id}
+          onClick={() => {
+            onSortChange(opt.id);
+            setOpen(false);
+          }}
+          className={cn(
+            'w-full flex items-center gap-2 px-2.5 py-1 hover:bg-[#2a2d36] transition-colors',
+            sort === opt.id ? 'text-white' : 'text-[#b4b4b4]',
+          )}
+        >
+          <span className="w-3 text-[#10b981] text-[10px]">{sort === opt.id ? '●' : ''}</span>
+          {opt.label}
+        </button>
+      ))}
+
+      <div className="my-1 mx-2 border-t border-[#333]" />
+
+      <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#666]">
+        Status
+      </div>
+      {STATUS_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          role="menuitemradio"
+          aria-checked={status === opt.id}
+          onClick={() => {
+            onStatusChange(opt.id);
+            setOpen(false);
+          }}
+          className={cn(
+            'w-full flex items-center gap-2 px-2.5 py-1 hover:bg-[#2a2d36] transition-colors',
+            status === opt.id ? 'text-white' : opt.color ?? 'text-[#b4b4b4]',
+          )}
+        >
+          <span className="w-3 text-[#10b981] text-[10px]">{status === opt.id ? '●' : ''}</span>
+          {opt.label}
+        </button>
+      ))}
+
+      {isActive && (
+        <>
+          <div className="my-1 mx-2 border-t border-[#333]" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onSortChange(DEFAULT_EXPLORER_SORT);
+              onStatusChange(DEFAULT_EXPLORER_STATUS);
+              setOpen(false);
+            }}
+            className="w-full text-left px-2.5 py-1 text-[#777] hover:text-white hover:bg-[#2a2d36] transition-colors"
+          >
+            Reset
+          </button>
+        </>
+      )}
+    </>
+  );
 
   return (
     <div ref={rootRef} className="relative shrink-0">
@@ -99,79 +182,29 @@ export function ExplorerViewMenu({
         )}
       </button>
 
-      {open && (
+      {open && align === 'outside-right' && createPortal(
         <div
+          ref={menuRef}
+          role="menu"
+          className={cn(menuClassName, 'fixed')}
+          style={{ top: menuPos.top, left: menuPos.left }}
+        >
+          {menuContent}
+        </div>,
+        document.body,
+      )}
+
+      {open && align !== 'outside-right' && (
+        <div
+          ref={menuRef}
           role="menu"
           className={cn(
-            'absolute top-full mt-1 z-50 min-w-[176px] rounded border border-[#3c3c3c] bg-[#1e1f24] shadow-2xl py-1 text-[11px]',
+            menuClassName,
+            'absolute top-full mt-1 z-50',
             align === 'right' ? 'right-0' : 'left-0',
           )}
         >
-          <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#666]">
-            Sort by
-          </div>
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={sort === opt.id}
-              onClick={() => {
-                onSortChange(opt.id);
-                setOpen(false);
-              }}
-              className={cn(
-                'w-full flex items-center gap-2 px-2.5 py-1 hover:bg-[#2a2d36] transition-colors',
-                sort === opt.id ? 'text-white' : 'text-[#b4b4b4]',
-              )}
-            >
-              <span className="w-3 text-[#10b981] text-[10px]">{sort === opt.id ? '●' : ''}</span>
-              {opt.label}
-            </button>
-          ))}
-
-          <div className="my-1 mx-2 border-t border-[#333]" />
-
-          <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#666]">
-            Status
-          </div>
-          {STATUS_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={status === opt.id}
-              onClick={() => {
-                onStatusChange(opt.id);
-                setOpen(false);
-              }}
-              className={cn(
-                'w-full flex items-center gap-2 px-2.5 py-1 hover:bg-[#2a2d36] transition-colors',
-                status === opt.id ? 'text-white' : opt.color ?? 'text-[#b4b4b4]',
-              )}
-            >
-              <span className="w-3 text-[#10b981] text-[10px]">{status === opt.id ? '●' : ''}</span>
-              {opt.label}
-            </button>
-          ))}
-
-          {isActive && (
-            <>
-              <div className="my-1 mx-2 border-t border-[#333]" />
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onSortChange(DEFAULT_EXPLORER_SORT);
-                  onStatusChange(DEFAULT_EXPLORER_STATUS);
-                  setOpen(false);
-                }}
-                className="w-full text-left px-2.5 py-1 text-[#777] hover:text-white hover:bg-[#2a2d36] transition-colors"
-              >
-                Reset
-              </button>
-            </>
-          )}
+          {menuContent}
         </div>
       )}
     </div>

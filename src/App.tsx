@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { MainEditor } from './components/MainEditor';
 import { ValidationPanel } from './components/ValidationPanel';
 import { BottomBar } from './components/BottomBar';
+import { AnalysisTerminal } from './components/AnalysisTerminal';
 import { AnalysisDashboard } from './components/AnalysisDashboard';
 import { AnalysisView } from './components/AnalysisView';
 import { AppProvider, useApp } from './store';
@@ -115,7 +116,10 @@ function AppContent() {
         ) : (
           <>
             {state.isSidebarOpen && <Sidebar />}
-            <MainEditor />
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <MainEditor />
+              <AnalysisTerminal />
+            </div>
             {state.isValidationOpen && <ValidationPanel />}
           </>
         )}
@@ -128,6 +132,7 @@ function AppContent() {
         onClose={closeConfigModal} 
         mode={state.configModalMode}
         targetFileId={state.configTargetFileId}
+        targetFileIds={state.configTargetFileIds}
       />
     </div>
   );

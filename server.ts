@@ -104,7 +104,6 @@ function mockHealth(_req: Request, res: Response) {
 // ─── App setup ─────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
-  app.use(express.json());
 
   if (USE_MOCK) {
     // ── Mock mode (no backend needed) ──────────────────────────
