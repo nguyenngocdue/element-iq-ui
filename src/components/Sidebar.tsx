@@ -12,9 +12,11 @@ import {
   formatFileCreatedAt,
   formatFileSizeBytes,
   getFileSizeBytes,
+  readExplorerViewPrefs,
   sortFiles,
   statusFilterColorClass,
   statusFilterLabel,
+  writeExplorerViewPrefs,
 } from '../lib/fileView';
 import { DocumentFile } from '../types';
 import { useResizable } from '../hooks/useResizable';
@@ -38,11 +40,18 @@ export function Sidebar() {
   const [clearProgress, setClearProgress] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [explorerSearch, setExplorerSearch] = useState('');
-  const [explorerSort, setExplorerSort] = useState<ExplorerSortKey>(DEFAULT_EXPLORER_SORT);
+  const [explorerPrefs] = useState(() => readExplorerViewPrefs());
+  const [explorerSort, setExplorerSortState] = useState<ExplorerSortKey>(explorerPrefs.sort);
+  const [allCollapsedPref, setAllCollapsedPref] = useState(explorerPrefs.allCollapsed);
   const [explorerStatus, setExplorerStatus] = useState<ExplorerStatusFilter>(DEFAULT_EXPLORER_STATUS);
   const explorerSearchRef = React.useRef<HTMLInputElement>(null);
   const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
   const [artifactsExpandedFileIds, setArtifactsExpandedFileIds] = useState<Set<string>>(new Set());
+
+  const setExplorerSort = React.useCallback((sort: ExplorerSortKey) => {
+    setExplorerSortState(sort);
+    writeExplorerViewPrefs({ sort });
+  }, []);
 
   // Select mode state
   const [isSelectMode, setIsSelectMode] = useState(false);
@@ -54,7 +63,7 @@ export function Sidebar() {
     setExpandedFileIds(prev => {
       const next = new Set(prev);
       for (const id of ids) {
-        if (!next.has(id)) next.add(id);
+        if (!next.has(id) && !allCollapsedPref) next.add(id);
       }
       for (const id of next) {
         if (!ids.includes(id)) next.delete(id);
@@ -64,14 +73,14 @@ export function Sidebar() {
     setArtifactsExpandedFileIds(prev => {
       const next = new Set(prev);
       for (const id of ids) {
-        if (!next.has(id)) next.add(id);
+        if (!next.has(id) && !allCollapsedPref) next.add(id);
       }
       for (const id of next) {
         if (!ids.includes(id)) next.delete(id);
       }
       return next;
     });
-  }, [state.files]);
+  }, [state.files, allCollapsedPref]);
 
   const expandableFileIds = state.files
     .filter(f => f.pages > 1 || (f.artifacts && f.artifacts.length > 0))
@@ -84,10 +93,14 @@ export function Sidebar() {
     if (allExpanded) {
       setExpandedFileIds(new Set());
       setArtifactsExpandedFileIds(new Set());
+      setAllCollapsedPref(true);
+      writeExplorerViewPrefs({ allCollapsed: true });
     } else {
       const allIds = new Set(state.files.map(f => f.id));
       setExpandedFileIds(allIds);
       setArtifactsExpandedFileIds(allIds);
+      setAllCollapsedPref(false);
+      writeExplorerViewPrefs({ allCollapsed: false });
     }
   };
 

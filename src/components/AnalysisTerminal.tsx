@@ -220,7 +220,7 @@ export function AnalysisTerminal() {
                   getLogRowBackground(line),
                 )}
               >
-                <span className="text-[#569cd6]/80 shrink-0 select-none tabular-nums bg-[#569cd6]/10 border border-[#569cd6]/15 rounded px-1 self-start">
+                <span className="text-[#569cd6]/70 shrink-0 select-none tabular-nums self-start">
                   {line.ts}
                 </span>
                 <span className="break-all whitespace-pre-wrap leading-relaxed">

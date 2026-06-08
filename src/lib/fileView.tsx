@@ -8,6 +8,43 @@ export type ExplorerStatusFilter = 'all' | 'PASS' | 'FAIL' | 'NO-NOTE';
 export const DEFAULT_EXPLORER_SORT: ExplorerSortKey = 'name-asc';
 export const DEFAULT_EXPLORER_STATUS: ExplorerStatusFilter = 'all';
 
+export const EXPLORER_VIEW_STORAGE_KEY = 'elementiq:explorer-view';
+
+const EXPLORER_SORT_KEYS: ExplorerSortKey[] = ['name-asc', 'name-desc', 'date-desc', 'size-desc'];
+
+export type ExplorerViewPrefs = {
+  sort: ExplorerSortKey;
+  allCollapsed: boolean;
+};
+
+export function readExplorerViewPrefs(): ExplorerViewPrefs {
+  try {
+    const raw = localStorage.getItem(EXPLORER_VIEW_STORAGE_KEY);
+    if (!raw) {
+      return { sort: DEFAULT_EXPLORER_SORT, allCollapsed: false };
+    }
+    const parsed = JSON.parse(raw) as Partial<ExplorerViewPrefs>;
+    const sort = EXPLORER_SORT_KEYS.includes(parsed.sort as ExplorerSortKey)
+      ? (parsed.sort as ExplorerSortKey)
+      : DEFAULT_EXPLORER_SORT;
+    return { sort, allCollapsed: Boolean(parsed.allCollapsed) };
+  } catch {
+    return { sort: DEFAULT_EXPLORER_SORT, allCollapsed: false };
+  }
+}
+
+export function writeExplorerViewPrefs(updates: Partial<ExplorerViewPrefs>): void {
+  try {
+    const current = readExplorerViewPrefs();
+    localStorage.setItem(
+      EXPLORER_VIEW_STORAGE_KEY,
+      JSON.stringify({ ...current, ...updates }),
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 export function getFileSizeBytes(file: DocumentFile): number {
   return file.fileSizeBytes ?? file.file.size ?? 0;
 }

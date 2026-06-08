@@ -16,12 +16,12 @@ function buildModelLogLines(
     const conf = ((componentConfidence[compId] ?? confidenceThreshold) * 100).toFixed(0);
     const modelFile = meta?.modelFile?.trim();
     const label = meta?.name ?? compId;
+    const statusTag =
+      meta?.status === 'missing' ? ' · MISSING' : meta?.status === 'training' ? ' · TRAINING' : '';
     if (modelFile) {
-      const statusTag =
-        meta?.status === 'missing' ? ' · MISSING' : meta?.status === 'training' ? ' · TRAINING' : '';
-      return `${label} (${compId}) → ${modelFile} @ ${conf}%${statusTag}`;
+      return `${label} · ${modelFile} · conf ${conf}%${statusTag}`;
     }
-    return `${label} (${compId}) @ ${conf}% · model file unknown`;
+    return `${label} · conf ${conf}% · model unknown${statusTag}`;
   });
 }
 
