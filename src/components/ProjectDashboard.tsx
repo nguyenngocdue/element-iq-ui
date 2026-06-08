@@ -55,7 +55,15 @@ export function ProjectDashboard() {
     setError(null);
     try {
       const res = await authFetch('/api/v1/projects');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        if (res.status === 502) {
+          throw new Error(
+            'HTTP 502 — backend không phản hồi. Chạy ./deploy.sh doctor và forward tunnel tới port 3080.',
+          );
+        }
+        throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${res.status}`);
+      }
       const data = await res.json();
       setProjects(data.map((p: any) => ({ ...p, role: 'Owner', hasImage: false })));
     } catch (err: any) {
@@ -142,6 +150,11 @@ export function ProjectDashboard() {
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => null);
+        if (res.status === 502) {
+          throw new Error(
+            'HTTP 502 — backend không phản hồi. Chạy ./deploy.sh doctor; tunnel phải trỏ port 3080.',
+          );
+        }
         const detail = errBody?.detail || `HTTP ${res.status}`;
         throw new Error(detail);
       }

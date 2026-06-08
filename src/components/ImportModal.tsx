@@ -379,7 +379,19 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
       )}
 
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm shadow-2xl">
-        <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div
+          className={cn(
+            'relative w-full max-w-4xl max-h-[90vh] shadow-2xl',
+            isBusy && 'import-modal-border-wrap',
+          )}
+        >
+          {isBusy && <div className="import-modal-border-glow" aria-hidden />}
+          <div
+            className={cn(
+              'flex flex-col overflow-hidden max-h-[90vh] w-full',
+              isBusy ? 'import-modal-border-inner' : 'bg-[#252526] border border-[#3c3c3c] rounded-xl',
+            )}
+          >
           <div className="flex items-center justify-between p-5 border-b border-[#3c3c3c] bg-[#1e1e1e]">
             <h2 className="text-xl font-bold text-white uppercase tracking-wider">{mode === 'import' ? 'Import Drawings' : 'Analysis Configuration'}</h2>
             <button
@@ -560,6 +572,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                     : 'Start Analysis'}
               </button>
             </div>
+          </div>
           </div>
         </div>
       </div>

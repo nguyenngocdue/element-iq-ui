@@ -13,11 +13,16 @@ const BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || '
 const USE_MOCK = process.env.USE_MOCK === 'true';
 
 // ─── Proxy helper ──────────────────────────────────────────────────────────
+function backendPort(url: URL): number {
+  if (url.port) return parseInt(url.port, 10);
+  return url.protocol === 'https:' ? 443 : 80;
+}
+
 function proxyToBackend(req: Request, res: Response) {
   const backendUrl = new URL(BACKEND_URL);
   const options: http.RequestOptions = {
     hostname: backendUrl.hostname,
-    port: backendUrl.port || 80,
+    port: backendPort(backendUrl),
     path: req.originalUrl,
     method: req.method,
     headers: {
