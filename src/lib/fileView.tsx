@@ -40,6 +40,20 @@ export function artifactDisplayName(type: string): string {
   return type;
 }
 
+/** Drop artifacts whose stored name/id does not belong to the given drawing filename. */
+export function filterArtifactsForFile<T extends { originalFilename?: string; sourceFileId?: string }>(
+  artifacts: T[],
+  fileId: string,
+  fileName: string,
+): T[] {
+  const stem = fileName.replace(/\.pdf$/i, '');
+  return artifacts.filter((a) => {
+    if (a.sourceFileId && a.sourceFileId !== fileId) return false;
+    if (!a.originalFilename) return true;
+    return a.originalFilename.startsWith(stem);
+  });
+}
+
 export function formatIsoDateTime(iso?: string): string {
   if (!iso) return '—';
   const d = new Date(iso);

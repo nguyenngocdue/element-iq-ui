@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
+import { filterArtifactsForFile } from './lib/fileView';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -22,6 +23,92 @@ function buildModelLogLines(
     }
     return `${label} (${compId}) @ ${conf}% · model file unknown`;
   });
+}
+
+const DPI_RATIO = 72 / 300;
+
+function mapApiProjectFiles(files: any[]): DocumentFile[] {
+  return files.map((f: any) => {
+    let status: DocumentFile['status'] = 'PENDING';
+    let detections: DocumentFile['detections'] = [];
+    let passRate: number | undefined;
+    let analyzedComponents: string[] | undefined;
+
+    if (f.analysis) {
+      const overallStatus = (f.analysis.overall_status || f.analysis.summary?.overall || '').toUpperCase();
+      status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : 'PENDING';
+      passRate = f.analysis.summary?.pass_rate ?? (overallStatus === 'PASS' ? 100 : 0);
+      analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
+      detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
+        (comp.objects ?? []).map((obj: any, i: number) => {
+          const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
+          const report = (comp.report ?? []).find((r: any) => {
+            const ids = r.matched_cluster?.object_ids ?? [];
+            return ids.includes(i + 1);
+          });
+          const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
+          return {
+            id: `${comp.component_id}-${i}`,
+            page: 1,
+            x: x1 * DPI_RATIO,
+            y: y1 * DPI_RATIO,
+            width: (x2 - x1) * DPI_RATIO,
+            height: (y2 - y1) * DPI_RATIO,
+            type: obj.face ?? 'UNKNOWN',
+            confidence: obj.confidence ?? 0,
+            status: detStatus,
+            reason: report?.reason,
+            componentId: comp.component_id,
+          };
+        }),
+      );
+    }
+
+    return {
+      id: f.id,
+      name: f.original_filename,
+      file: new File([], f.original_filename, { type: 'application/pdf' }),
+      status,
+      pages: f.page_count || 1,
+      detections,
+      passRate,
+      analyzedComponents,
+      uploadedAt: f.uploaded_at,
+      localPath: f.local_path,
+      fileSizeBytes: f.file_size_bytes,
+      artifacts: filterArtifactsForFile(
+        (f.analysis?.artifacts ?? []).map((a: any) => ({
+          id: a.id,
+          type: a.artifact_type,
+          downloadUrl: a.download_url,
+          sourceFileId: a.source_file_id ?? f.id,
+          localPath: a.local_path,
+          fileSizeBytes: a.file_size_bytes,
+          originalFilename: a.original_filename,
+          contentType: a.content_type,
+          createdAt: a.created_at,
+        })),
+        f.id,
+        f.original_filename,
+      ),
+      events: [{
+        id: Date.now().toString(),
+        timestamp: f.uploaded_at || new Date().toISOString(),
+        message: 'Loaded from server',
+        type: 'INFO' as const,
+      }],
+    };
+  });
+}
+
+async function fetchProjectFileDocs(projectId: string): Promise<DocumentFile[]> {
+  const { authFetch } = await import('./lib/supabase');
+  const res = await authFetch(`/api/v1/projects/${projectId}/files`);
+  if (!res.ok) {
+    throw new Error(`Failed to load project files: HTTP ${res.status}`);
+  }
+  const files = await res.json();
+  return mapApiProjectFiles(files);
 }
 
 interface AppContextType {
@@ -54,6 +141,7 @@ interface AppContextType {
   closeConfigModal: () => void;
   setCurrentView: (view: 'projects' | 'editor') => void;
   setActiveProject: (project: Project) => void;
+  refreshProjectFiles: (options?: { silent?: boolean }) => Promise<void>;
   toggleBot: () => void;
   setActiveArtifact: (artifact: SessionState['activeArtifact']) => void;
 }
@@ -243,9 +331,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setActiveFile = useCallback((id: string, page: number = 1) => {
     const file = state.files.find(f => f.id === id);
-    
-    // Clear artifact viewer when selecting a file
-    setState((prev) => prev.activeArtifact ? { ...prev, activeArtifact: null } : prev);
+
+    const applyActivation = () => {
+      setState((prev) => {
+        const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
+        return {
+          ...prev,
+          activeFileId: id,
+          activePage: page,
+          openFiles,
+          activeArtifact: null,
+        };
+      });
+    };
 
     // If file has no bytes (loaded from server), download first then activate
     if (file && file.file.size === 0) {
@@ -257,20 +355,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const blob = await res.blob();
           const realFile = new File([blob], file.name, { type: 'application/pdf' });
           updateFileStatus(id, { file: realFile });
-          // Now activate after file is ready
-          setState((prev) => {
-            const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
-            return { ...prev, activeFileId: id, activePage: page, openFiles };
-          });
+          applyActivation();
         } catch (err) {
           console.error('Failed to download file:', err);
         }
       })();
     } else {
-      setState((prev) => {
-        const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
-        return { ...prev, activeFileId: id, activePage: page, openFiles };
-      });
+      applyActivation();
     }
   }, [state.files, updateFileStatus]);
 
@@ -413,7 +504,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setActiveProject = useCallback((project: Project) => {
-    setState((prev) => ({ ...prev, activeProject: project, currentView: 'editor', files: [], isLoadingFiles: true }));
+    setState((prev) => ({
+      ...prev,
+      activeProject: project,
+      currentView: 'editor',
+      files: [],
+      activeFileId: null,
+      openFiles: [],
+      pinnedFiles: [],
+      activeArtifact: null,
+      activePage: 1,
+      isLoadingFiles: true,
+    }));
 
     // Load project files + analysis results in ONE API call
     (async () => {
@@ -446,89 +548,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const files = await res.json();
         console.log(`[ElementIQ] Loaded ${files.length} files for project ${project.id}`);
 
-        const DPI_RATIO = 72 / 300;
-        const docs: DocumentFile[] = files.map((f: any) => {
-          let status: DocumentFile['status'] = 'PENDING';
-          let detections: any[] = [];
-          let passRate: number | undefined;
-          let analyzedComponents: string[] | undefined;
+        const docs = mapApiProjectFiles(files);
 
-          // Use batch analysis data from endpoint (no extra API calls needed)
-          if (f.analysis) {
-            const overallStatus = (f.analysis.overall_status || f.analysis.summary?.overall || '').toUpperCase();
-            status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : 'PENDING';
-            passRate = f.analysis.summary?.pass_rate ?? (overallStatus === 'PASS' ? 100 : 0);
-            analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
-            detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
-              (comp.objects ?? []).map((obj: any, i: number) => {
-                const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
-                const report = (comp.report ?? []).find((r: any) => {
-                  const ids = r.matched_cluster?.object_ids ?? [];
-                  return ids.includes(i + 1);
-                });
-                const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
-                return {
-                  id: `${comp.component_id}-${i}`,
-                  page: 1,
-                  x: x1 * DPI_RATIO,
-                  y: y1 * DPI_RATIO,
-                  width: (x2 - x1) * DPI_RATIO,
-                  height: (y2 - y1) * DPI_RATIO,
-                  type: obj.face ?? 'UNKNOWN',
-                  confidence: obj.confidence ?? 0,
-                  status: detStatus,
-                  reason: report?.reason,
-                  componentId: comp.component_id,
-                };
-              })
-            );
-          }
-
-          return {
-            id: f.id,
-            name: f.original_filename,
-            file: new File([], f.original_filename, { type: 'application/pdf' }),
-            status,
-            pages: f.page_count || 1,
-            detections,
-            passRate,
-            analyzedComponents,
-            uploadedAt: f.uploaded_at,
-            localPath: f.local_path,
-            fileSizeBytes: f.file_size_bytes,
-            artifacts: (f.analysis?.artifacts ?? []).map((a: any) => ({
-              id: a.id,
-              type: a.artifact_type,
-              downloadUrl: a.download_url,
-              localPath: a.local_path,
-              fileSizeBytes: a.file_size_bytes,
-              originalFilename: a.original_filename,
-              contentType: a.content_type,
-              createdAt: a.created_at,
-            })),
-            events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
-          };
-        });
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlFileId = urlParams.get('file');
+        const initialFileId =
+          urlFileId && docs.some((d) => d.id === urlFileId)
+            ? urlFileId
+            : docs.length > 0
+              ? docs[0].id
+              : null;
 
         setState((prev) => ({
           ...prev,
           files: docs,
           isLoadingFiles: false,
-          activeFileId: docs.length > 0 ? docs[0].id : null,
-          openFiles: docs.length > 0 ? [docs[0].id] : [],
+          activeFileId: initialFileId,
+          openFiles: initialFileId ? [initialFileId] : [],
+          activeArtifact: null,
         }));
 
-        // Auto-download the first file so PDF renders immediately
-        if (docs.length > 0) {
-          const firstDoc = docs[0];
+        // Auto-download the active file so PDF renders immediately
+        if (initialFileId) {
+          const activeDoc = docs.find((d) => d.id === initialFileId);
+          if (!activeDoc) return;
           try {
-            const dlRes = await authFetch(`/api/v1/files/${firstDoc.id}/download`);
+            const dlRes = await authFetch(`/api/v1/files/${activeDoc.id}/download`);
             if (dlRes.ok) {
               const blob = await dlRes.blob();
-              const realFile = new File([blob], firstDoc.name, { type: 'application/pdf' });
+              const realFile = new File([blob], activeDoc.name, { type: 'application/pdf' });
               setState((prev) => ({
                 ...prev,
-                files: prev.files.map(f => f.id === firstDoc.id ? { ...f, file: realFile } : f),
+                files: prev.files.map(f => f.id === activeDoc.id ? { ...f, file: realFile } : f),
               }));
             }
           } catch {
@@ -542,6 +593,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  const refreshProjectFiles = useCallback(async (options?: { silent?: boolean }) => {
+    const projectId = state.activeProject?.id;
+    if (!projectId) return;
+
+    if (!options?.silent) {
+      setState((prev) => ({ ...prev, isLoadingFiles: true }));
+    }
+
+    try {
+      const docs = await fetchProjectFileDocs(projectId);
+      setState((prev) => {
+        const preservedActive =
+          prev.activeFileId && docs.some((d) => d.id === prev.activeFileId)
+            ? prev.activeFileId
+            : docs.length > 0
+              ? docs[0].id
+              : null;
+        const openFiles = prev.openFiles.filter((id) => docs.some((d) => d.id === id));
+        const nextOpen =
+          openFiles.length > 0
+            ? openFiles
+            : preservedActive
+              ? [preservedActive]
+              : [];
+
+        return {
+          ...prev,
+          files: docs,
+          isLoadingFiles: false,
+          activeFileId: preservedActive,
+          openFiles: nextOpen,
+        };
+      });
+    } catch (err) {
+      console.error('Failed to refresh project files:', err);
+      setState((prev) => ({ ...prev, isLoadingFiles: false }));
+      throw err;
+    }
+  }, [state.activeProject?.id]);
+
   const toggleBot = useCallback(() => {
     setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
@@ -554,14 +645,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const handleReload = () => {
       if (state.activeProject) {
-        setActiveProject(state.activeProject);
+        void refreshProjectFiles();
       }
     };
     const handleFileUploaded = (e: Event) => {
-      const { id, name, size, file, localPath } = (e as CustomEvent).detail;
+      const { id, name, size, file, localPath, duplicate } = (e as CustomEvent).detail;
       setState((prev) => {
-        // Don't add if already exists
-        if (prev.files.some(f => f.id === id)) return prev;
+        const existing = prev.files.find((f) => f.id === id);
+        if (existing) {
+          if (duplicate) {
+            return {
+              ...prev,
+              files: prev.files.map((f) =>
+                f.id === id
+                  ? {
+                      ...f,
+                      file: file || f.file,
+                      fileSizeBytes: size ?? f.fileSizeBytes,
+                      localPath: localPath ?? f.localPath,
+                    }
+                  : f,
+              ),
+            };
+          }
+          return prev;
+        }
         const newFile: DocumentFile = {
           id,
           name,
@@ -578,8 +686,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     };
     const handleViewArtifact = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      setState((prev) => ({ ...prev, activeArtifact: detail }));
+      const { id, type, downloadUrl, name, sourceFileId } = (e as CustomEvent).detail;
+      setState((prev) => {
+        const fileId = sourceFileId ?? prev.activeFileId;
+        const openFiles =
+          fileId && !prev.openFiles.includes(fileId)
+            ? [...prev.openFiles, fileId]
+            : prev.openFiles;
+        return {
+          ...prev,
+          activeFileId: fileId,
+          activePage: 1,
+          openFiles,
+          activeArtifact: { id, type, downloadUrl, name, sourceFileId: fileId ?? undefined },
+        };
+      });
     };
     window.addEventListener('elementiq:reload-files', handleReload);
     window.addEventListener('elementiq:file-uploaded', handleFileUploaded);
@@ -589,7 +710,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('elementiq:file-uploaded', handleFileUploaded);
       window.removeEventListener('elementiq:view-artifact', handleViewArtifact);
     };
-  }, [state.activeProject]);
+  }, [state.activeProject, refreshProjectFiles]);
 
   const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
     // No confirm here — ConfirmDialog in Sidebar handles confirmation
@@ -819,16 +940,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const fileStatus = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : (detections.length > 0 ? 'PASS' : 'NO-NOTE');
 
       // Extract artifacts from result
-      const artifacts = (result.result?.artifacts ?? []).map((a: any) => ({
-        id: a.id,
-        type: a.artifact_type,
-        downloadUrl: a.download_url,
-        localPath: a.local_path,
-        fileSizeBytes: a.file_size_bytes,
-        originalFilename: a.original_filename,
-        contentType: a.content_type,
-        createdAt: a.created_at,
-      }));
+      const artifacts = filterArtifactsForFile(
+        (result.result?.artifacts ?? []).map((a: any) => ({
+          id: a.id,
+          type: a.artifact_type,
+          downloadUrl: a.download_url,
+          sourceFileId: id,
+          localPath: a.local_path,
+          fileSizeBytes: a.file_size_bytes,
+          originalFilename: a.original_filename,
+          contentType: a.content_type,
+          createdAt: a.created_at,
+        })),
+        id,
+        fileName,
+      );
 
       updateFileStatus(id, {
         status: fileStatus as any,
@@ -959,6 +1085,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         closeConfigModal,
         setCurrentView,
         setActiveProject,
+        refreshProjectFiles,
         toggleBot,
         setActiveArtifact,
       }}

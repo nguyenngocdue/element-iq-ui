@@ -698,6 +698,13 @@ export function MainEditor() {
   }, [state.activeArtifact]);
 
   useEffect(() => {
+    if (!state.activeArtifact?.sourceFileId || !state.activeFileId) return;
+    if (state.activeArtifact.sourceFileId !== state.activeFileId) {
+      setActiveArtifact(null);
+    }
+  }, [state.activeFileId, state.activeArtifact?.sourceFileId, setActiveArtifact]);
+
+  useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);

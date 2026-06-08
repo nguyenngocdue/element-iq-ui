@@ -15,6 +15,7 @@ export interface FileArtifact {
   id: string;
   type: string;
   downloadUrl: string;
+  sourceFileId?: string;
   localPath?: string;
   fileSizeBytes?: number;
   originalFilename?: string;
@@ -112,7 +113,7 @@ export interface SessionState {
   isBotOpen: boolean;
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;
-  activeArtifact?: { id: string; type: string; downloadUrl: string; name: string } | null;
+  activeArtifact?: { id: string; type: string; downloadUrl: string; name: string; sourceFileId?: string } | null;
   isAnalysisTerminalOpen: boolean;
   analysisLogs: AnalysisLogLine[];
   analysisQueue: AnalysisQueueState | null;

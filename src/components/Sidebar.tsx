@@ -765,7 +765,13 @@ export function FileItem({
 
   const openArtifact = (artifact: NonNullable<DocumentFile['artifacts']>[number], name: string) => {
     window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
-      detail: { id: artifact.id, type: artifact.type, downloadUrl: artifact.downloadUrl, name },
+      detail: {
+        id: artifact.id,
+        type: artifact.type,
+        downloadUrl: artifact.downloadUrl,
+        name,
+        sourceFileId: file.id,
+      },
     }));
   };
 
