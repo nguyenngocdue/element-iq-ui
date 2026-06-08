@@ -919,7 +919,7 @@ export function FileItem({
         {showArtifactsBlock && (
           <>
             <div
-              className="pl-9 pr-4 py-1 flex items-center gap-1.5 cursor-pointer text-[10px] text-[#858585] hover:text-white hover:bg-[#25272e] select-none"
+              className="pl-[3.75rem] pr-4 py-1 flex items-center gap-1.5 cursor-pointer text-[10px] text-[#858585] hover:text-white hover:bg-[#25272e] select-none"
               onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(!artifactsExpanded); }}
             >
               {artifactsExpanded ? <ChevronDown className="w-2.5 h-2.5 shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
@@ -965,10 +965,14 @@ export function FileItem({
     );
   }
 
-  const fileGuides: boolean[] = [!isLastFile];
   const sheetsFollowArtifacts = showSheets;
   const artifactsHeaderIsLast = !sheetsFollowArtifacts;
   const fileBranchContinues = expanded && (showArtifactsBlock || showSheets);
+  /** Offset child rows past the drawing row's index + expand chevron (w-4 + w-3). */
+  const FILE_CHILD_SPACER_COLS = 2;
+  const underFileGuides: boolean[] = [true];
+  const artifactRowGuides = (artifactIsLast: boolean) =>
+    [true, !artifactIsLast || sheetsFollowArtifacts] as boolean[];
 
   return (
     <div className="flex flex-col">
@@ -1008,7 +1012,8 @@ export function FileItem({
 
       {showArtifactsBlock && (
         <TreeRow
-          continuingGuides={fileGuides}
+          spacerColumns={FILE_CHILD_SPACER_COLS}
+          continuingGuides={underFileGuides}
           isLast={artifactsHeaderIsLast && !(artifactsExpanded && file.artifacts!.length > 0)}
           onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(!artifactsExpanded); }}
           className="text-[10px] text-[#858585]"
@@ -1034,7 +1039,8 @@ export function FileItem({
             isActive={state.activeArtifact?.id === a.id}
             onSelect={() => openArtifact(a, artifactName)}
             variant="tree"
-            continuingGuides={[!isLastFile, !artifactIsLast]}
+            spacerColumns={FILE_CHILD_SPACER_COLS}
+            continuingGuides={artifactRowGuides(artifactIsLast)}
             isLast={artifactIsLast}
             className="text-[11px]"
           />
@@ -1045,10 +1051,11 @@ export function FileItem({
         const pageNum = idx + 1;
         const isPageActive = isActive && activePage === pageNum;
         const isLastSheet = pageNum === file.pages;
-        const sheetGuides: boolean[] = [!isLastFile];
+        const sheetGuides: boolean[] = underFileGuides;
         return (
           <TreeRow
             key={pageNum}
+            spacerColumns={FILE_CHILD_SPACER_COLS}
             continuingGuides={sheetGuides}
             isLast={isLastSheet}
             active={isPageActive}

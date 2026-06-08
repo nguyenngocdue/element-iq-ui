@@ -20,6 +20,8 @@ export function TreeRow({
   children,
   active,
   title,
+  /** Extra blank columns before guides — aligns child rows with parent content (index, chevron, icon). */
+  spacerColumns = 0,
 }: {
   key?: React.Key;
   continuingGuides: boolean[];
@@ -29,6 +31,7 @@ export function TreeRow({
   children: React.ReactNode;
   active?: boolean;
   title?: string;
+  spacerColumns?: number;
 }) {
   return (
     <div
@@ -42,6 +45,9 @@ export function TreeRow({
       )}
     >
       <div className="flex shrink-0 self-stretch pl-2" aria-hidden>
+        {Array.from({ length: spacerColumns }, (_, i) => (
+          <div key={`sp-${i}`} className="shrink-0" style={{ width: TREE_GUIDE_W }} />
+        ))}
         {continuingGuides.map((cont, i) => (
           <div key={i} className="relative shrink-0" style={{ width: TREE_GUIDE_W }}>
             {cont && (

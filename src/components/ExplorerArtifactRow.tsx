@@ -59,6 +59,7 @@ export function ExplorerArtifactRow({
   continuingGuides,
   isLast,
   className,
+  spacerColumns = 0,
 }: React.Attributes & {
   artifact: FileArtifact;
   sourceFileName: string;
@@ -68,6 +69,7 @@ export function ExplorerArtifactRow({
   continuingGuides?: boolean[];
   isLast?: boolean;
   className?: string;
+  spacerColumns?: number;
 }) {
   const { anchorRef, hoverProps, renderTooltip } = useExplorerHoverTooltip();
   const displayName = artifactDisplayName(artifact.type);
@@ -87,6 +89,7 @@ export function ExplorerArtifactRow({
         {tooltip}
         <div ref={anchorRef} {...hoverProps}>
           <TreeRow
+            spacerColumns={spacerColumns}
             continuingGuides={continuingGuides ?? []}
             isLast={isLast ?? true}
             active={isActive}
@@ -109,7 +112,7 @@ export function ExplorerArtifactRow({
         {...hoverProps}
         onClick={handleClick}
         className={cn(
-          'pl-14 pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors',
+          'pl-[4.25rem] pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors',
           isActive ? 'bg-[#333748] text-white' : 'hover:bg-[#25272e] text-[#858585] hover:text-white',
           className,
         )}

@@ -277,6 +277,7 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
 function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onImageDimensions }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void; scale: number; toolMode: string; onScaleChange: (s: number) => void; onImageDimensions?: (w: number, h: number) => void }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const imgRef = React.useRef<HTMLImageElement>(null);
   const isDragging = React.useRef(false);
@@ -287,26 +288,50 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
   const [imgNaturalSize, setImgNaturalSize] = React.useState<{ w: number, h: number }>({ w: 0, h: 0 });
 
   React.useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
     (async () => {
       setLoading(true);
+      setLoadError(null);
+      setContent(null);
       try {
         const { authFetch } = await import('../lib/supabase');
         const res = await authFetch(artifact.downloadUrl);
-        if (res.ok) {
-          if (artifact.type === 'REPORT_JSON') {
-            const text = await res.text();
-            setContent(text);
-          } else {
-            const blob = await res.blob();
-            setContent(URL.createObjectURL(blob));
+        if (cancelled) return;
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '');
+          let message = `HTTP ${res.status}`;
+          try {
+            const parsed = JSON.parse(detail);
+            if (parsed.detail) message = typeof parsed.detail === 'string' ? parsed.detail : message;
+          } catch {
+            if (detail) message = detail.slice(0, 160);
           }
+          setLoadError(message);
+          return;
+        }
+        if (artifact.type === 'REPORT_JSON') {
+          setContent(await res.text());
+        } else {
+          const blob = await res.blob();
+          objectUrl = URL.createObjectURL(blob);
+          setContent(objectUrl);
         }
       } catch (err) {
-        console.error('Failed to load artifact:', err);
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
-  }, [artifact.id]);
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [artifact.id, artifact.downloadUrl, artifact.type]);
 
   // Ctrl+Wheel zoom for PNG
   React.useEffect(() => {
@@ -456,7 +481,15 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
           </pre>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-[#858585]">Failed to load artifact</div>
+        <div className="flex-1 flex flex-col items-center justify-center text-[#858585] gap-2 px-6 text-center">
+          <span>Failed to load artifact</span>
+          {loadError && (
+            <span className="text-[11px] text-[#ef4444] font-mono max-w-lg break-all">{loadError}</span>
+          )}
+          {!loadError && (
+            <span className="text-[11px] text-[#666]">Check login session and that the analysis job completed.</span>
+          )}
+        </div>
       )}
 
       {/* Zoom rect overlay for PNG */}

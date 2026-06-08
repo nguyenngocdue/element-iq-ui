@@ -86,8 +86,9 @@ export function filterArtifactsForFile<T extends { originalFilename?: string; so
   const stem = fileName.replace(/\.pdf$/i, '');
   return artifacts.filter((a) => {
     if (a.sourceFileId && a.sourceFileId !== fileId) return false;
-    if (!a.originalFilename) return true;
-    return a.originalFilename.startsWith(stem);
+    if (!a.originalFilename) return false;
+    const name = a.originalFilename;
+    return name.startsWith(stem) || name.replace(/\.[^.]+$/, '').startsWith(stem);
   });
 }
 
