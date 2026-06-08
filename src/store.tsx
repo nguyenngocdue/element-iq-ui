@@ -80,7 +80,9 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
         (f.analysis?.artifacts ?? []).map((a: any) => ({
           id: a.id,
           type: a.artifact_type,
-          downloadUrl: a.download_url,
+          downloadUrl: a.download_url
+            ? `${a.download_url}${a.download_url.includes('?') ? '&' : '?'}v=${a.id}`
+            : a.download_url,
           sourceFileId: a.source_file_id ?? f.id,
           localPath: a.local_path,
           fileSizeBytes: a.file_size_bytes,
@@ -944,7 +946,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         (result.result?.artifacts ?? []).map((a: any) => ({
           id: a.id,
           type: a.artifact_type,
-          downloadUrl: a.download_url,
+          downloadUrl: a.download_url
+            ? `${a.download_url}${a.download_url.includes('?') ? '&' : '?'}v=${a.id}`
+            : a.download_url,
           sourceFileId: id,
           localPath: a.local_path,
           fileSizeBytes: a.file_size_bytes,
@@ -969,11 +973,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         passRate,
       });
 
+      // New job → new artifact IDs; drop stale viewer so user reopens fresh PNG/PDF.
+      setState((prev) => ({
+        ...prev,
+        activeArtifact:
+          prev.activeArtifact?.sourceFileId === id ? null : prev.activeArtifact,
+      }));
+
       appendAnalysisLog({
         level: fileStatus === 'PASS' ? 'success' : fileStatus === 'FAIL' ? 'error' : 'warn',
         message: `${fileName} → ${overallStatus} · ${detections.length} detection(s) · ${Number(passRate).toFixed(1)}% pass`,
         fileId: id,
       });
+      if (artifacts.length > 0) {
+        appendAnalysisLog({
+          level: 'info',
+          message: 'Artifacts updated — open Annotated PNG/PDF in sidebar to view latest',
+          fileId: id,
+        });
+      }
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
