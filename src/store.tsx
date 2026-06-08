@@ -459,6 +459,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               id: a.id,
               type: a.artifact_type,
               downloadUrl: a.download_url,
+              localPath: a.local_path,
+              fileSizeBytes: a.file_size_bytes,
+              originalFilename: a.original_filename,
+              contentType: a.content_type,
+              createdAt: a.created_at,
             })),
             events: [{ id: Date.now().toString(), timestamp: f.uploaded_at || new Date().toISOString(), message: 'Loaded from server', type: 'INFO' as const }],
           };
@@ -512,7 +517,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     };
     const handleFileUploaded = (e: Event) => {
-      const { id, name, size, file } = (e as CustomEvent).detail;
+      const { id, name, size, file, localPath } = (e as CustomEvent).detail;
       setState((prev) => {
         // Don't add if already exists
         if (prev.files.some(f => f.id === id)) return prev;
@@ -523,6 +528,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: 'PENDING',
           pages: 1,
           detections: [],
+          fileSizeBytes: size,
+          uploadedAt: new Date().toISOString(),
+          localPath,
           events: [{ id: Date.now().toString(), timestamp: new Date().toISOString(), message: 'Uploaded', type: 'SUCCESS' }],
         };
         return { ...prev, files: [...prev.files, newFile] };
@@ -711,6 +719,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         id: a.id,
         type: a.artifact_type,
         downloadUrl: a.download_url,
+        localPath: a.local_path,
+        fileSizeBytes: a.file_size_bytes,
+        originalFilename: a.original_filename,
+        contentType: a.content_type,
+        createdAt: a.created_at,
       }));
 
       updateFileStatus(id, {

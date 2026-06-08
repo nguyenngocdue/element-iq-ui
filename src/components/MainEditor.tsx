@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
+import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -451,18 +452,33 @@ export function MainEditor() {
   const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact } = useApp();
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
-  const [scale, setScale] = useState(0.5);
+  const { getScale, setScaleForKey } = usePerViewZoom();
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
-  // Reset scale when switching to/from artifact
-  useEffect(() => {
-    if (state.activeArtifact?.type === 'ANNOTATED_PNG') {
-      setScale(0.21);
-    } else if (!state.activeArtifact) {
-      setScale(0.5);
-    }
-  }, [state.activeArtifact?.id]);
+  const primaryZoomKey = state.activeArtifact
+    ? zoomKeyForArtifact(state.activeArtifact.id)
+    : file
+      ? zoomKeyForFile(file.id)
+      : null;
+  const splitZoomKey = splitFile ? zoomKeyForFile(splitFile.id) : null;
+
+  const primaryScale = getScale(primaryZoomKey);
+  const splitScale = getScale(splitZoomKey);
+
+  const setPrimaryScale = useCallback(
+    (value: number | ((prev: number) => number)) => setScaleForKey(primaryZoomKey, value),
+    [primaryZoomKey, setScaleForKey],
+  );
+
+  const isAPressed = useRef(false);
+  const pane1Ref = useRef<HTMLDivElement>(null);
+  const pane2Ref = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const isDrawingZoom = useRef(false);
+  const startDragPos = useRef({ x: 0, y: 0 });
+  const startScrollPos = useRef({ left: 0, top: 0 });
+
   const [zoomRect, setZoomRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
   const [pdfDimensions, setPdfDimensions] = useState<{ w: number, h: number } | null>(null);
   const [pngDimensions, setPngDimensions] = useState<{ w: number, h: number } | null>(null);
@@ -480,7 +496,7 @@ export function MainEditor() {
         const availableHeight = pane.clientHeight - padding;
         const newScale = Math.min(availableWidth / pngDimensions.w, availableHeight / pngDimensions.h);
         if (!isNaN(newScale) && newScale > 0) {
-          setScale(Math.max(0.1, Math.min(4, newScale)));
+          setPrimaryScale(Math.max(0.1, Math.min(4, newScale)));
         }
       }
       return;
@@ -493,18 +509,10 @@ export function MainEditor() {
       const availableHeight = pane.clientHeight - padding;
       const newScale = Math.min(availableWidth / pdfDimensions.w, availableHeight / pdfDimensions.h);
       if (!isNaN(newScale) && newScale > 0) {
-        setScale(Math.max(0.1, Math.min(4, newScale)));
+        setPrimaryScale(Math.max(0.1, Math.min(4, newScale)));
       }
     }
   };
-  
-  const isAPressed = useRef(false);
-  const pane1Ref = useRef<HTMLDivElement>(null);
-  const pane2Ref = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const isDrawingZoom = useRef(false);
-  const startDragPos = useRef({ x: 0, y: 0 });
-  const startScrollPos = useRef({ left: 0, top: 0 });
 
   const handleMouseDown = (e: React.MouseEvent, paneRef: React.RefObject<HTMLDivElement>) => {
     if (!paneRef.current) return;
@@ -538,7 +546,7 @@ export function MainEditor() {
     }
   };
 
-  const handleMouseUp = (paneRef: React.RefObject<HTMLDivElement>) => {
+  const handleMouseUp = (paneRef: React.RefObject<HTMLDivElement>, isSplitPane = false) => {
     if (isDragging.current) {
       isDragging.current = false;
       if (paneRef.current) paneRef.current.style.cursor = '';
@@ -558,10 +566,11 @@ export function MainEditor() {
         const scaleY = paneRect.height / zoomRect.h;
         const scaleMultiplier = Math.min(scaleX, scaleY);
         
-        const prevScale = scale;
+        const zoomKey = isSplitPane && splitZoomKey ? splitZoomKey : primaryZoomKey;
+        const prevScale = getScale(zoomKey);
         const nextScale = Math.min(4, Math.max(0.1, prevScale * scaleMultiplier));
         
-        setScale(nextScale);
+        setScaleForKey(zoomKey, nextScale);
         
         setTimeout(() => {
           if (paneRef.current) {
@@ -576,8 +585,8 @@ export function MainEditor() {
     }
   };
 
-  const handleMouseLeave = (paneRef: React.RefObject<HTMLDivElement>) => {
-    handleMouseUp(paneRef);
+  const handleMouseLeave = (paneRef: React.RefObject<HTMLDivElement>, isSplitPane = false) => {
+    handleMouseUp(paneRef, isSplitPane);
   };
 
   useEffect(() => {
@@ -601,14 +610,12 @@ export function MainEditor() {
     // Do nothing here — handled by native event listener below
   };
 
-  // Native wheel listener to prevent browser zoom and handle PDF zoom
-  useEffect(() => {
-    const pane = pane1Ref.current;
-    if (!pane) return;
+  const attachPaneWheelZoom = useCallback(
+    (pane: HTMLDivElement, zoomKey: string | null) => {
+      const onWheel = (e: WheelEvent) => {
+        if (!zoomKey || !(e.ctrlKey || e.metaKey)) return;
 
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault(); // Block browser zoom
+        e.preventDefault();
         e.stopPropagation();
 
         const rect = pane.getBoundingClientRect();
@@ -616,7 +623,7 @@ export function MainEditor() {
         const pointerY = e.clientY - rect.top;
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
 
-        setScale((prevScale) => {
+        setScaleForKey(zoomKey, (prevScale) => {
           const nextScale = Math.min(4, Math.max(0.1, prevScale * zoomFactor));
           if (nextScale === prevScale) return prevScale;
 
@@ -631,12 +638,28 @@ export function MainEditor() {
 
           return nextScale;
         });
-      }
-    };
+      };
 
-    pane.addEventListener('wheel', onWheel, { passive: false });
-    return () => pane.removeEventListener('wheel', onWheel);
-  }, [file]);
+      pane.addEventListener('wheel', onWheel, { passive: false });
+      return () => pane.removeEventListener('wheel', onWheel);
+    },
+    [setScaleForKey],
+  );
+
+  // Native wheel listener to prevent browser zoom and handle PDF zoom (pane 1)
+  useEffect(() => {
+    const pane = pane1Ref.current;
+    if (!pane || !primaryZoomKey) return;
+    return attachPaneWheelZoom(pane, primaryZoomKey);
+  }, [attachPaneWheelZoom, primaryZoomKey]);
+
+  // Wheel zoom for split pane (pane 2)
+  useEffect(() => {
+    if (state.splitMode === 'none' || !splitZoomKey) return;
+    const pane = pane2Ref.current;
+    if (!pane) return;
+    return attachPaneWheelZoom(pane, splitZoomKey);
+  }, [attachPaneWheelZoom, splitZoomKey, state.splitMode]);
 
   // Prevent browser zoom when viewing artifact (pane1Ref not mounted)
   useEffect(() => {
@@ -844,7 +867,7 @@ export function MainEditor() {
 
         {/* Canvas (Pane 1) */}
         {state.activeArtifact ? (
-          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={scale} toolMode={toolMode} onScaleChange={setScale} onImageDimensions={(w, h) => setPngDimensions({ w, h })} />
+          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={primaryScale} toolMode={toolMode} onScaleChange={setPrimaryScale} onImageDimensions={(w, h) => setPngDimensions({ w, h })} />
         ) : (
         <div 
           ref={pane1Ref}
@@ -867,7 +890,7 @@ export function MainEditor() {
             <PdfRenderer 
                file={file} 
                pageNum={state.activePage || 1} 
-               scale={scale || 0.5} 
+               scale={primaryScale || 0.5} 
                onDimensionsLoaded={(w, h) => setPdfDimensions({w, h})}
                showAnnotations={showAnnotations} 
             />
@@ -922,9 +945,9 @@ export function MainEditor() {
             <Maximize className="w-4 h-4" />
           </button>
           <div className="flex items-center text-[#a0a5b5] text-xs font-medium selection:bg-transparent rounded bg-[#121212] border border-[#3c3c3c] ml-1">
-            <button onClick={() => setScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
-            <span className="w-[45px] text-center">{!isNaN(scale) ? Math.round((scale || 0.5) * 100) : 100}%</span>
-            <button onClick={() => setScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
+            <button onClick={() => setPrimaryScale(s => Math.max(0.1, (s || 1) - 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-r border-[#3c3c3c] rounded-l leading-none">−</button>
+            <span className="w-[45px] text-center">{!isNaN(primaryScale) ? Math.round((primaryScale || 0.5) * 100) : 100}%</span>
+            <button onClick={() => setPrimaryScale(s => Math.min(4, (s || 1) + 0.25))} className="px-2 py-1.5 hover:text-white hover:bg-[#333] transition-colors border-l border-[#3c3c3c] rounded-r leading-none">+</button>
           </div>
         </div>
         )}
@@ -962,8 +985,8 @@ export function MainEditor() {
             onWheel={handleWheel}
             onMouseDown={(e) => handleMouseDown(e, pane2Ref)}
             onMouseMove={(e) => handleMouseMove(e, pane2Ref)}
-            onMouseUp={() => handleMouseUp(pane2Ref)}
-            onMouseLeave={() => handleMouseLeave(pane2Ref)}
+            onMouseUp={() => handleMouseUp(pane2Ref, true)}
+            onMouseLeave={() => handleMouseLeave(pane2Ref, true)}
             className={`flex-1 overflow-auto bg-[#0a0a0a] relative no-scrollbar shadow-inner ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
           >
              <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
@@ -971,7 +994,7 @@ export function MainEditor() {
                  <PdfRenderer 
                    file={splitFile} 
                    pageNum={state.activePage || 1} 
-                   scale={scale} 
+                   scale={splitScale} 
                    showAnnotations={showAnnotations} 
                  />
                ) : (

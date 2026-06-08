@@ -1,68 +1,276 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { ChevronDown, ChevronRight, CloudUpload, File as FileIcon, X, RefreshCw, Eye, EyeOff, Image, FileText, BarChart2 } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { highlightMatch } from '../lib/fileSearch';
+import {
+  applyExplorerView,
+  DEFAULT_EXPLORER_SORT,
+  DEFAULT_EXPLORER_STATUS,
+  ExplorerSortKey,
+  ExplorerStatusFilter,
+  formatFileCreatedAt,
+  formatFileSizeBytes,
+  getFileSizeBytes,
+  statusFilterColorClass,
+  statusFilterLabel,
+} from '../lib/fileView';
 import { DocumentFile } from '../types';
 import { useResizable } from '../hooks/useResizable';
+import {
+  ExplorerTooltipLocation,
+  ExplorerTooltipRow,
+  useExplorerHoverTooltip,
+} from '../hooks/useExplorerHoverTooltip';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ExplorerArtifactRow } from './ExplorerArtifactRow';
+import { ExplorerViewMenu } from './ExplorerViewMenu';
+import { TreeRow } from './TreeRow';
 
 export function Sidebar() {
   const { state, setActiveFile, clearSession, openConfigModal, analyzeAll, stopAnalysis } = useApp();
   const [showStatuses, setShowStatuses] = useState(true);
+  const [showFileSizes, setShowFileSizes] = useState(false);
+  const [showCreatedDates, setShowCreatedDates] = useState(false);
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [clearProgress, setClearProgress] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [explorerSearch, setExplorerSearch] = useState('');
+  const [explorerSort, setExplorerSort] = useState<ExplorerSortKey>(DEFAULT_EXPLORER_SORT);
+  const [explorerStatus, setExplorerStatus] = useState<ExplorerStatusFilter>(DEFAULT_EXPLORER_STATUS);
+  const explorerSearchRef = React.useRef<HTMLInputElement>(null);
+  const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
+  const [artifactsExpandedFileIds, setArtifactsExpandedFileIds] = useState<Set<string>>(new Set());
+
+  // Keep expansion sets in sync when files are added or removed.
+  React.useEffect(() => {
+    const ids = state.files.map(f => f.id);
+    setExpandedFileIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) next.add(id);
+      }
+      for (const id of next) {
+        if (!ids.includes(id)) next.delete(id);
+      }
+      return next;
+    });
+    setArtifactsExpandedFileIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) next.add(id);
+      }
+      for (const id of next) {
+        if (!ids.includes(id)) next.delete(id);
+      }
+      return next;
+    });
+  }, [state.files]);
+
+  const expandableFileIds = state.files
+    .filter(f => f.pages > 1 || (f.artifacts && f.artifacts.length > 0))
+    .map(f => f.id);
+  const allExpanded =
+    expandableFileIds.length > 0 &&
+    expandableFileIds.every(id => expandedFileIds.has(id));
+
+  const toggleExpandAll = () => {
+    if (allExpanded) {
+      setExpandedFileIds(new Set());
+      setArtifactsExpandedFileIds(new Set());
+    } else {
+      const allIds = new Set(state.files.map(f => f.id));
+      setExpandedFileIds(allIds);
+      setArtifactsExpandedFileIds(allIds);
+    }
+  };
+
+  const activeFilterQuery =
+    state.activeSidebarTab === 'search' ? searchQuery : explorerSearch;
+  const displayedFiles = applyExplorerView(state.files, {
+    query: activeFilterQuery,
+    status: explorerStatus,
+    sort: explorerSort,
+  });
+  const hasViewFilter =
+    activeFilterQuery.trim() !== '' ||
+    explorerStatus !== DEFAULT_EXPLORER_STATUS ||
+    explorerSort !== DEFAULT_EXPLORER_SORT;
+
+  // Auto-expand matches while filtering so artifacts/sheets stay visible.
+  React.useEffect(() => {
+    const q = activeFilterQuery.trim();
+    if (!q) return;
+    const matched = displayedFiles.map((f) => f.id);
+    setExpandedFileIds((prev) => {
+      const next = new Set(prev);
+      matched.forEach((id) => next.add(id));
+      return next;
+    });
+    setArtifactsExpandedFileIds((prev) => {
+      const next = new Set(prev);
+      matched.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [activeFilterQuery, explorerStatus, explorerSort, state.files]);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && state.activeSidebarTab === 'explorer') {
+        e.preventDefault();
+        explorerSearchRef.current?.focus();
+        explorerSearchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state.activeSidebarTab]);
 
   const isAnalyzing = state.files.some(f => f.status === 'ANALYZING');
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
-  // Search results
-  const searchResults = searchQuery.trim()
-    ? state.files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : [];
+  const renderFileList = (
+    files: DocumentFile[],
+    highlightQuery: string,
+    emptyMessage: string,
+  ) => {
+    if (files.length === 0) {
+      return (
+        <div className="px-4 py-8 text-center text-[#858585] text-[12px]">
+          <Search className="w-5 h-5 mx-auto mb-2 opacity-30" />
+          <p>{emptyMessage}</p>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col mt-1">
+        {files.map((file, index) => (
+          <FileItem
+            key={file.id}
+            file={file}
+            index={index + 1}
+            isLastFile={index === files.length - 1}
+            showTree
+            nameHighlight={highlightQuery}
+            isActive={state.activeFileId === file.id}
+            activePage={state.activePage || 1}
+            onClick={() => setActiveFile(file.id, 1)}
+            onPageClick={(page) => setActiveFile(file.id, page)}
+            hideBadge={!showStatuses}
+            showFileSize={showFileSizes}
+            showCreatedDate={showCreatedDates}
+            expanded={expandedFileIds.has(file.id)}
+            artifactsExpanded={artifactsExpandedFileIds.has(file.id)}
+            onExpandedChange={(v) => {
+              setExpandedFileIds((prev) => {
+                const next = new Set(prev);
+                if (v) next.add(file.id);
+                else next.delete(file.id);
+                return next;
+              });
+            }}
+            onArtifactsExpandedChange={(v) => {
+              setArtifactsExpandedFileIds((prev) => {
+                const next = new Set(prev);
+                if (v) next.add(file.id);
+                else next.delete(file.id);
+                return next;
+              });
+            }}
+          />
+        ))}
+      </div>
+    );
+  };
 
-  // If search tab is active, show search panel
+  // If search tab is active, show dedicated search panel
   if (state.activeSidebarTab === 'search') {
     return (
       <div style={{ width }} className="bg-[#1a1b20] border-r border-[#2b2d35] flex flex-col shrink-0 text-[#cccccc] font-sans relative">
         <div onMouseDown={handleMouseDown} className={cn("absolute top-0 right-[-3px] bottom-0 w-[6px] cursor-col-resize z-50 hover:bg-[#10b981] transition-colors", isDragging && "bg-[#10b981]")} />
-        <div className="p-4 border-b border-[#2b2d35]">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#858585] mb-3">Search</h3>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search files..."
-            autoFocus
-            className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#10b981] placeholder-[#858585]"
-          />
+        <div className="sticky top-0 bg-[#1a1b20] z-10 border-b border-[#2b2d35]/60">
+          <div className="px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#858585]">Search</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <ExplorerViewMenu
+                compact
+                align="right"
+                sort={explorerSort}
+                status={explorerStatus}
+                onSortChange={setExplorerSort}
+                onStatusChange={setExplorerStatus}
+              />
+              {statusFilterLabel(explorerStatus) && (
+                <span
+                  className={cn(
+                    'text-[9px] font-semibold leading-none',
+                    statusFilterColorClass(explorerStatus),
+                  )}
+                >
+                  {statusFilterLabel(explorerStatus)}
+                </span>
+              )}
+              {state.files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowFileSizes(!showFileSizes)}
+                  className={cn(
+                    'p-1 transition-colors',
+                    showFileSizes ? 'text-[#10b981]' : 'text-[#858585] hover:text-white',
+                  )}
+                  title={showFileSizes ? 'Hide file sizes' : 'Show file sizes'}
+                >
+                  <HardDrive className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {state.files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCreatedDates(!showCreatedDates)}
+                  className={cn(
+                    'p-1 transition-colors',
+                    showCreatedDates ? 'text-[#10b981]' : 'text-[#858585] hover:text-white',
+                  )}
+                  title={showCreatedDates ? 'Hide created dates' : 'Show created dates (DB)'}
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="px-3 pb-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#666] pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter by name, status, artifact..."
+                autoFocus
+                className="w-full bg-[#252526] border border-[#333] rounded pl-7 pr-7 py-1 text-[11px] text-white focus:outline-none focus:border-[#10b981]/60 placeholder-[#666]"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-[#666] hover:text-white"
+                  title="Clear"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {searchQuery.trim() && (
-            <div className="text-[10px] text-[#858585] px-2 mb-2">
-              {searchResults.length} result(s) in {state.files.length} file(s)
+        <div className="flex-1 overflow-y-auto pb-4">
+          {!searchQuery.trim() && explorerStatus === DEFAULT_EXPLORER_STATUS ? (
+            <div className="text-center text-[#858585] text-xs mt-8 px-4">
+              <Search className="w-6 h-6 mx-auto mb-2 opacity-30" />
+              <p>Search by file name, status (Pass/Fail), or artifact type</p>
             </div>
-          )}
-          {searchResults.map((file, i) => (
-            <div
-              key={file.id}
-              onClick={() => setActiveFile(file.id)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[#25272e] text-[12px]"
-            >
-              <FileIcon className="w-3.5 h-3.5 text-[#858585] shrink-0" />
-              <span className="truncate text-white">{file.name}</span>
-              <span className={cn("text-[9px] font-bold px-1 py-0.5 rounded shrink-0",
-                file.status === 'PASS' ? "text-[#2eb886] bg-[#2eb886]/10" :
-                file.status === 'FAIL' ? "text-[#ef4444] bg-[#ef4444]/10" :
-                "text-[#858585] bg-[#858585]/10"
-              )}>{file.status}</span>
-            </div>
-          ))}
-          {!searchQuery.trim() && (
-            <div className="text-center text-[#858585] text-xs mt-8">
-              <p>Type to search files</p>
-            </div>
+          ) : (
+            renderFileList(displayedFiles, searchQuery, 'No files match your search')
           )}
         </div>
       </div>
@@ -142,14 +350,115 @@ export function Sidebar() {
 
       {/* Drawings Explorer */}
       <div className="flex-1 overflow-y-auto flex flex-col pb-4 bg-[#1a1b20]">
-        <div className="px-4 py-3 flex justify-between items-center sticky top-0 bg-[#1a1b20] z-10">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#858585]">Drawings explorer</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowStatuses(!showStatuses)} className="text-[#858585] hover:text-white transition-colors" title="Toggle Status Badges">
-              {showStatuses ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
-            <span className="text-[#2eb886] font-bold text-[11px] bg-[#2eb886]/10 px-1.5 py-0.5 rounded">{displayPassRate}%</span>
+        <div className="sticky top-0 bg-[#1a1b20] z-10 border-b border-[#2b2d35]/60">
+          <div className="px-3 py-2 flex items-center justify-between gap-2 min-h-[32px]">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#858585] truncate">
+              Drawings explorer
+            </span>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {state.files.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <ExplorerViewMenu
+                    compact
+                    align="right"
+                    sort={explorerSort}
+                    status={explorerStatus}
+                    onSortChange={setExplorerSort}
+                    onStatusChange={setExplorerStatus}
+                  />
+                  {statusFilterLabel(explorerStatus) && (
+                    <span
+                      className={cn(
+                        'text-[9px] font-semibold leading-none mr-0.5',
+                        statusFilterColorClass(explorerStatus),
+                      )}
+                    >
+                      {statusFilterLabel(explorerStatus)}
+                    </span>
+                  )}
+                </div>
+              )}
+              {state.files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleExpandAll}
+                  disabled={expandableFileIds.length === 0}
+                  className="p-1 text-[#858585] hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={allExpanded ? 'Collapse all' : 'Expand all'}
+                >
+                  {allExpanded
+                    ? <ChevronsDownUp className="w-3.5 h-3.5" />
+                    : <ChevronsUpDown className="w-3.5 h-3.5" />
+                  }
+                </button>
+              )}
+              {state.files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowFileSizes(!showFileSizes)}
+                  className={cn(
+                    'p-1 transition-colors',
+                    showFileSizes ? 'text-[#10b981]' : 'text-[#858585] hover:text-white',
+                  )}
+                  title={showFileSizes ? 'Hide file sizes' : 'Show file sizes'}
+                >
+                  <HardDrive className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {state.files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCreatedDates(!showCreatedDates)}
+                  className={cn(
+                    'p-1 transition-colors',
+                    showCreatedDates ? 'text-[#10b981]' : 'text-[#858585] hover:text-white',
+                  )}
+                  title={showCreatedDates ? 'Hide created dates' : 'Show created dates (DB)'}
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowStatuses(!showStatuses)}
+                className={cn(
+                  'p-1 transition-colors',
+                  showStatuses ? 'text-[#858585] hover:text-white' : 'text-[#10b981]',
+                )}
+                title="Toggle status badges"
+              >
+                {showStatuses ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
+              <span className="text-[#2eb886] font-semibold text-[10px] bg-[#2eb886]/10 px-1 py-0.5 rounded ml-0.5">
+                {displayPassRate}%
+              </span>
+            </div>
           </div>
+          {state.files.length > 0 && (
+            <div className="px-3 pb-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#666] pointer-events-none" />
+                <input
+                  ref={explorerSearchRef}
+                  type="text"
+                  value={explorerSearch}
+                  onChange={(e) => setExplorerSearch(e.target.value)}
+                  placeholder="Filter drawings..."
+                  className="w-full bg-[#252526] border border-[#333] rounded pl-7 pr-7 py-1 text-[11px] text-white focus:outline-none focus:border-[#10b981]/60 placeholder-[#666]"
+                />
+                {explorerSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setExplorerSearch('')}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-[#666] hover:text-white"
+                    title="Clear"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         
         {state.isLoadingFiles ? (
@@ -173,24 +482,17 @@ export function Sidebar() {
             <FileIcon className="w-6 h-6 mx-auto mb-2 opacity-30" />
             <p>No drawings found.</p>
           </div>
+        ) : hasViewFilter && displayedFiles.length === 0 ? (
+          renderFileList([], explorerSearch, 'No drawings match the current view')
         ) : (
-          <div className="flex flex-col mt-1">
-            {state.files.map((file, index) => (
-              <FileItem 
-                key={file.id} 
-                file={file}
-                index={index + 1}
-                isActive={state.activeFileId === file.id}
-                activePage={state.activePage || 1}
-                onClick={() => setActiveFile(file.id, 1)}
-                onPageClick={(page) => setActiveFile(file.id, page)}
-                hideBadge={!showStatuses}
-              />
-            ))}
+          <>
+            {renderFileList(displayedFiles, explorerSearch, 'No drawings found')}
             <div className="px-4 py-2 text-[10px] text-[#858585] border-t border-[#2b2d35] mt-1">
-              Total: {state.files.length} file(s)
+              {hasViewFilter
+                ? `Showing ${displayedFiles.length} of ${state.files.length} file(s)`
+                : `Total: ${state.files.length} file(s)`}
             </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -218,12 +520,56 @@ export function Sidebar() {
   );
 }
 
-export function FileItem({ file, index, isActive, activePage, onClick, onPageClick, hideBadge }: { key?: React.Key, file: DocumentFile, index?: number, isActive: boolean, activePage: number, onClick: () => void, onPageClick: (p: number) => void, hideBadge?: boolean }) {
+export function FileItem({
+  file,
+  index,
+  isLastFile = true,
+  showTree = false,
+  isActive,
+  activePage,
+  onClick,
+  onPageClick,
+  hideBadge,
+  showFileSize = false,
+  showCreatedDate = false,
+  expanded: controlledExpanded,
+  artifactsExpanded: controlledArtifactsExpanded,
+  onExpandedChange,
+  onArtifactsExpandedChange,
+  nameHighlight = '',
+}: {
+  key?: React.Key;
+  file: DocumentFile;
+  index?: number;
+  isLastFile?: boolean;
+  showTree?: boolean;
+  nameHighlight?: string;
+  isActive: boolean;
+  activePage: number;
+  onClick: () => void;
+  onPageClick: (p: number) => void;
+  hideBadge?: boolean;
+  showFileSize?: boolean;
+  showCreatedDate?: boolean;
+  expanded?: boolean;
+  artifactsExpanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  onArtifactsExpandedChange?: (expanded: boolean) => void;
+}) {
   const { state } = useApp();
-  const [expanded, setExpanded] = React.useState(true);
-  const [artifactsExpanded, setArtifactsExpanded] = React.useState(true);
-  const [showTooltip, setShowTooltip] = React.useState(false);
-  const itemRef = React.useRef<HTMLDivElement>(null);
+  const [internalExpanded, setInternalExpanded] = React.useState(true);
+  const [internalArtifactsExpanded, setInternalArtifactsExpanded] = React.useState(true);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const artifactsExpanded = controlledArtifactsExpanded ?? internalArtifactsExpanded;
+  const setExpanded = (v: boolean) => {
+    onExpandedChange?.(v);
+    if (controlledExpanded === undefined) setInternalExpanded(v);
+  };
+  const setArtifactsExpanded = (v: boolean) => {
+    onArtifactsExpandedChange?.(v);
+    if (controlledArtifactsExpanded === undefined) setInternalArtifactsExpanded(v);
+  };
+  const { anchorRef: fileRowRef, hoverProps: tooltipHoverProps, renderTooltip } = useExplorerHoverTooltip();
   
   const getBadge = () => {
     if (file.status === 'UPLOADING') {
@@ -247,170 +593,240 @@ export function FileItem({ file, index, isActive, activePage, onClick, onPageCli
     return null;
   };
 
-  // If we only have 1 page, don't show sheets.
   const hasSheets = file.pages > 1;
+  const hasArtifacts = !!(file.artifacts && file.artifacts.length > 0);
+  const hasChildren = hasSheets || hasArtifacts;
+  const showSheets = expanded && hasSheets;
+  const showArtifactsBlock = expanded && hasArtifacts;
+
+  const openArtifact = (artifact: NonNullable<DocumentFile['artifacts']>[number], name: string) => {
+    window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
+      detail: { id: artifact.id, type: artifact.type, downloadUrl: artifact.downloadUrl, name },
+    }));
+  };
+
+  const fileTooltip = renderTooltip(
+    <>
+      <ExplorerTooltipRow label="ID" value={`${file.id.slice(0, 8)}...`} valueClassName="font-mono" />
+      <ExplorerTooltipRow label="File" value={file.name} valueClassName="font-medium" />
+      <ExplorerTooltipRow label="Size" value={formatFileSizeBytes(getFileSizeBytes(file))} />
+      <ExplorerTooltipRow label="Pages" value={file.pages} />
+      <ExplorerTooltipRow label="Status" value={file.status} valueClassName="font-bold" />
+      <ExplorerTooltipRow
+        label="Uploaded"
+        value={file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '—'}
+      />
+      <ExplorerTooltipLocation path={file.localPath ?? '—'} />
+    </>,
+  );
+
+  const fileRowContent = (
+    <>
+      {index != null && (
+        <span className="text-[9px] text-[#555] font-mono w-4 shrink-0 text-right">{index}</span>
+      )}
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className="shrink-0 text-[#858585] hover:text-white transition-colors"
+        >
+          {expanded
+            ? <ChevronDown className="w-3 h-3" />
+            : <ChevronRight className="w-3 h-3" />
+          }
+        </button>
+      ) : (
+        <span className="w-3 shrink-0" />
+      )}
+      <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+      <span className="truncate flex-1 text-[13px] font-medium min-w-0">{highlightMatch(file.name, nameHighlight)}</span>
+      {(showFileSize || showCreatedDate) && (
+        <span className="flex items-center gap-1 shrink-0 text-[9px] text-[#666]">
+          {showFileSize && (
+            <span
+              className="font-mono tabular-nums"
+              title={`Size: ${formatFileSizeBytes(getFileSizeBytes(file))}`}
+            >
+              {formatFileSizeBytes(getFileSizeBytes(file))}
+            </span>
+          )}
+          {showFileSize && showCreatedDate && (
+            <span className="text-[#444] select-none">|</span>
+          )}
+          {showCreatedDate && (
+            <span
+              title={file.uploadedAt ? `Created in DB: ${new Date(file.uploadedAt).toLocaleString()}` : 'Created date unavailable'}
+            >
+              {formatFileCreatedAt(file)}
+            </span>
+          )}
+        </span>
+      )}
+      <span className="shrink-0">{!hideBadge && getBadge()}</span>
+    </>
+  );
+
+  const flatFileRow = (
+    <div
+      ref={fileRowRef}
+      {...tooltipHoverProps}
+      onClick={() => { onClick(); if (hasSheets) setExpanded(!expanded); }}
+      className={cn(
+        'px-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium relative',
+        isActive && !hasSheets
+          ? 'bg-[#333748] text-white border-l-2 border-[#1e5cdc]'
+          : 'hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent',
+      )}
+    >
+      <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">{fileRowContent}</div>
+    </div>
+  );
+
+  if (!showTree) {
+    return (
+      <div className="flex flex-col">
+        {fileTooltip}
+        {flatFileRow}
+        {file.status === 'UPLOADING' && (
+          <div className="px-4 pb-1">
+            <div className="h-1 bg-[#2b2d35] rounded-full overflow-hidden">
+              <div className="h-full bg-[#3b82f6] rounded-full transition-all duration-300" style={{ width: `${file.uploadProgress || 0}%` }} />
+            </div>
+          </div>
+        )}
+        {showArtifactsBlock && (
+          <>
+            <div
+              className="pl-9 pr-4 py-1 flex items-center gap-1.5 cursor-pointer text-[10px] text-[#858585] hover:text-white hover:bg-[#25272e] select-none"
+              onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(!artifactsExpanded); }}
+            >
+              {artifactsExpanded ? <ChevronDown className="w-2.5 h-2.5 shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
+              <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
+              <span className="ml-auto text-[9px] text-[#555]">{file.artifacts!.length}</span>
+            </div>
+            {artifactsExpanded && file.artifacts!.map(a => {
+              const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+              return (
+                <ExplorerArtifactRow
+                  key={a.id}
+                  artifact={a}
+                  sourceFileName={file.name}
+                  isActive={state.activeArtifact?.id === a.id}
+                  onSelect={() => openArtifact(a, artifactName)}
+                  variant="flat"
+                />
+              );
+            })}
+          </>
+        )}
+        {showSheets && Array.from({ length: file.pages }).map((_, idx) => {
+          const pageNum = idx + 1;
+          const isPageActive = isActive && activePage === pageNum;
+          return (
+            <div
+              key={pageNum}
+              onClick={(e) => { e.stopPropagation(); onPageClick(pageNum); }}
+              className={cn(
+                'pl-11 pr-4 py-1.5 flex items-center justify-between cursor-pointer text-[13px] font-medium',
+                isPageActive ? 'bg-[#333748] text-white' : 'hover:bg-[#25272e] text-[#858585]',
+              )}
+            >
+              <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
+                <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isPageActive ? 'text-[#82aaff] fill-current/20' : '')} />
+                <span className="truncate">Sheet {pageNum}</span>
+              </div>
+              {!hideBadge && getBadge()}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const fileGuides: boolean[] = [!isLastFile];
+  const sheetsFollowArtifacts = showSheets;
+  const artifactsHeaderIsLast = !sheetsFollowArtifacts;
+  const fileBranchContinues = expanded && (showArtifactsBlock || showSheets);
 
   return (
     <div className="flex flex-col">
-      <div 
-        ref={itemRef}
-        onClick={() => { onClick(); if(hasSheets) setExpanded(!expanded); }}
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-        className={cn(
-          "px-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium relative",
-          isActive && !hasSheets
-            ? "bg-[#333748] text-white border-l-2 border-[#1e5cdc]" 
-            : "hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent"
-        )}
-      >
-        {/* Custom Tooltip */}
-        {showTooltip && itemRef.current && (() => {
-          const rect = itemRef.current!.getBoundingClientRect();
-          const sizeStr = file.fileSizeBytes
-            ? `${(file.fileSizeBytes / 1024 / 1024).toFixed(2)} MB`
-            : file.file.size > 0
-            ? `${(file.file.size / 1024 / 1024).toFixed(2)} MB`
-            : 'N/A';
-          const uploadedStr = file.uploadedAt
-            ? new Date(file.uploadedAt).toLocaleString()
-            : '—';
-          return (
-            <div className="fixed z-[300] pointer-events-none" style={{ left: rect.right + 8, top: rect.top }}>
-              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg shadow-xl px-3 py-2.5 text-[10px] space-y-1 min-w-[220px]">
-                <div className="text-[#858585]">ID: <span className="text-white font-mono">{file.id.slice(0, 8)}...</span></div>
-                <div className="text-[#858585]">File: <span className="text-white font-medium">{file.name}</span></div>
-                <div className="text-[#858585]">Size: <span className="text-white">{sizeStr}</span></div>
-                <div className="text-[#858585]">Pages: <span className="text-white">{file.pages}</span></div>
-                <div className="text-[#858585]">Status: <span className="text-white font-bold">{file.status}</span></div>
-                <div className="text-[#858585]">Uploaded: <span className="text-white">{uploadedStr}</span></div>
-                {file.localPath && (
-                  <div className="text-[#858585] border-t border-[#333] pt-1 mt-1">
-                    Path: <span className="text-[#6b9af5] font-mono break-all">{file.localPath}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+      {fileTooltip}
 
-        <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
-           {index && <span className="text-[9px] text-[#858585] font-mono w-4 shrink-0 text-right">{index}</span>}
-           {/* Expand/collapse toggle — shows when file has artifacts or sheets */}
-           {(hasSheets || (file.artifacts && file.artifacts.length > 0)) ? (
-             <button
-               onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-               className="shrink-0 text-[#858585] hover:text-white transition-colors"
-             >
-               {expanded
-                 ? <ChevronDown className="w-3 h-3" />
-                 : <ChevronRight className="w-3 h-3" />
-               }
-             </button>
-           ) : (
-             <span className="w-3 shrink-0" />
-           )}
-          <FileIcon className={cn("w-3.5 h-3.5 shrink-0 opacity-80", isActive && !hasSheets ? "text-[#82aaff] fill-current/20" : "")} />
-          <span className="truncate">{file.name}</span>
-        </div>
-        <div className="shrink-0 flex items-center">
-          {!hideBadge && getBadge()}
-        </div>
+      <div ref={fileRowRef} {...tooltipHoverProps}>
+        <TreeRow
+          continuingGuides={[]}
+          isLast={isLastFile && !fileBranchContinues}
+          active={isActive && !hasSheets}
+          onClick={() => { onClick(); if (hasSheets) setExpanded(!expanded); }}
+          className="text-[13px] font-medium"
+        >
+          {fileRowContent}
+        </TreeRow>
       </div>
 
-      {/* Upload progress bar */}
       {file.status === 'UPLOADING' && (
-        <div className="px-4 pb-1">
+        <div className="pl-[calc(0.5rem+14px)] pr-3 pb-1">
           <div className="h-1 bg-[#2b2d35] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[#3b82f6] rounded-full transition-all duration-300"
-              style={{ width: `${file.uploadProgress || 0}%` }}
-            />
+            <div className="h-full bg-[#3b82f6] rounded-full transition-all duration-300" style={{ width: `${file.uploadProgress || 0}%` }} />
           </div>
         </div>
       )}
 
-      {/* Artifacts group node — collapsible */}
-      {file.artifacts && file.artifacts.length > 0 && (() => {
-        const hasArtifacts = true;
+      {showArtifactsBlock && (
+        <TreeRow
+          continuingGuides={fileGuides}
+          isLast={artifactsHeaderIsLast && !(artifactsExpanded && file.artifacts!.length > 0)}
+          onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(!artifactsExpanded); }}
+          className="text-[10px] text-[#858585]"
+        >
+          {artifactsExpanded
+            ? <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+            : <ChevronRight className="w-2.5 h-2.5 shrink-0" />
+          }
+          <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
+          <span className="ml-auto text-[9px] text-[#555]">{file.artifacts!.length}</span>
+        </TreeRow>
+      )}
+
+      {showArtifactsBlock && artifactsExpanded && file.artifacts!.map((a, ai) => {
+        const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+        const isLastArtifact = ai === file.artifacts!.length - 1;
+        const artifactIsLast = isLastArtifact && !sheetsFollowArtifacts;
         return (
-          <>
-            {/* Artifacts header node */}
-            {expanded && (
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setExpanded(prev => {
-                    // We reuse expanded for file, need separate state for artifacts
-                    return prev;
-                  });
-                }}
-                className="pl-9 pr-4 py-1 flex items-center gap-1.5 cursor-pointer text-[10px] text-[#858585] hover:text-white hover:bg-[#25272e] border-l-2 border-transparent transition-colors select-none"
-                onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(v => !v); }}
-              >
-                {artifactsExpanded
-                  ? <ChevronDown className="w-2.5 h-2.5 shrink-0" />
-                  : <ChevronRight className="w-2.5 h-2.5 shrink-0" />
-                }
-                <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
-                <span className="ml-auto text-[9px] text-[#555]">{file.artifacts.length}</span>
-              </div>
-            )}
-
-            {/* Artifact items */}
-            {expanded && artifactsExpanded && file.artifacts.map(a => {
-              const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
-              const isArtifactActive = state.activeArtifact?.id === a.id;
-              const ArtifactIcon = a.type === 'ANNOTATED_PNG' ? Image : a.type === 'ANNOTATED_PDF' ? FileText : BarChart2;
-              const iconColor = a.type === 'ANNOTATED_PNG' ? 'text-[#10b981]' : a.type === 'ANNOTATED_PDF' ? 'text-[#3b82f6]' : 'text-[#f59e0b]';
-              return (
-                <div
-                  key={a.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
-                      detail: { id: a.id, type: a.type, downloadUrl: a.downloadUrl, name: artifactName }
-                    }));
-                  }}
-                  className={cn(
-                    "pl-14 pr-4 py-1 flex items-center gap-2 cursor-pointer text-[11px] transition-colors",
-                    isArtifactActive
-                      ? "bg-[#333748] text-white border-l-2 border-[#10b981]"
-                      : "hover:bg-[#25272e] text-[#858585] hover:text-white border-l-2 border-transparent"
-                  )}
-                >
-                  <ArtifactIcon className={cn("w-3.5 h-3.5 shrink-0", iconColor)} />
-                  <span className="truncate">{artifactName}</span>
-                </div>
-              );
-            })}
-          </>
+          <ExplorerArtifactRow
+            key={a.id}
+            artifact={a}
+            sourceFileName={file.name}
+            isActive={state.activeArtifact?.id === a.id}
+            onSelect={() => openArtifact(a, artifactName)}
+            variant="tree"
+            continuingGuides={[!isLastFile, !artifactIsLast]}
+            isLast={artifactIsLast}
+            className="text-[11px]"
+          />
         );
-      })()}
+      })}
 
-      {expanded && hasSheets && Array.from({ length: file.pages }).map((_, idx) => {
-         const pageNum = idx + 1;
-         const isPageActive = isActive && activePage === pageNum;
-         return (
-            <div 
-              key={pageNum}
-              onClick={(e) => { e.stopPropagation(); onPageClick(pageNum); }}
-              className={cn(
-                "pl-11 pr-4 py-1.5 flex items-center justify-between cursor-pointer transition-colors text-[13px] font-medium",
-                isPageActive 
-                  ? "bg-[#333748] text-white border-l-2 border-[#1e5cdc]" 
-                  : "hover:bg-[#25272e] text-[#858585] border-l-2 border-transparent"
-              )}
-            >
-              <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
-                <FileIcon className={cn("w-3.5 h-3.5 shrink-0 opacity-80", isPageActive ? "text-[#82aaff] fill-current/20" : "")} />
-                <span className="truncate">Sheet {pageNum}</span>
-              </div>
-              <div className="shrink-0 flex items-center">
-                {!hideBadge && getBadge()}
-              </div>
-            </div>
-         );
+      {showSheets && Array.from({ length: file.pages }).map((_, idx) => {
+        const pageNum = idx + 1;
+        const isPageActive = isActive && activePage === pageNum;
+        const isLastSheet = pageNum === file.pages;
+        const sheetGuides: boolean[] = [!isLastFile];
+        return (
+          <TreeRow
+            key={pageNum}
+            continuingGuides={sheetGuides}
+            isLast={isLastSheet}
+            active={isPageActive}
+            onClick={(e) => { e.stopPropagation(); onPageClick(pageNum); }}
+            className="text-[13px] font-medium"
+          >
+            <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isPageActive ? 'text-[#82aaff] fill-current/20' : '')} />
+            <span className="truncate flex-1">Sheet {pageNum}</span>
+            <span className="shrink-0">{!hideBadge && getBadge()}</span>
+          </TreeRow>
+        );
       })}
     </div>
   );

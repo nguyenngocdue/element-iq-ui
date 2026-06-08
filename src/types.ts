@@ -11,6 +11,17 @@ export interface Component {
   size?: string;
 }
 
+export interface FileArtifact {
+  id: string;
+  type: string;
+  downloadUrl: string;
+  localPath?: string;
+  fileSizeBytes?: number;
+  originalFilename?: string;
+  contentType?: string;
+  createdAt?: string;
+}
+
 export interface DocumentFile {
   id: string;
   name: string;
@@ -22,7 +33,7 @@ export interface DocumentFile {
   detections: Detection[];
   events: AppEvent[];
   analyzedComponents?: string[];
-  artifacts?: { id: string; type: string; downloadUrl: string }[];
+  artifacts?: FileArtifact[];
   // Real progress from backend
   analysisProgress?: number;   // 0–100
   analysisStage?: string;      // e.g. "Running YOLO detection..."

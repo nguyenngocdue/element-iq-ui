@@ -1,0 +1,112 @@
+import { DocumentFile } from '../types';
+import { filterFilesByQuery } from './fileSearch';
+
+export type ExplorerSortKey = 'name-asc' | 'name-desc' | 'date-desc' | 'size-desc';
+
+export type ExplorerStatusFilter = 'all' | 'PASS' | 'FAIL' | 'NO-NOTE';
+
+export const DEFAULT_EXPLORER_SORT: ExplorerSortKey = 'name-asc';
+export const DEFAULT_EXPLORER_STATUS: ExplorerStatusFilter = 'all';
+
+export function getFileSizeBytes(file: DocumentFile): number {
+  return file.fileSizeBytes ?? file.file.size ?? 0;
+}
+
+export function getFileCreatedAt(file: DocumentFile): number {
+  if (file.uploadedAt) return new Date(file.uploadedAt).getTime();
+  return 0;
+}
+
+export function formatFileSizeBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+export function formatFileCreatedAt(file: DocumentFile): string {
+  if (!file.uploadedAt) return '—';
+  const d = new Date(file.uploadedAt);
+  if (Number.isNaN(d.getTime())) return '—';
+  const date = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time}`;
+}
+
+export function artifactDisplayName(type: string): string {
+  if (type === 'ANNOTATED_PNG') return 'Annotated PNG';
+  if (type === 'ANNOTATED_PDF') return 'Annotated PDF';
+  if (type === 'REPORT_JSON') return 'Report JSON';
+  return type;
+}
+
+export function formatIsoDateTime(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const date = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time}`;
+}
+
+export function filterFilesByStatus(
+  files: DocumentFile[],
+  status: ExplorerStatusFilter,
+): DocumentFile[] {
+  if (status === 'all') return files;
+  if (status === 'PASS') return files.filter((f) => f.status === 'PASS');
+  if (status === 'FAIL') return files.filter((f) => f.status === 'FAIL');
+  return files.filter(
+    (f) => f.status === 'NO-NOTE' || f.status === 'PENDING' || f.status === 'WARN',
+  );
+}
+
+export function sortFiles(files: DocumentFile[], sortKey: ExplorerSortKey): DocumentFile[] {
+  const copy = [...files];
+  switch (sortKey) {
+    case 'name-asc':
+      return copy.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    case 'name-desc':
+      return copy.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
+    case 'date-desc':
+      return copy.sort((a, b) => getFileCreatedAt(b) - getFileCreatedAt(a));
+    case 'size-desc':
+      return copy.sort((a, b) => getFileSizeBytes(b) - getFileSizeBytes(a));
+    default:
+      return copy;
+  }
+}
+
+export function applyExplorerView(
+  files: DocumentFile[],
+  options: {
+    query: string;
+    status: ExplorerStatusFilter;
+    sort: ExplorerSortKey;
+  },
+): DocumentFile[] {
+  const searched = filterFilesByQuery(files, options.query);
+  const statusFiltered = filterFilesByStatus(searched, options.status);
+  return sortFiles(statusFiltered, options.sort);
+}
+
+export function explorerViewIsActive(
+  sort: ExplorerSortKey,
+  status: ExplorerStatusFilter,
+): boolean {
+  return sort !== DEFAULT_EXPLORER_SORT || status !== DEFAULT_EXPLORER_STATUS;
+}
+
+export function statusFilterLabel(status: ExplorerStatusFilter): string | null {
+  if (status === 'all') return null;
+  if (status === 'PASS') return 'Pass';
+  if (status === 'FAIL') return 'Fail';
+  return 'No note';
+}
+
+export function statusFilterColorClass(status: ExplorerStatusFilter): string {
+  if (status === 'PASS') return 'text-[#2eb886]';
+  if (status === 'FAIL') return 'text-[#ef4444]';
+  if (status === 'NO-NOTE') return 'text-[#bba438]';
+  return 'text-[#858585]';
+}

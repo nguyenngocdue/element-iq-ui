@@ -81,7 +81,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
             const data = await res.json();
             // Dispatch event so sidebar shows file immediately
             window.dispatchEvent(new CustomEvent('elementiq:file-uploaded', {
-              detail: { id: data.id, name: file.name, size: file.size, file }
+              detail: { id: data.id, name: file.name, size: file.size, file, localPath: data.local_path }
             }));
           }
         } catch (err) {
