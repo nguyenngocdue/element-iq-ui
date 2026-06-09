@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Download, Folder, CheckCircle, AlertTriangle, XCircle, Search, FileText, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { filterFilesByBucket, fileMatchesBucket } from '../lib/analysisStatus';
 import { DocumentFile } from '../types';
 
 export function AnalysisDashboard() {
@@ -9,9 +10,9 @@ export function AnalysisDashboard() {
   const [filter, setFilter] = useState<'ALL' | 'PASS' | 'NO-NOTE'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const passList = state.files.filter(f => f.status === 'PASS');
-  const failList = state.files.filter(f => f.status === 'FAIL');
-  const noNoteList = state.files.filter(f => f.status === 'PENDING' || f.status === 'WARN' || f.status === 'NO-NOTE');
+  const passList = filterFilesByBucket(state.files, 'pass');
+  const failList = filterFilesByBucket(state.files, 'fail');
+  const noNoteList = filterFilesByBucket(state.files, 'noNote');
   
   const totalPassRate = state.files.length ? Math.round((passList.length / state.files.length) * 100) : 0;
   
@@ -20,7 +21,7 @@ export function AnalysisDashboard() {
 
   const filteredDocs = state.files.filter(f => {
     if (filter === 'PASS' && f.status !== 'PASS') return false;
-    if (filter === 'NO-NOTE' && f.status !== 'PENDING' && f.status !== 'WARN' && f.status !== 'NO-NOTE') return false;
+    if (filter === 'NO-NOTE' && !fileMatchesBucket(f, 'noNote')) return false;
     if (searchQuery && !f.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });

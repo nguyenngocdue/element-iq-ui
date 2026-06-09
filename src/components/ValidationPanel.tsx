@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../store';
+import { validationPanelAccentClass } from '../lib/analysisStatus';
 import { CheckCircle2, AlertCircle, XCircle, ShieldCheck } from 'lucide-react';
 import { Detection } from '../types';
 import { useResizable } from '../hooks/useResizable';
@@ -32,8 +33,8 @@ export function ValidationPanel() {
                  {file.passRate ?? '--'} <span className="text-lg font-mono">/ 100</span>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${file.status === 'PASS' ? 'bg-[#22c55e]/20 text-[#22c55e]' : file.status === 'WARN' ? 'bg-[#f59e0b]/20 text-[#f59e0b]' : 'bg-[#ef4444]/20 text-[#ef4444]'}`}>
-              {file.status !== 'PENDING' && file.status !== 'ANALYZING' ? file.status : 'WAIT'}
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(file.status)}`}>
+              {file.status !== 'PENDING' && file.status !== 'ANALYZING' && file.status !== 'UPLOADING' ? file.status : 'WAIT'}
             </span>
           </div>
         </div>

@@ -20,10 +20,15 @@ export async function getAccessToken(): Promise<string | null> {
 }
 
 /**
- * Backend base URL — uses Vite proxy in dev (relative path),
- * or VITE_BACKEND_URL env var when running outside Vite dev server.
+ * Backend base URL for browser fetch().
+ * Dev + Docker nginx: use relative `/api/v1/*` (same origin → Express/nginx proxy).
+ * Production only: set VITE_BACKEND_URL if the API is on a different host.
  */
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined) || '';
+function apiBaseUrl(): string {
+  if (!import.meta.env.PROD) return '';
+  const url = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
+  return url ? url.replace(/\/$/, '') : '';
+}
 
 function isServerFileId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
@@ -43,7 +48,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   if (options.body instanceof FormData) {
     headers.delete('Content-Type');
   }
-  const fullUrl = url.startsWith('/') && BACKEND_URL ? `${BACKEND_URL}${url}` : url;
+  const fullUrl = url.startsWith('/') ? `${apiBaseUrl()}${url}` : url;
   return fetch(fullUrl, { ...options, headers });
 }
 

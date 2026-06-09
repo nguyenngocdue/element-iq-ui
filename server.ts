@@ -20,14 +20,15 @@ function backendPort(url: URL): number {
 
 function proxyToBackend(req: Request, res: Response) {
   const backendUrl = new URL(BACKEND_URL);
+  const port = backendPort(backendUrl);
   const options: http.RequestOptions = {
     hostname: backendUrl.hostname,
-    port: backendPort(backendUrl),
+    port,
     path: req.originalUrl,
     method: req.method,
     headers: {
       ...req.headers,
-      host: `${backendUrl.hostname}:${backendUrl.port}`,
+      host: `${backendUrl.hostname}:${port}`,
     },
   };
 
@@ -123,13 +124,20 @@ async function startServer() {
     app.use('/api/v1', proxyToBackend);
   }
 
+  const httpServer = http.createServer(app);
+
   // ── Vite dev middleware ─────────────────────────────────────
   if (process.env.NODE_ENV !== 'production') {
+    console.log('[server] Starting Vite (first run can take 10–30s)…');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
+    console.log('[server] Vite ready');
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -138,10 +146,24 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n[server] Port ${PORT} is already in use.`);
+      console.error(`  Stop the other dev server:  fuser -k ${PORT}/tcp`);
+      console.error(`  Or use another port:        PORT=3001 pnpm dev\n`);
+      process.exit(1);
+    }
+    console.error('[server] HTTP error:', err);
+    process.exit(1);
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`\n  ElementIQ UI  →  http://localhost:${PORT}`);
     console.log(`  Backend       →  ${USE_MOCK ? 'MOCK (no backend)' : BACKEND_URL}\n`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('[server] Failed to start:', err);
+  process.exit(1);
+});

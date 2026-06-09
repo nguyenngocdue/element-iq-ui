@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../store';
+import { analysisCompleteMessage, isAnalyzedStatus } from '../lib/analysisStatus';
 import { AnalysisTerminalToggle } from './AnalysisTerminal';
 
 export function BottomBar() {
@@ -9,7 +10,7 @@ export function BottomBar() {
   const totalFiles = state.files.length;
   const uploadingCount = state.files.filter(f => f.status === 'UPLOADING').length;
   const analyzingCount = state.files.filter(f => f.status === 'ANALYZING').length;
-  const completedCount = state.files.filter(f => ['PASS', 'FAIL', 'NO-NOTE'].includes(f.status)).length;
+  const completedCount = state.files.filter(f => isAnalyzedStatus(f.status)).length;
 
   // Upload progress across all uploading files
   const uploadProgress = uploadingCount > 0
@@ -19,9 +20,8 @@ export function BottomBar() {
   const getStatusText = () => {
     if (uploadingCount > 0) return `Uploading ${uploadingCount} file(s)... ${uploadProgress}%`;
     if (analyzingCount > 0) return `Analyzing ${analyzingCount} file(s)...`;
-    if (file?.status === 'PASS') return 'Analysis Complete — PASS';
-    if (file?.status === 'FAIL') return 'Analysis Complete — FAIL';
-    if (file?.status === 'NO-NOTE') return 'Analysis Complete — NO-NOTE';
+    const complete = analysisCompleteMessage(file?.status);
+    if (complete) return complete;
     if (totalFiles > 0) return 'Ready';
     return 'No active document';
   };

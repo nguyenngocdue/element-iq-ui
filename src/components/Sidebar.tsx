@@ -19,6 +19,7 @@ import {
   writeExplorerViewPrefs,
 } from '../lib/fileView';
 import { DocumentFile } from '../types';
+import { statusBadgeClass, statusBadgeLabel, filterFilesByBucket, averagePassRate } from '../lib/analysisStatus';
 import { useResizable } from '../hooks/useResizable';
 import {
   ExplorerTooltipLocation,
@@ -330,14 +331,12 @@ export function Sidebar() {
     );
   }
 
-  const passList = state.files.filter(f => f.status === 'PASS');
-  const failList = state.files.filter(f => f.status === 'FAIL');
-  // Representing PENDING and WARN as NO-NOTE based on the design
-  const noNoteList = state.files.filter(f => f.status === 'PENDING' || f.status === 'WARN' || f.status === 'NO-NOTE');
+  const passList = filterFilesByBucket(state.files, 'pass');
+  const failList = filterFilesByBucket(state.files, 'fail');
+  const noNoteList = filterFilesByBucket(state.files, 'noNote');
   const errList = state.files.filter(f => f.status === 'ERROR' as any);
 
-  const totalPassRate = state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0);
-  const overallPassRate = state.files.length ? totalPassRate / state.files.length : 0;
+  const overallPassRate = averagePassRate(state.files);
   const displayPassRate = state.files.length ? overallPassRate.toFixed(1) : '0.0';
 
   const totalNF = state.files.reduce((acc, f) => acc + f.detections.filter(d => d.type === 'NF').length, 0);
@@ -744,22 +743,16 @@ export function FileItem({
     if (file.status === 'UPLOADING') {
       return <span className="text-[#3b82f6] font-bold text-[9px] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded border border-[#3b82f6]/30 tracking-wider">{file.uploadProgress || 0}%</span>;
     }
-    if (file.status === 'PASS') {
-      return <span className="text-[#2eb886] font-bold text-[9px] bg-[#2eb886]/10 px-1.5 py-0.5 rounded border border-[#2eb886]/30 tracking-wider">PASS</span>;
-    }
-    if (file.status === 'FAIL') {
-      return <span className="text-[#ef4444] font-bold text-[9px] bg-[#ef4444]/10 px-1.5 py-0.5 rounded border border-[#ef4444]/30 tracking-wider">FAIL</span>;
-    }
-    if (file.status === 'NO-NOTE') {
-      return <span className="text-[#bba438] font-bold text-[9px] bg-[#bba438]/10 px-1.5 py-0.5 rounded border border-[#bba438]/30 tracking-wider">NO-NOTE</span>;
-    }
-    if (file.status === 'PENDING') {
-      return <span className="text-[#858585] font-bold text-[9px] bg-[#858585]/10 px-1.5 py-0.5 rounded border border-[#858585]/30 tracking-wider">READY</span>;
-    }
     if (file.status === 'ANALYZING') {
       return <RefreshCw className="w-3.5 h-3.5 text-[#10b981] animate-spin" />;
     }
-    return null;
+    const label = statusBadgeLabel(file.status);
+    const cls = statusBadgeClass(file.status);
+    return (
+      <span className={`font-bold text-[9px] px-1.5 py-0.5 rounded border tracking-wider ${cls}`}>
+        {label}
+      </span>
+    );
   };
 
   const hasSheets = file.pages > 1;

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
 import { filterArtifactsForFile } from './lib/fileView';
+import {
+  hasAnalysisPayload,
+  mapOverallToFileStatus,
+  resolveOverallRaw,
+  resolvePassRate,
+} from './lib/analysisStatus';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -35,9 +41,10 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
     let analyzedComponents: string[] | undefined;
 
     if (f.analysis) {
-      const overallStatus = (f.analysis.overall_status || f.analysis.summary?.overall || '').toUpperCase();
-      status = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : 'PENDING';
-      passRate = f.analysis.summary?.pass_rate ?? (overallStatus === 'PASS' ? 100 : 0);
+      const overallRaw = resolveOverallRaw(f.analysis);
+      const hasAnalysis = hasAnalysisPayload(f.analysis);
+      status = mapOverallToFileStatus(overallRaw, hasAnalysis);
+      passRate = resolvePassRate(f.analysis, overallRaw.toUpperCase());
       analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
       detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
         (comp.objects ?? []).map((obj: any, i: number) => {
@@ -742,7 +749,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const appendAnalysisLog = useCallback((entry: Omit<AnalysisLogLine, 'id' | 'ts'>) => {
     setState((prev) => ({
       ...prev,
-      isAnalysisTerminalOpen: true,
       analysisLogs: [
         ...prev.analysisLogs,
         {
@@ -933,13 +939,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         })
       );
 
-      const passRate = result.result?.summary?.pass_rate ?? 100;
-      const overallStatus = (result.result?.summary?.overall || result.result?.overall_status || '').toUpperCase();
+      const passRate = resolvePassRate(result.result, resolveOverallRaw(result.result).toUpperCase()) ?? 0;
+      const overallRaw = resolveOverallRaw(result.result);
+      const overallStatus = overallRaw.toUpperCase();
+      const fileStatus = mapOverallToFileStatus(
+        overallRaw,
+        detections.length > 0 || (result.result?.artifacts?.length ?? 0) > 0 || hasAnalysisPayload(result.result),
+      );
 
       console.log('[ElementIQ] Mapped detections:', detections.length, detections[0]);
-      console.log('[ElementIQ] overallStatus:', overallStatus, 'passRate:', passRate);
-
-      const fileStatus = overallStatus === 'PASS' ? 'PASS' : overallStatus === 'NO-NOTE' ? 'NO-NOTE' : overallStatus === 'FAIL' ? 'FAIL' : (detections.length > 0 ? 'PASS' : 'NO-NOTE');
+      console.log('[ElementIQ] overallStatus:', overallStatus, 'fileStatus:', fileStatus, 'passRate:', passRate);
 
       // Extract artifacts from result
       const artifacts = filterArtifactsForFile(
@@ -961,7 +970,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       updateFileStatus(id, {
-        status: fileStatus as any,
+        status: fileStatus,
         detections,
         artifacts,
         analysisProgress: 100,
@@ -1020,7 +1029,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clearAnalysisLogs();
     setState((prev) => ({
       ...prev,
-      isAnalysisTerminalOpen: true,
       analysisQueue: { current: 0, total: ids.length },
     }));
     appendAnalysisLog({ level: 'info', message: `Queue started — ${ids.length} file(s) in explorer sort order` });

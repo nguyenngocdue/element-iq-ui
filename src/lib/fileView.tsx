@@ -1,5 +1,6 @@
 import { DocumentFile } from '../types';
 import { filterFilesByQuery } from './fileSearch';
+import { fileMatchesBucket } from './analysisStatus';
 
 export type ExplorerSortKey = 'name-asc' | 'name-desc' | 'date-desc' | 'size-desc';
 
@@ -108,9 +109,7 @@ export function filterFilesByStatus(
   if (status === 'all') return files;
   if (status === 'PASS') return files.filter((f) => f.status === 'PASS');
   if (status === 'FAIL') return files.filter((f) => f.status === 'FAIL');
-  return files.filter(
-    (f) => f.status === 'NO-NOTE' || f.status === 'PENDING' || f.status === 'WARN',
-  );
+  return files.filter((f) => fileMatchesBucket(f, 'noNote'));
 }
 
 export function sortFiles(files: DocumentFile[], sortKey: ExplorerSortKey): DocumentFile[] {

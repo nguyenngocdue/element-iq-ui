@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Download, Share2, ChevronRight, Folder, FileText, CheckCircle, AlertTriangle, FileSpreadsheet, Plus, DownloadCloud, Expand, RefreshCw, Layers, Database, ShieldCheck, Box } from 'lucide-react';
+import {
+  averagePassRate,
+  countFilesByBucket,
+} from '../lib/analysisStatus';
 import { cn } from '../lib/utils';
 import { useResizable } from '../hooks/useResizable';
 
@@ -93,23 +97,23 @@ export function AnalysisView() {
         <div className="p-4 bg-[#1a1a1a]">
           <div className="flex justify-between items-center mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#858585]">Compliance</span>
-            <span className="text-[#2eb886] font-bold text-[12px]">{state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length).toFixed(1) : '0.0'}%</span>
+            <span className="text-[#2eb886] font-bold text-[12px]">{averagePassRate(state.files).toFixed(1)}%</span>
           </div>
           <div className="h-1 w-full bg-[#3c3c3c] rounded-full overflow-hidden mb-3 flex">
-             <div className="h-full bg-[#2eb886]" style={{ width: `${state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length) : 0}%` }}></div>
-             <div className="h-full bg-[#d4b238]" style={{ width: `${100 - (state.files.length ? (state.files.reduce((acc, f) => acc + (f.passRate ?? (f.status === 'PASS' ? 100 : 0)), 0) / state.files.length) : 0)}%` }}></div>
+             <div className="h-full bg-[#2eb886]" style={{ width: `${averagePassRate(state.files)}%` }}></div>
+             <div className="h-full bg-[#d4b238]" style={{ width: `${100 - averagePassRate(state.files)}%` }}></div>
           </div>
           <div className="grid grid-cols-4 gap-1 text-center">
             <div className="flex flex-col items-center">
-              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'PASS').length}</span>
+              <span className="text-[13px] font-bold text-white">{countFilesByBucket(state.files, 'pass')}</span>
               <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Pass</span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'FAIL').length}</span>
+              <span className="text-[13px] font-bold text-white">{countFilesByBucket(state.files, 'fail')}</span>
               <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">Fail</span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-[13px] font-bold text-white">{state.files.filter(f => f.status === 'PENDING' || f.status === 'WARN' || f.status === 'NO-NOTE').length}</span>
+              <span className="text-[13px] font-bold text-white">{countFilesByBucket(state.files, 'noNote')}</span>
               <span className="text-[9px] font-bold uppercase text-[#858585] mt-0.5">No Note</span>
             </div>
             <div className="flex flex-col items-center">
