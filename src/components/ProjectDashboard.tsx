@@ -200,19 +200,19 @@ function ProjectCard({
 
         <p className={cn(
           'text-xs leading-relaxed whitespace-pre-wrap break-words',
-          p.description?.trim() ? 'text-[#777]' : 'text-[#444]',
+          p.description?.trim() ? 'text-[#c4c4c4]' : 'text-[#909090]',
         )}>
           {p.description?.trim() || 'No description provided.'}
         </p>
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#888]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#d1d1d1]">
           <span className="inline-flex items-center gap-1 tabular-nums">
-            <Upload className="w-3 h-3 text-[#666]" />
+            <Upload className="w-3 h-3 text-[#b0b0b0]" />
             {formatFileCount(fileCount)}
           </span>
           <span className="text-[#333]">·</span>
           <span className="inline-flex items-center gap-1 tabular-nums">
-            <Box className="w-3 h-3 text-[#666]" />
+            <Box className="w-3 h-3 text-[#b0b0b0]" />
             {artifactCount === 1 ? '1 artifact' : `${artifactCount} artifacts`}
           </span>
         </div>
@@ -236,12 +236,12 @@ function ProjectCard({
                 />
               }
             >
-              <span className="text-[11px] text-[#aaa] truncate cursor-default">
+              <span className="text-[11px] text-[#d1d1d1] truncate cursor-default">
                 {p.created_by || 'Unknown'}
               </span>
             </HoverTooltip>
           </div>
-          <span className="text-[10px] text-[#666] shrink-0 tabular-nums uppercase tracking-wide">
+          <span className="text-[10px] text-[#b0b0b0] shrink-0 tabular-nums uppercase tracking-wide">
             {formatProjectDate(p.created_at)}
           </span>
         </div>
@@ -465,7 +465,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             onClick={() => setViewMode('grid')}
             className={cn(
               'p-1.5 rounded-sm transition-colors',
-              viewMode === 'grid' ? 'bg-[#262626] text-white' : 'text-[#666] hover:text-[#ccc]',
+              viewMode === 'grid' ? 'bg-[#262626] text-white' : 'text-[#b0b0b0] hover:text-[#ccc]',
             )}
             aria-label="Grid view"
           >
@@ -476,7 +476,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             onClick={() => setViewMode('list')}
             className={cn(
               'p-1.5 rounded-sm transition-colors',
-              viewMode === 'list' ? 'bg-[#262626] text-white' : 'text-[#666] hover:text-[#ccc]',
+              viewMode === 'list' ? 'bg-[#262626] text-white' : 'text-[#b0b0b0] hover:text-[#ccc]',
             )}
             aria-label="List view"
           >
@@ -497,11 +497,11 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
               'flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm transition-colors min-w-[132px]',
               sortMenuOpen
                 ? 'bg-[#262626] text-white'
-                : 'text-[#aaa] hover:bg-[#1a1a1a] hover:text-white',
+                : 'text-[#d1d1d1] hover:bg-[#1a1a1a] hover:text-white',
             )}
           >
             <span className="flex-1 text-left text-[13px]">{sortLabel}</span>
-            <ChevronDown className={cn('w-3.5 h-3.5 text-[#666] shrink-0 transition-transform', sortMenuOpen && 'rotate-180')} />
+            <ChevronDown className={cn('w-3.5 h-3.5 text-[#b0b0b0] shrink-0 transition-transform', sortMenuOpen && 'rotate-180')} />
           </button>
           {sortMenuOpen && (
             <div
@@ -543,7 +543,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     filteredAndSortedProjects.length === 0 ? (
       <div className="bg-[#141414] border border-[#262626] rounded-lg py-16 text-center">
         <FolderKanban className="w-10 h-10 text-[#333] mx-auto mb-3" />
-        <p className="text-[#666] text-sm">No projects found</p>
+        <p className="text-[#b0b0b0] text-sm">No projects found</p>
         <button
           type="button"
           onClick={() => setIsCreateModalOpen(true)}
@@ -569,7 +569,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     )
   ) : (
     <div className="flex flex-col border border-[#262626] rounded-lg overflow-hidden bg-[#141414] mb-8">
-      <div className="flex items-center px-4 py-2.5 border-b border-[#262626] bg-[#0a0a0a] text-[10px] font-semibold uppercase tracking-widest text-[#555]">
+      <div className="flex items-center px-4 py-2.5 border-b border-[#262626] bg-[#0a0a0a] text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3]">
         <div className="flex-[1.2] min-w-0">Project</div>
         <div className="w-36 shrink-0">Created by</div>
         <div className="w-32 shrink-0">Created</div>
@@ -600,7 +600,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 </span>
               </ProjectNameTooltip>
             </div>
-            <div className="w-36 shrink-0 text-xs text-[#888] min-w-0 flex items-center gap-2">
+            <div className="w-36 shrink-0 text-xs text-[#d1d1d1] min-w-0 flex items-center gap-2">
               <UserAvatarTooltip
                 userId={p.owner_id}
                 displayName={p.created_by}
@@ -621,9 +621,9 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 <span className="truncate block">{p.created_by || 'Unknown'}</span>
               </HoverTooltip>
             </div>
-            <div className="w-32 shrink-0 text-xs text-[#888] tabular-nums">{formatProjectDate(p.created_at)}</div>
-            <div className="w-20 shrink-0 text-xs text-[#888] tabular-nums">{p.file_count ?? 0}</div>
-            <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#666] italic truncate pr-4">
+            <div className="w-32 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{formatProjectDate(p.created_at)}</div>
+            <div className="w-20 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{p.file_count ?? 0}</div>
+            <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#b0b0b0] italic truncate pr-4">
               {p.description?.trim() || 'No description'}
             </div>
             <div className="w-28 shrink-0 flex items-center justify-center gap-2">
@@ -635,7 +635,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                     e.stopPropagation();
                     setCardMenuId(prev => (prev === p.id ? null : p.id));
                   }}
-                  className="p-1 rounded-md text-[#666] hover:text-white hover:bg-[#262626] opacity-0 group-hover:opacity-100 transition-all"
+                  className="p-1 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#262626] opacity-0 group-hover:opacity-100 transition-all"
                   aria-label="Project actions"
                 >
                   <EllipsisVertical className="w-3.5 h-3.5" />
@@ -677,18 +677,18 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
         {/* Top bar */}
         <header className="h-14 border-b border-[#1f1f1f] flex items-center px-6 gap-4 shrink-0 bg-[#0a0a0a]">
           <div className="flex-1 relative max-w-2xl">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#a3a3a3]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search projects, files..."
-              className="w-full bg-[#141414] border border-[#262626] rounded-md pl-10 pr-4 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#00e676]/40 transition-colors"
+              className="w-full bg-[#141414] border border-[#262626] rounded-md pl-10 pr-4 py-2 text-sm text-white placeholder-[#999] focus:outline-none focus:border-[#00e676]/40 transition-colors"
             />
           </div>
 
           <div className="flex items-center gap-2 shrink-0 ml-auto">
-            <button type="button" className="p-2 rounded-md text-[#666] hover:text-white hover:bg-[#141414] transition-colors">
+            <button type="button" className="p-2 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#141414] transition-colors">
               <Bell className="w-4 h-4" />
             </button>
             <UserProfileMenu variant="workspace" />
@@ -702,14 +702,14 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
               {activeTab === 'dashboard' ? (
                 <>
                   <h1 className="text-2xl font-semibold text-white mb-1">Workspace Overview</h1>
-                  <p className="text-sm text-[#666]">
+                  <p className="text-sm text-[#b0b0b0]">
                     Manage drawing projects, files, and analysis workflows in one place.
                   </p>
                 </>
               ) : (
                 <>
                   <h1 className="text-2xl font-semibold text-white mb-1">All Projects</h1>
-                  <p className="text-sm text-[#666]">
+                  <p className="text-sm text-[#b0b0b0]">
                     {filteredAndSortedProjects.length} project{filteredAndSortedProjects.length === 1 ? '' : 's'} in your workspace.
                   </p>
                 </>
@@ -728,7 +728,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
               {/* Featured / latest project */}
               <div className="bg-[#141414] border border-[#262626] rounded-lg p-5 min-h-[160px] flex flex-col">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#555] mb-3">Latest Project</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3] mb-3">Latest Project</p>
                 {loading ? (
                   <div className="flex-1 animate-pulse space-y-2">
                     <div className="h-8 bg-[#262626] rounded w-12" />
@@ -746,23 +746,23 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                         <p className="text-lg font-semibold text-white group-hover:text-[#5eead4] transition-colors truncate mb-2">
                           {latest.name}
                         </p>
-                        <p className="text-[11px] text-[#666] truncate">
+                        <p className="text-[11px] text-[#b0b0b0] truncate">
                           {formatFileCount(latest.file_count)} · Updated {formatRelativeTime(latest.updated_at)}
                         </p>
                       </button>
                     );
                   })()
                 ) : (
-                  <p className="text-sm text-[#555] flex-1">No projects yet. Create one to get started.</p>
+                  <p className="text-sm text-[#a3a3a3] flex-1">No projects yet. Create one to get started.</p>
                 )}
               </div>
 
               {/* Drawing files summary */}
               <div className="bg-[#141414] border border-[#262626] rounded-lg p-5 min-h-[160px] flex flex-col">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#555] mb-3">Drawing Files</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3] mb-3">Drawing Files</p>
                 <div className="flex items-baseline gap-2 mb-3">
                   <span className="text-3xl font-bold text-white tabular-nums">{workspaceStats.totalFiles}</span>
-                  <span className="text-sm text-[#666]">/ {workspaceStats.totalProjects} project{workspaceStats.totalProjects === 1 ? '' : 's'}</span>
+                  <span className="text-sm text-[#b0b0b0]">/ {workspaceStats.totalProjects} project{workspaceStats.totalProjects === 1 ? '' : 's'}</span>
                 </div>
                 <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden mb-2">
                   <div
@@ -770,14 +770,14 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                     style={{ width: `${workspaceStats.utilization}%` }}
                   />
                 </div>
-                <p className="text-[11px] text-[#666] mt-auto">
+                <p className="text-[11px] text-[#b0b0b0] mt-auto">
                   {workspaceStats.utilization}% of projects contain drawing files
                 </p>
               </div>
 
               {/* Quick actions */}
               <div className="bg-[#141414] border border-[#262626] rounded-lg p-5 min-h-[160px]">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#555] mb-3">Quick Actions</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3] mb-3">Quick Actions</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { label: 'New Project', icon: Plus, action: () => setIsCreateModalOpen(true) },
@@ -792,7 +792,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                       className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-md border border-[#262626] bg-[#0a0a0a] hover:border-[#00e676]/25 hover:bg-[#111] transition-colors text-center"
                     >
                       <Icon className="w-4 h-4 text-[#00e676]" />
-                      <span className="text-[11px] text-[#888] leading-tight">{label}</span>
+                      <span className="text-[11px] text-[#d1d1d1] leading-tight">{label}</span>
                     </button>
                   ))}
                 </div>
@@ -803,12 +803,12 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <div className="bg-[#141414] border border-[#262626] rounded-lg overflow-hidden mb-8">
               <div className="px-5 py-4 border-b border-[#262626] flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white">Recent Activity</h2>
-                <span className="text-[11px] text-[#555]">{recentProjects.length} project{recentProjects.length === 1 ? '' : 's'}</span>
+                <span className="text-[11px] text-[#a3a3a3]">{recentProjects.length} project{recentProjects.length === 1 ? '' : 's'}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#555] border-b border-[#262626]">
+                    <tr className="text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3] border-b border-[#262626]">
                       <th className="text-left px-5 py-3 font-semibold">Project</th>
                       <th className="text-left px-5 py-3 font-semibold hidden md:table-cell">Files</th>
                       <th className="text-left px-5 py-3 font-semibold hidden lg:table-cell">Artifacts</th>
@@ -829,7 +829,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                       ))
                     ) : recentProjects.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-5 py-8 text-center text-[#555] text-sm">No recent activity</td>
+                        <td colSpan={7} className="px-5 py-8 text-center text-[#a3a3a3] text-sm">No recent activity</td>
                       </tr>
                     ) : (
                       recentProjects.map((p) => {
@@ -857,16 +857,16 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                               </div>
                             </td>
                             <td className="px-5 py-3 hidden md:table-cell">
-                              <span className="text-sm text-[#aaa] tabular-nums">{p.file_count ?? 0}</span>
-                              <p className="text-[11px] text-[#555] mt-0.5">{formatFileCount(p.file_count)}</p>
+                              <span className="text-sm text-[#d1d1d1] tabular-nums">{p.file_count ?? 0}</span>
+                              <p className="text-[11px] text-[#a3a3a3] mt-0.5">{formatFileCount(p.file_count)}</p>
                             </td>
                             <td className="px-5 py-3 hidden lg:table-cell">
-                              <span className="text-sm text-[#aaa] tabular-nums">{p.artifact_count ?? 0}</span>
-                              <p className="text-[11px] text-[#555] mt-0.5 truncate max-w-[180px]">
+                              <span className="text-sm text-[#d1d1d1] tabular-nums">{p.artifact_count ?? 0}</span>
+                              <p className="text-[11px] text-[#a3a3a3] mt-0.5 truncate max-w-[180px]">
                                 {formatArtifactSummary(p.artifact_count, p.artifact_summary)}
                               </p>
                             </td>
-                            <td className="px-5 py-3 text-[#888] hidden xl:table-cell">
+                            <td className="px-5 py-3 text-[#d1d1d1] hidden xl:table-cell">
                               {isNew ? 'Project created' : 'Project updated'}
                             </td>
                             <td className="px-5 py-3 hidden sm:table-cell">
@@ -888,11 +888,11 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                                     />
                                   }
                                 >
-                                  <span className="text-[#888] truncate max-w-[120px]">{p.created_by || 'Unknown'}</span>
+                                  <span className="text-[#d1d1d1] truncate max-w-[120px]">{p.created_by || 'Unknown'}</span>
                                 </HoverTooltip>
                               </div>
                             </td>
-                            <td className="px-5 py-3 text-[#888] whitespace-nowrap">
+                            <td className="px-5 py-3 text-[#d1d1d1] whitespace-nowrap">
                               <span className="flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5 shrink-0" />
                                 {formatRelativeTime(p.updated_at)}
@@ -930,19 +930,19 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-[#3c3c3c] bg-[#1e1e1e]">
               <h2 className="text-xl font-bold text-white tracking-wider">Create New Project</h2>
-              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#858585] hover:text-white">
+              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleCreateProject}>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-[#858585] uppercase tracking-wider mb-2">Project Name</label>
-                  <input required autoFocus type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. Utility 148" className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#555]" />
+                  <label className="block text-sm font-semibold text-[#b0b0b0] uppercase tracking-wider mb-2">Project Name</label>
+                  <input required autoFocus type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. Utility 148" className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#999]" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-[#858585] uppercase tracking-wider mb-2">Description (Optional)</label>
-                  <textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Enter project description..." className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#555] h-24 resize-none"></textarea>
+                  <label className="block text-sm font-semibold text-[#b0b0b0] uppercase tracking-wider mb-2">Description (Optional)</label>
+                  <textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} placeholder="Enter project description..." className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#999] h-24 resize-none"></textarea>
                 </div>
                 {createError && (
                   <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-md text-sm">
@@ -970,15 +970,15 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-[#3c3c3c] bg-[#1e1e1e]">
               <h2 className="text-xl font-bold text-white tracking-wider">Edit Project</h2>
-              <button onClick={() => setEditingProject(null)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#858585] hover:text-white">
+              <button onClick={() => setEditingProject(null)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleEditProject}>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-[#858585] uppercase tracking-wider mb-2">Project Name</label>
-                  <input required autoFocus type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. Utility 148" className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#555]" />
+                  <label className="block text-sm font-semibold text-[#b0b0b0] uppercase tracking-wider mb-2">Project Name</label>
+                  <input required autoFocus type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. Utility 148" className="w-full bg-[#121212] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#10b981] transition-colors text-white placeholder-[#999]" />
                 </div>
               </div>
               <div className="flex items-center justify-end p-5 border-t border-[#3c3c3c] bg-[#1e1e1e] gap-3">

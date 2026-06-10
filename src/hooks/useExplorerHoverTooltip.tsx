@@ -220,7 +220,7 @@ export function ExplorerTooltipRow({
   valueClassName?: string;
 }) {
   return (
-    <div className="text-[#858585]">
+    <div className="text-[#b0b0b0]">
       {label}: <span className={cn('text-white', valueClassName)}>{value}</span>
     </div>
   );

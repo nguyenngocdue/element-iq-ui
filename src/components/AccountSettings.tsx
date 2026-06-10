@@ -118,7 +118,7 @@ export function AccountSettings() {
 
       <div className="flex-1 overflow-hidden flex flex-col bg-[#0a0a0a]">
         <header className="h-14 border-b border-[#1f1f1f] flex items-center justify-end px-6 gap-2 shrink-0">
-          <button type="button" className="p-2 rounded-md text-[#666] hover:text-white hover:bg-[#141414] transition-colors">
+          <button type="button" className="p-2 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#141414] transition-colors">
             <Bell className="w-4 h-4" />
           </button>
           <UserProfileMenu variant="workspace" />
@@ -128,7 +128,7 @@ export function AccountSettings() {
           <div className="w-full px-6 lg:px-8 py-7">
             <div className="mb-7">
               <h1 className="text-2xl font-semibold text-white mb-1">Account Settings</h1>
-              <p className="text-sm text-[#666]">Manage your profile and workspace identity.</p>
+              <p className="text-sm text-[#b0b0b0]">Manage your profile and workspace identity.</p>
             </div>
 
             {error && (
@@ -171,13 +171,13 @@ export function AccountSettings() {
                     </div>
                     <div className="flex-1 min-w-0 pt-1">
                       <p className="text-sm font-medium text-white truncate">{fullName || username}</p>
-                      <p className="text-xs text-[#666] truncate mt-0.5">@{username}</p>
+                      <p className="text-xs text-[#b0b0b0] truncate mt-0.5">@{username}</p>
                     </div>
                   </div>
 
                   <div className="space-y-4 flex-1">
                     <div>
-                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#666] mb-1.5">
+                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#b0b0b0] mb-1.5">
                         Username
                       </label>
                       <input
@@ -189,26 +189,26 @@ export function AccountSettings() {
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#666] mb-1.5">
+                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#b0b0b0] mb-1.5">
                         Full Name
                       </label>
                       <input
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="Your display name"
-                        className="w-full bg-[#0a0a0a] border border-[#262626] rounded-md px-3 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#14b8a6]/40 transition-colors"
+                        className="w-full bg-[#0a0a0a] border border-[#262626] rounded-md px-3 py-2 text-sm text-white placeholder-[#999] focus:outline-none focus:border-[#14b8a6]/40 transition-colors"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#666] mb-1.5">
+                      <label className="block text-[11px] font-medium uppercase tracking-wide text-[#b0b0b0] mb-1.5">
                         Email
                       </label>
                       <input
                         readOnly
                         value={email}
-                        className="w-full bg-[#0a0a0a]/50 border border-[#262626] rounded-md px-3 py-2 text-sm text-[#888] cursor-not-allowed"
+                        className="w-full bg-[#0a0a0a]/50 border border-[#262626] rounded-md px-3 py-2 text-sm text-[#d1d1d1] cursor-not-allowed"
                       />
-                      <p className="text-[11px] text-[#555] mt-1.5">Email is managed by your login provider and cannot be changed here.</p>
+                      <p className="text-[11px] text-[#a3a3a3] mt-1.5">Email is managed by your login provider and cannot be changed here.</p>
                     </div>
                   </div>
                 </form>
@@ -222,25 +222,25 @@ export function AccountSettings() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-white text-sm font-semibold truncate">{fullName || username}</div>
-                      <div className="text-[#858585] text-xs truncate">{username}</div>
+                      <div className="text-[#b0b0b0] text-xs truncate">{username}</div>
                     </div>
                   </div>
 
                   <div className="space-y-3 mb-4">
                     <div>
-                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">Email</div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Email</div>
                       <div className="text-[#cccccc] text-sm break-all">{email}</div>
                     </div>
                     <div>
-                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">User ID</div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">User ID</div>
                       <div className="text-[#cccccc] text-xs font-mono break-all opacity-70">{userUuid}</div>
                     </div>
                     <div>
-                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">Role</div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Role</div>
                       <div className="text-[#5eead4] text-sm uppercase tracking-wide">{profile?.role ?? 'USER'}</div>
                     </div>
                     <div>
-                      <div className="text-[#858585] text-[10px] uppercase tracking-wide mb-0.5">Member Since</div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Member Since</div>
                       <div className="text-[#cccccc] text-sm">
                         {profile ? formatMemberSince(profile.created_at) : '—'}
                       </div>

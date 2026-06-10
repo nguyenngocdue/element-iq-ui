@@ -35,7 +35,7 @@ export function WorkspaceSidebar({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white truncate">Element IQ</p>
-            <p className="text-[11px] text-[#666] truncate">{displayName}</p>
+            <p className="text-[11px] text-[#b0b0b0] truncate">{displayName}</p>
           </div>
         </div>
       </div>
@@ -61,7 +61,7 @@ export function WorkspaceSidebar({
                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors text-sm',
                 item.id !== 'ai-chat' && activeNav === item.id
                   ? 'bg-[#141414] text-white font-medium border border-[#262626]'
-                  : 'text-[#888] hover:text-white hover:bg-[#141414]/60',
+                  : 'text-[#c4c4c4] hover:text-white hover:bg-[#141414]/60',
               )}
               onClick={() => {
                 if (item.id === 'ai-chat') {
@@ -82,7 +82,7 @@ export function WorkspaceSidebar({
         <button
           type="button"
           onClick={onHelp}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-[#888] hover:text-white hover:bg-[#141414]/60 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-[#c4c4c4] hover:text-white hover:bg-[#141414]/60 transition-colors"
         >
           <HelpCircle className="w-4 h-4" />
           Help Center
@@ -94,7 +94,7 @@ export function WorkspaceSidebar({
             'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
             activeNav === 'account'
               ? 'bg-[#141414] text-white font-medium border border-[#262626]'
-              : 'text-[#888] hover:text-white hover:bg-[#141414]/60',
+              : 'text-[#c4c4c4] hover:text-white hover:bg-[#141414]/60',
           )}
         >
           <User className="w-4 h-4" />
