@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from './components/TopBar';
 import { ActivityBar } from './components/ActivityBar';
@@ -117,53 +117,50 @@ function ProjectEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { state, setActiveProject } = useApp();
+  const { state, loadProjectEditor } = useApp();
   const [accessError, setAccessError] = useState<string | null>(null);
-  const [resolved, setResolved] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const prevProjectIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!projectId) return;
 
     let cancelled = false;
-    setResolved(false);
-    setAccessError(null);
+    const isNewProject = prevProjectIdRef.current !== projectId;
+    prevProjectIdRef.current = projectId;
 
-    (async () => {
-      const { authFetch } = await import('./lib/supabase');
-      const res = await authFetch(`/api/v1/projects/${projectId}`);
+    if (isNewProject) {
+      setBooting(true);
+      setAccessError(null);
+    }
 
+    void (async () => {
+      const result = await loadProjectEditor(projectId, user?.id ?? null);
       if (cancelled) return;
 
-      if (res.status === 401) {
+      if (result === 'unauthorized') {
         navigate(loginPath(`${location.pathname}${location.search}`), { replace: true });
         return;
       }
-      if (!res.ok) {
-        setAccessError(res.status === 404 ? 'Project not found.' : 'Unable to open this project.');
-        setResolved(true);
+      if (result === 'not_found') {
+        setAccessError('Project not found.');
+        setBooting(false);
+        return;
+      }
+      if (result === 'error') {
+        setAccessError('Unable to open this project.');
+        setBooting(false);
         return;
       }
 
-      const data = await res.json();
-      const isOwner = Boolean(user?.id && data.owner_id === user.id);
-      setActiveProject({
-        id: data.id,
-        name: data.name,
-        role: isOwner ? 'Owner' : 'Viewer',
-        age: '',
-        hasImage: false,
-        description: data.description,
-        ownerId: data.owner_id,
-        isPublic: data.is_public,
-        isReadOnly: !isOwner,
-      });
-      setResolved(true);
+      setAccessError(null);
+      setBooting(false);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [projectId, user?.id, navigate, location.pathname, location.search, setActiveProject]);
+  }, [projectId, user?.id, navigate, location.pathname, location.search, loadProjectEditor]);
 
   if (!projectId) {
     return <Navigate to="/" replace />;
@@ -184,7 +181,8 @@ function ProjectEditorPage() {
     );
   }
 
-  if (!resolved || !state.activeProject || state.activeProject.id !== projectId || state.isLoadingFiles) {
+  const projectReady = state.activeProject?.id === projectId;
+  if (booting && !projectReady) {
     return (
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

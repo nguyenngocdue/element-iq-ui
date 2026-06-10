@@ -174,6 +174,8 @@ function PdfRenderer({
   const [renderScale, setRenderScale] = useState(scale);
   const [baseSize, setBaseSize] = useState({ w: 0, h: 0 });
   const renderTaskRef = useRef<any>(null);
+  const pdfDocRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setRenderScale(scale), 150);
@@ -187,13 +189,21 @@ function PdfRenderer({
     let isMounted = true;
 
     const renderPdf = async () => {
+      let loadingTask: any = null;
       try {
         const arrayBuffer = await file.file.arrayBuffer();
         if (!isMounted) return;
         const typedarray = new Uint8Array(arrayBuffer);
-        const loadingTask = pdfjsLib.getDocument({ data: typedarray });
+        loadingTask = pdfjsLib.getDocument({ data: typedarray });
+        loadingTaskRef.current = loadingTask;
         const pdf = await loadingTask.promise;
-        if (!isMounted) return;
+        if (!isMounted) {
+          pdf.destroy();
+          loadingTask.destroy?.();
+          return;
+        }
+        pdfDocRef.current?.destroy();
+        pdfDocRef.current = pdf;
         const page = await pdf.getPage(pageNum || 1);
         if (!isMounted) return;
 
@@ -229,6 +239,8 @@ function PdfRenderer({
         if (err.name !== 'RenderingCancelledException') {
           console.error("PDF Render Error", err);
         }
+      } finally {
+        loadingTaskRef.current = null;
       }
     };
 
@@ -239,8 +251,13 @@ function PdfRenderer({
       if (renderTaskRef.current) {
         try {
           renderTaskRef.current.cancel();
-        } catch(e) {}
+        } catch (e) {}
+        renderTaskRef.current = null;
       }
+      loadingTaskRef.current?.destroy?.();
+      loadingTaskRef.current = null;
+      pdfDocRef.current?.destroy?.();
+      pdfDocRef.current = null;
     };
   }, [file?.file, renderScale, pageNum]);
 

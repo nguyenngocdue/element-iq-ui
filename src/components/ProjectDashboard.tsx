@@ -151,6 +151,53 @@ function projectThumbPalette(seed: string) {
   return PROJECT_THUMB_PALETTES[Math.abs(hash) % PROJECT_THUMB_PALETTES.length];
 }
 
+function filterSortProjects(
+  projects: ProjectItem[],
+  searchQuery: string,
+  sortBy: 'alphabetical' | 'recent' | 'oldest',
+): ProjectItem[] {
+  let result = projects.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+  switch (sortBy) {
+    case 'alphabetical':
+      result.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'recent':
+      result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      break;
+    case 'oldest':
+      result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      break;
+  }
+  return result;
+}
+
+function projectShareUrl(projectId: string): string {
+  return `${window.location.origin}/projects/${projectId}`;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 function ProjectCard({
   project: p,
   cardMenuId,
@@ -317,7 +364,8 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [myProjects, setMyProjects] = useState<ProjectItem[]>([]);
+  const [communityProjects, setCommunityProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -351,35 +399,35 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     redirectToLogin(`${location.pathname}${location.search}`);
   };
 
-  const filteredAndSortedProjects = useMemo(() => {
-    let result = projects.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    switch (sortBy) {
-      case 'alphabetical':
-        result.sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case 'recent':
-        result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        break;
-      case 'oldest':
-        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        break;
-    }
-    return result;
-  }, [projects, searchQuery, sortBy]);
+  const filteredMyProjects = useMemo(
+    () => filterSortProjects(myProjects, searchQuery, sortBy),
+    [myProjects, searchQuery, sortBy],
+  );
+  const filteredMyPrivate = useMemo(
+    () => filteredMyProjects.filter((p) => !p.is_public),
+    [filteredMyProjects],
+  );
+  const filteredMyPublic = useMemo(
+    () => filteredMyProjects.filter((p) => p.is_public),
+    [filteredMyProjects],
+  );
+  const filteredCommunity = useMemo(
+    () => filterSortProjects(communityProjects, searchQuery, sortBy),
+    [communityProjects, searchQuery, sortBy],
+  );
 
   const workspaceStats = useMemo(() => {
-    const totalFiles = projects.reduce((sum, p) => sum + (p.file_count ?? 0), 0);
-    const withFiles = projects.filter(p => (p.file_count ?? 0) > 0).length;
-    const utilization = projects.length ? Math.round((withFiles / projects.length) * 100) : 0;
-    return { totalProjects: projects.length, totalFiles, withFiles, utilization };
-  }, [projects]);
+    const totalFiles = myProjects.reduce((sum, p) => sum + (p.file_count ?? 0), 0);
+    const withFiles = myProjects.filter(p => (p.file_count ?? 0) > 0).length;
+    const utilization = myProjects.length ? Math.round((withFiles / myProjects.length) * 100) : 0;
+    return { totalProjects: myProjects.length, totalFiles, withFiles, utilization };
+  }, [myProjects]);
 
   const recentProjects = useMemo(() => {
-    return [...projects]
+    return [...myProjects]
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
       .slice(0, 8);
-  }, [projects]);
+  }, [myProjects]);
 
   const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest';
 
@@ -387,32 +435,61 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   useEffect(() => {
     if (authLoading) return;
     if (activeTab === 'dashboard') {
-      loadPublicProjects();
+      void loadDashboard();
       return;
     }
     if (!user) {
-      setProjects([]);
+      setMyProjects([]);
+      setCommunityProjects([]);
       setLoading(false);
       setError(null);
       return;
     }
-    loadProjects();
+    void loadMyProjects();
   }, [user, authLoading, activeTab]);
 
-  async function loadPublicProjects() {
+  async function loadDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authFetch('/api/v1/projects/public');
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${res.status}`);
+      const requests: Promise<Response>[] = [authFetch('/api/v1/projects/public')];
+      if (user) {
+        requests.push(authFetch('/api/v1/projects'));
       }
-      const data = await res.json();
-      setProjects(data.map((p: ProjectItem) => ({ ...p, hasImage: false })));
+
+      const [publicRes, myRes] = await Promise.all(requests);
+
+      if (!publicRes.ok) {
+        const detail = await publicRes.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${publicRes.status}`);
+      }
+
+      const publicData = await publicRes.json();
+      const publicList = publicData.map((p: ProjectItem) => ({ ...p, hasImage: false }));
+
+      if (user && myRes) {
+        if (!myRes.ok) {
+          const detail = await myRes.json().catch(() => ({}));
+          if (myRes.status === 502) {
+            throw new Error(
+              'HTTP 502 — backend không phản hồi. Chạy ./deploy.sh doctor và forward tunnel tới port 3080.',
+            );
+          }
+          throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${myRes.status}`);
+        }
+        const myData = await myRes.json();
+        const myList = myData.map((p: ProjectItem) => ({ ...p, hasImage: false }));
+        const myIds = new Set(myList.map((p: ProjectItem) => p.id));
+        setMyProjects(myList);
+        setCommunityProjects(publicList.filter((p: ProjectItem) => !myIds.has(p.id)));
+      } else {
+        setMyProjects([]);
+        setCommunityProjects(publicList);
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to load public projects');
-      setProjects([]);
+      setError(err.message || 'Failed to load projects');
+      setMyProjects([]);
+      setCommunityProjects([]);
     } finally {
       setLoading(false);
     }
@@ -428,7 +505,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     return () => document.removeEventListener('click', closeMenus);
   }, [cardMenuId, sortMenuOpen]);
 
-  async function loadProjects() {
+  async function loadMyProjects() {
     setLoading(true);
     setError(null);
     try {
@@ -443,15 +520,24 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
         throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${res.status}`);
       }
       const data = await res.json();
-      setProjects(data.map((p: ProjectItem) => ({ ...p, hasImage: false })));
+      setMyProjects(data.map((p: ProjectItem) => ({ ...p, hasImage: false })));
     } catch (err: any) {
       setError(err.message || 'Failed to load projects');
-      // Fallback: show empty state
-      setProjects([]);
+      setMyProjects([]);
     } finally {
       setLoading(false);
     }
   }
+
+  const patchProjectInLists = (projectId: string, patch: Partial<ProjectItem>) => {
+    setMyProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...patch } : p)));
+    setCommunityProjects((prev) => prev.filter((p) => p.id !== projectId));
+  };
+
+  const removeProjectFromLists = (projectId: string) => {
+    setMyProjects((prev) => prev.filter((p) => p.id !== projectId));
+    setCommunityProjects((prev) => prev.filter((p) => p.id !== projectId));
+  };
 
   const handleToggleVisibility = async (project: ProjectItem, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -464,8 +550,18 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       });
       if (!res.ok) throw new Error('Failed to update visibility');
       const updated = await res.json();
-      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, ...updated } : p));
-      showToast(nextPublic ? `"${project.name}" is now public` : `"${project.name}" is now private`);
+      patchProjectInLists(project.id, updated);
+      if (nextPublic) {
+        const shareUrl = projectShareUrl(project.id);
+        const copied = await copyTextToClipboard(shareUrl);
+        showToast(
+          copied
+            ? 'Public link copied — paste and share anywhere'
+            : `Now public. Share: ${shareUrl}`,
+        );
+      } else {
+        showToast(`"${project.name}" is now private`);
+      }
     } catch (err) {
       console.error('Toggle visibility error:', err);
       showToast('Failed to update project visibility');
@@ -493,7 +589,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       });
       if (!res.ok) throw new Error('Failed to update');
       const updated = await res.json();
-      setProjects(prev => prev.map(p => p.id === editingProject.id ? { ...p, ...updated } : p));
+      patchProjectInLists(editingProject.id, updated);
     } catch (err) {
       console.error('Edit project error:', err);
     }
@@ -506,7 +602,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
 
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const project = projects.find(p => p.id === id);
+    const project = myProjects.find(p => p.id === id);
     if (project) setDeleteTarget(project);
   };
 
@@ -517,7 +613,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       const res = await authFetch(`/api/v1/projects/${deleteTarget.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete');
       const data = await res.json();
-      setProjects(prev => prev.filter(p => p.id !== deleteTarget.id));
+      removeProjectFromLists(deleteTarget.id);
       showToast(`Deleted: ${data.deleted_files} file(s), ${data.deleted_jobs} job(s) removed`);
     } catch (err) {
       console.error('Delete project error:', err);
@@ -559,7 +655,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
         throw new Error(detail);
       }
       const created = await res.json();
-      setProjects(prev => [{ ...created, hasImage: false }, ...prev]);
+      setMyProjects(prev => [{ ...created, hasImage: false }, ...prev]);
       setIsCreateModalOpen(false);
       setNewProjectName('');
       setCreateDescription('');
@@ -578,6 +674,202 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   };
 
   const sortLabel = SORT_OPTIONS.find(o => o.value === sortBy)?.label ?? 'Most Recent';
+
+  const renderProjectsContent = (
+    projectList: ProjectItem[],
+    emptyMessage: string,
+    showCreateOnEmpty = false,
+  ) => {
+    if (loading) {
+      return (
+        <div className={PROJECT_GRID_CLASS}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-[#141414] border border-[#262626] rounded-lg h-[220px] animate-pulse" />
+          ))}
+        </div>
+      );
+    }
+
+    if (viewMode === 'grid') {
+      if (projectList.length === 0) {
+        return (
+          <div className="bg-[#141414] border border-[#262626] rounded-lg py-12 text-center">
+            <FolderKanban className="w-10 h-10 text-[#333] mx-auto mb-3" />
+            <p className="text-[#b0b0b0] text-sm">{emptyMessage}</p>
+            {showCreateOnEmpty && (
+              <button
+                type="button"
+                onClick={() => (user ? setIsCreateModalOpen(true) : promptSignInForAction())}
+                className="mt-4 text-sm text-[#00e676] hover:underline"
+              >
+                {user ? 'Create your first project' : 'Sign In'}
+              </button>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className={cn(PROJECT_GRID_CLASS, 'pb-2')}>
+          {projectList.map(p => (
+            <ProjectCard
+              key={p.id}
+              project={p}
+              cardMenuId={cardMenuId}
+              setCardMenuId={setCardMenuId}
+              onOpen={handleOpenProject}
+              onEdit={openEditModal}
+              onDelete={handleDeleteProject}
+              onToggleVisibility={handleToggleVisibility}
+              canManage={canManageProject(p)}
+            />
+          ))}
+        </div>
+      );
+    }
+
+    if (projectList.length === 0) {
+      return (
+        <div className="bg-[#141414] border border-[#262626] rounded-lg py-12 text-center mb-8">
+          <p className="text-[#b0b0b0] text-sm">{emptyMessage}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col border border-[#262626] rounded-lg overflow-visible bg-[#141414] mb-2">
+        <div className="flex items-center px-4 py-2.5 border-b border-[#262626] bg-[#0a0a0a] text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3]">
+          <div className="flex-[1.2] min-w-0">Project</div>
+          <div className="w-36 shrink-0">Created by</div>
+          <div className="w-32 shrink-0">Created</div>
+          <div className="w-20 shrink-0">Files</div>
+          <div className="flex-1 min-w-0 hidden lg:block">Description</div>
+          <div className="w-36 shrink-0 text-center">Visibility</div>
+        </div>
+        <div className="flex flex-col divide-y divide-[#1f1f1f]">
+          {projectList.map(p => (
+            <div
+              key={p.id}
+              onClick={() => handleOpenProject(p)}
+              className={cn(
+                'flex items-center px-4 py-3 hover:bg-[#1a1a1a] cursor-pointer transition-colors group',
+                cardMenuId === p.id && 'relative z-30',
+              )}
+            >
+              <div className="flex-[1.2] min-w-0 flex items-center gap-3">
+                <div
+                  className="w-8 h-8 shrink-0 rounded-sm border border-[#262626]/80"
+                  style={{
+                    background: (() => {
+                      const c = projectThumbPalette(p.id || p.name);
+                      return `linear-gradient(135deg, ${c.from} 0%, ${c.to} 100%)`;
+                    })(),
+                  }}
+                />
+                <ProjectNameTooltip id={p.id} name={p.name} description={p.description}>
+                  <span className="text-sm font-semibold text-white truncate group-hover:text-[#5eead4] transition-colors cursor-default">
+                    {p.name}
+                  </span>
+                </ProjectNameTooltip>
+              </div>
+              <div className="w-36 shrink-0 text-xs text-[#d1d1d1] min-w-0 flex items-center gap-2">
+                <UserAvatarTooltip
+                  userId={p.owner_id}
+                  displayName={p.created_by}
+                  username={p.owner_username}
+                  size="sm"
+                />
+                <HoverTooltip
+                  stopBubble
+                  className="min-w-0 flex-1"
+                  content={
+                    <UserTooltipContent
+                      userId={p.owner_id ?? '—'}
+                      name={p.created_by}
+                      username={p.owner_username}
+                    />
+                  }
+                >
+                  <span className="truncate block">{p.created_by || 'Unknown'}</span>
+                </HoverTooltip>
+              </div>
+              <div className="w-32 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{formatProjectDate(p.created_at)}</div>
+              <div className="w-20 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{p.file_count ?? 0}</div>
+              <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#b0b0b0] italic truncate pr-4">
+                {p.description?.trim() || 'No description'}
+              </div>
+              <div className="w-36 shrink-0 flex items-center justify-center gap-2">
+                <VisibilityBadge isPublic={p.is_public} />
+                {canManageProject(p) && (
+                <div className="relative z-20">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCardMenuId(prev => (prev === p.id ? null : p.id));
+                    }}
+                    className="p-1 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#262626] opacity-0 group-hover:opacity-100 transition-all"
+                    aria-label="Project actions"
+                  >
+                    <EllipsisVertical className="w-3.5 h-3.5" />
+                  </button>
+                  {cardMenuId === p.id && (
+                    <div
+                      className="absolute right-0 top-full mt-1 z-[100] min-w-[148px] py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button type="button" onClick={(e) => { setCardMenuId(null); handleToggleVisibility(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
+                        {p.is_public ? <Lock className="w-3.5 h-3.5 text-[#a78bfa]" /> : <Globe className="w-3.5 h-3.5 text-[#2dd4bf]" />}
+                        {p.is_public ? 'Make Private' : 'Make Public'}
+                      </button>
+                      <button type="button" onClick={(e) => { setCardMenuId(null); openEditModal(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
+                        <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" /> Edit
+                      </button>
+                      <button type="button" onClick={(e) => { setCardMenuId(null); handleDeleteProject(p.id, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderDashboardSection = (
+    title: string,
+    description: string,
+    icon: React.ReactNode,
+    projectList: ProjectItem[],
+    emptyMessage: string,
+    options?: { showCreateOnEmpty?: boolean; hideWhenEmpty?: boolean },
+  ) => {
+    if (options?.hideWhenEmpty && !loading && projectList.length === 0) return null;
+
+    return (
+      <section className="mb-10">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="p-2 rounded-md bg-[#141414] border border-[#262626] shrink-0">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-white">{title}</h2>
+            <p className="text-sm text-[#b0b0b0]">{description}</p>
+          </div>
+          <span className="ml-auto text-[11px] text-[#a3a3a3] tabular-nums shrink-0 pt-1">
+            {loading ? '…' : `${projectList.length} project${projectList.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        {renderProjectsContent(projectList, emptyMessage, options?.showCreateOnEmpty)}
+      </section>
+    );
+  };
+
+  const latestProject = filteredMyProjects[0] ?? filteredCommunity[0];
 
   const projectsToolbar = (
     <div className="flex items-center justify-end mb-6">
@@ -656,149 +948,10 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     </div>
   );
 
-  const projectsContent = loading ? (
-    <div className={PROJECT_GRID_CLASS}>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="bg-[#141414] border border-[#262626] rounded-lg h-[220px] animate-pulse" />
-      ))}
-    </div>
-  ) : viewMode === 'grid' ? (
-    filteredAndSortedProjects.length === 0 ? (
-      <div className="bg-[#141414] border border-[#262626] rounded-lg py-16 text-center">
-        <FolderKanban className="w-10 h-10 text-[#333] mx-auto mb-3" />
-        <p className="text-[#b0b0b0] text-sm">
-          {activeTab === 'dashboard'
-            ? 'No public projects yet.'
-            : user
-              ? 'No projects found'
-              : 'Sign in to view and manage your projects.'}
-        </p>
-        <button
-          type="button"
-          onClick={() => (user ? setIsCreateModalOpen(true) : promptSignInForAction())}
-          className="mt-4 text-sm text-[#00e676] hover:underline"
-        >
-          {user ? 'Create your first project' : 'Sign In'}
-        </button>
-      </div>
-    ) : (
-      <div className={cn(PROJECT_GRID_CLASS, 'pb-8')}>
-        {filteredAndSortedProjects.map(p => (
-          <ProjectCard
-            key={p.id}
-            project={p}
-            cardMenuId={cardMenuId}
-            setCardMenuId={setCardMenuId}
-            onOpen={handleOpenProject}
-            onEdit={openEditModal}
-            onDelete={handleDeleteProject}
-            onToggleVisibility={handleToggleVisibility}
-            canManage={canManageProject(p)}
-          />
-        ))}
-      </div>
-    )
-  ) : (
-    <div className="flex flex-col border border-[#262626] rounded-lg overflow-visible bg-[#141414] mb-8">
-      <div className="flex items-center px-4 py-2.5 border-b border-[#262626] bg-[#0a0a0a] text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3]">
-        <div className="flex-[1.2] min-w-0">Project</div>
-        <div className="w-36 shrink-0">Created by</div>
-        <div className="w-32 shrink-0">Created</div>
-        <div className="w-20 shrink-0">Files</div>
-        <div className="flex-1 min-w-0 hidden lg:block">Description</div>
-        <div className="w-36 shrink-0 text-center">Visibility</div>
-      </div>
-      <div className="flex flex-col divide-y divide-[#1f1f1f]">
-        {filteredAndSortedProjects.map(p => (
-          <div
-            key={p.id}
-            onClick={() => handleOpenProject(p)}
-            className={cn(
-              'flex items-center px-4 py-3 hover:bg-[#1a1a1a] cursor-pointer transition-colors group',
-              cardMenuId === p.id && 'relative z-30',
-            )}
-          >
-            <div className="flex-[1.2] min-w-0 flex items-center gap-3">
-              <div
-                className="w-8 h-8 shrink-0 rounded-sm border border-[#262626]/80"
-                style={{
-                  background: (() => {
-                    const c = projectThumbPalette(p.id || p.name);
-                    return `linear-gradient(135deg, ${c.from} 0%, ${c.to} 100%)`;
-                  })(),
-                }}
-              />
-              <ProjectNameTooltip id={p.id} name={p.name} description={p.description}>
-                <span className="text-sm font-semibold text-white truncate group-hover:text-[#5eead4] transition-colors cursor-default">
-                  {p.name}
-                </span>
-              </ProjectNameTooltip>
-            </div>
-            <div className="w-36 shrink-0 text-xs text-[#d1d1d1] min-w-0 flex items-center gap-2">
-              <UserAvatarTooltip
-                userId={p.owner_id}
-                displayName={p.created_by}
-                username={p.owner_username}
-                size="sm"
-              />
-              <HoverTooltip
-                stopBubble
-                className="min-w-0 flex-1"
-                content={
-                  <UserTooltipContent
-                    userId={p.owner_id ?? '—'}
-                    name={p.created_by}
-                    username={p.owner_username}
-                  />
-                }
-              >
-                <span className="truncate block">{p.created_by || 'Unknown'}</span>
-              </HoverTooltip>
-            </div>
-            <div className="w-32 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{formatProjectDate(p.created_at)}</div>
-            <div className="w-20 shrink-0 text-xs text-[#d1d1d1] tabular-nums">{p.file_count ?? 0}</div>
-            <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#b0b0b0] italic truncate pr-4">
-              {p.description?.trim() || 'No description'}
-            </div>
-            <div className="w-36 shrink-0 flex items-center justify-center gap-2">
-              <VisibilityBadge isPublic={p.is_public} />
-              {canManageProject(p) && (
-              <div className="relative z-20">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCardMenuId(prev => (prev === p.id ? null : p.id));
-                  }}
-                  className="p-1 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#262626] opacity-0 group-hover:opacity-100 transition-all"
-                  aria-label="Project actions"
-                >
-                  <EllipsisVertical className="w-3.5 h-3.5" />
-                </button>
-                {cardMenuId === p.id && (
-                  <div
-                    className="absolute right-0 top-full mt-1 z-[100] min-w-[148px] py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button type="button" onClick={(e) => { setCardMenuId(null); handleToggleVisibility(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
-                      {p.is_public ? <Lock className="w-3.5 h-3.5 text-[#a78bfa]" /> : <Globe className="w-3.5 h-3.5 text-[#2dd4bf]" />}
-                      {p.is_public ? 'Make Private' : 'Make Public'}
-                    </button>
-                    <button type="button" onClick={(e) => { setCardMenuId(null); openEditModal(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
-                      <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" /> Edit
-                    </button>
-                    <button type="button" onClick={(e) => { setCardMenuId(null); handleDeleteProject(p.id, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+  const projectsContent = renderProjectsContent(
+    filteredMyProjects,
+    user ? 'No projects found' : 'Sign in to view and manage your projects.',
+    Boolean(user),
   );
 
   return (
@@ -857,16 +1010,25 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <div className="mb-7">
               {activeTab === 'dashboard' ? (
                 <>
-                  <h1 className="text-2xl font-semibold text-white mb-1">Public Projects</h1>
+                  <h1 className="text-2xl font-semibold text-white mb-1">Dashboard</h1>
                   <p className="text-sm text-[#b0b0b0]">
-                    {filteredAndSortedProjects.length} public project{filteredAndSortedProjects.length === 1 ? '' : 's'} shared by the community.
+                    {user ? (
+                      <>
+                        {filteredMyPrivate.length} private · {filteredMyPublic.length} public · {filteredCommunity.length} community
+                        {' '}project{(filteredMyPrivate.length + filteredMyPublic.length + filteredCommunity.length) === 1 ? '' : 's'}
+                      </>
+                    ) : (
+                      <>
+                        {filteredCommunity.length} public project{filteredCommunity.length === 1 ? '' : 's'} shared by the community
+                      </>
+                    )}
                   </p>
                 </>
               ) : (
                 <>
                   <h1 className="text-2xl font-semibold text-white mb-1">All Projects</h1>
                   <p className="text-sm text-[#b0b0b0]">
-                    {filteredAndSortedProjects.length} project{filteredAndSortedProjects.length === 1 ? '' : 's'} in your workspace.
+                    {filteredMyProjects.length} project{filteredMyProjects.length === 1 ? '' : 's'} in your workspace.
                   </p>
                 </>
               )}
@@ -905,9 +1067,9 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                     <div className="h-8 bg-[#262626] rounded w-12" />
                     <div className="h-4 bg-[#262626] rounded w-2/3" />
                   </div>
-                ) : filteredAndSortedProjects[0] ? (
+                ) : latestProject ? (
                   (() => {
-                    const latest = filteredAndSortedProjects[0];
+                    const latest = latestProject;
                     return (
                       <button
                         type="button"
@@ -983,7 +1145,8 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
               </div>
             </div>
 
-            {/* Recent activity */}
+            {/* Recent activity — logged-in users only */}
+            {user && (
             <div className="bg-[#141414] border border-[#262626] rounded-lg overflow-hidden mb-8">
               <div className="px-5 py-4 border-b border-[#262626] flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white">Recent Activity</h2>
@@ -1093,6 +1256,45 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 </table>
               </div>
             </div>
+            )}
+
+            {projectsToolbar}
+
+            {user ? (
+              <>
+                {renderDashboardSection(
+                  'Your Private Projects',
+                  'Only you can access these projects.',
+                  <Lock className="w-4 h-4 text-[#a78bfa]" />,
+                  filteredMyPrivate,
+                  'No private projects yet.',
+                  { showCreateOnEmpty: true },
+                )}
+                {renderDashboardSection(
+                  'Your Public Projects',
+                  'Shared with anyone who has the link.',
+                  <Globe className="w-4 h-4 text-[#2dd4bf]" />,
+                  filteredMyPublic,
+                  'No public projects yet. Make a project public to share it.',
+                  { hideWhenEmpty: !loading && filteredMyPublic.length === 0 && filteredMyPrivate.length > 0 },
+                )}
+                {renderDashboardSection(
+                  'Community Public Projects',
+                  'Public projects from other users — view only.',
+                  <Globe className="w-4 h-4 text-[#5eead4]" />,
+                  filteredCommunity,
+                  'No community public projects yet.',
+                )}
+              </>
+            ) : (
+              renderDashboardSection(
+                'Public Projects',
+                'Browse public projects shared by the community — view only.',
+                <Globe className="w-4 h-4 text-[#2dd4bf]" />,
+                filteredCommunity,
+                'No public projects yet.',
+              )
+            )}
               </>
             )}
 
