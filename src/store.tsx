@@ -15,6 +15,14 @@ import {
 } from './lib/mapAnalysis';
 import { analysisStageFromProgress, ELEMENTIQ_ENGINE } from './lib/engineBranding';
 import { disposeDocumentFile, disposeDocumentFilesInPlace } from './lib/sessionDispose';
+import {
+  applyGuestRunSnapshot,
+  buildGuestRunSnapshot,
+  getGuestRunViewerKey,
+  loadGuestRunSnapshot,
+  saveGuestRunSnapshot,
+} from './lib/guestRunStorage';
+import { normalizePublicAccessLevel, resolveProjectCapabilities } from './lib/projectAccess';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -108,6 +116,19 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
         type: 'INFO' as const,
       }],
     };
+  });
+}
+
+function mergeGuestRunResults(
+  projectId: string,
+  docs: DocumentFile[],
+  viewerKey: string | null,
+  isOwner: boolean,
+): DocumentFile[] {
+  if (isOwner || !viewerKey) return docs;
+  return docs.map((doc) => {
+    const snapshot = loadGuestRunSnapshot(projectId, doc.id, viewerKey);
+    return snapshot ? applyGuestRunSnapshot(doc, snapshot) : doc;
   });
 }
 
@@ -718,13 +739,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       current.currentView === 'editor'
     ) {
       const isOwner = Boolean(userId && current.activeProject.ownerId === userId);
+      const publicAccessLevel = normalizePublicAccessLevel(current.activeProject.publicAccessLevel);
+      const caps = resolveProjectCapabilities(
+        isOwner,
+        Boolean(current.activeProject.isPublic),
+        publicAccessLevel,
+      );
       setState((prev) => ({
         ...prev,
-        isReadOnly: !isOwner,
+        ...caps,
+        isProjectOwner: isOwner,
+        guestViewerKey: getGuestRunViewerKey(userId),
         activeProject: prev.activeProject
           ? {
               ...prev.activeProject,
-              isReadOnly: !isOwner,
+              isReadOnly: caps.isReadOnly,
               role: isOwner ? 'Owner' : 'Viewer',
             }
           : prev.activeProject,
@@ -772,7 +801,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data = await metaRes.json();
       const rawFiles = await filesRes.json();
       const isOwner = Boolean(userId && data.owner_id === userId);
-      const docs = mapApiProjectFiles(rawFiles);
+      const publicAccessLevel = normalizePublicAccessLevel(data.public_access_level);
+      const caps = resolveProjectCapabilities(isOwner, Boolean(data.is_public), publicAccessLevel);
+      const viewerKey = getGuestRunViewerKey(userId);
+      const docs = mergeGuestRunResults(
+        projectId,
+        mapApiProjectFiles(rawFiles),
+        viewerKey,
+        isOwner,
+      );
 
       const urlParams = new URLSearchParams(window.location.search);
       const urlFileId = urlParams.get('file');
@@ -798,9 +835,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             description: data.description,
             ownerId: data.owner_id,
             isPublic: data.is_public,
-            isReadOnly: !isOwner,
+            isReadOnly: caps.isReadOnly,
+            publicAccessLevel,
           },
-          isReadOnly: !isOwner,
+          ...caps,
+          isProjectOwner: isOwner,
+          guestViewerKey: viewerKey,
           files: docs,
           isLoadingFiles: false,
           activeFileId: initialFileId,
@@ -1085,6 +1125,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const analyzeFile = useCallback(async (id: string) => {
     const analysisSessionId = projectSessionRef.current;
+    const session = stateRef.current;
+    const usePublicRun = Boolean(
+      !session.isProjectOwner && session.canRun && session.activeProject?.isPublic,
+    );
+    const guestViewerKey = session.guestViewerKey;
+    const projectId = session.activeProject?.id;
     const fileName = getFileName(id);
     stopAnalysisRef.current = false;
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
@@ -1149,7 +1195,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Files already on server (UUID) → re-run via JSON (no multipart re-upload)
       if (useServerReRun) {
         appendAnalysisLog({ level: 'dim', message: 'Submitting re-analysis job…', fileId: id });
-        const res = await authFetch('/api/v1/analyze/re-run', {
+        const endpoint = usePublicRun ? '/api/v1/analyze/public-run' : '/api/v1/analyze/re-run';
+        const res = await authFetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1297,6 +1344,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           message: 'Artifacts updated — open Annotated PNG/PDF in sidebar to view latest',
           fileId: id,
         });
+      }
+
+      if (usePublicRun && projectId && guestViewerKey) {
+        const updated = filesRef.current.find((f) => f.id === id);
+        if (updated) {
+          saveGuestRunSnapshot(
+            projectId,
+            id,
+            guestViewerKey,
+            buildGuestRunSnapshot(updated, String(result.job_id ?? '')),
+          );
+          appendAnalysisLog({
+            level: 'info',
+            message: 'Your results were saved locally in this browser only',
+            fileId: id,
+          });
+        }
       }
 
     } catch (err) {

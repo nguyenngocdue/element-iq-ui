@@ -12,12 +12,16 @@ import { ProjectNameTooltip, UserTooltipContent } from './tooltipContent';
 import { HoverTooltip } from './HoverTooltip';
 import { UserAvatarTooltip } from './UserAvatarTooltip';
 
+import type { PublicAccessLevel } from '../types';
+import { publicAccessLevelLabel } from '../lib/projectAccess';
+
 interface ProjectItem {
   id: string;
   name: string;
   description?: string | null;
   is_archived: boolean;
   is_public?: boolean;
+  public_access_level?: PublicAccessLevel;
   created_at: string;
   updated_at: string;
   created_by?: string | null;
@@ -206,6 +210,7 @@ function ProjectCard({
   onEdit,
   onDelete,
   onToggleVisibility,
+  onSetAccessLevel,
   canManage,
 }: {
   project: ProjectItem;
@@ -215,6 +220,7 @@ function ProjectCard({
   onEdit: (p: ProjectItem, e: React.MouseEvent) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
   onToggleVisibility: (p: ProjectItem, e: React.MouseEvent) => void;
+  onSetAccessLevel: (p: ProjectItem, level: PublicAccessLevel, e: React.MouseEvent) => void;
   canManage: boolean;
 }) {
   const thumbColors = projectThumbPalette(p.id || p.name);
@@ -272,6 +278,27 @@ function ProjectCard({
                       : <Globe className="w-3.5 h-3.5 text-[#2dd4bf]" />}
                     {p.is_public ? 'Make Private' : 'Make Public'}
                   </button>
+                  {p.is_public && (
+                    <>
+                      <div className="my-1 border-t border-[#333]" />
+                      <p className="px-3 py-1 text-[10px] uppercase tracking-wide text-[#666]">Guest access</p>
+                      {(['view', 'run', 'run_download'] as PublicAccessLevel[]).map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={(e) => { setCardMenuId(null); onSetAccessLevel(p, level, e); }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors',
+                            (p.public_access_level ?? 'view') === level
+                              ? 'text-[#5eead4] bg-[#14b8a6]/10'
+                              : 'text-[#ccc] hover:bg-[#262626] hover:text-white',
+                          )}
+                        >
+                          {publicAccessLevelLabel(level)}
+                        </button>
+                      ))}
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => { setCardMenuId(null); onEdit(p, e); }}
@@ -568,6 +595,28 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     }
   };
 
+  const handleSetPublicAccessLevel = async (
+    project: ProjectItem,
+    level: PublicAccessLevel,
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    try {
+      const res = await authFetch(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_public: true, public_access_level: level }),
+      });
+      if (!res.ok) throw new Error('Failed to update sharing level');
+      const updated = await res.json();
+      patchProjectInLists(project.id, updated);
+      showToast(`Guest access: ${publicAccessLevelLabel(level)}`);
+    } catch (err) {
+      console.error('Set access level error:', err);
+      showToast('Failed to update guest access level');
+    }
+  };
+
   const canManageProject = (project: ProjectItem) =>
     Boolean(user?.id && project.owner_id === user.id);
 
@@ -720,8 +769,9 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
               onOpen={handleOpenProject}
               onEdit={openEditModal}
               onDelete={handleDeleteProject}
-              onToggleVisibility={handleToggleVisibility}
-              canManage={canManageProject(p)}
+            onToggleVisibility={handleToggleVisibility}
+            onSetAccessLevel={handleSetPublicAccessLevel}
+            canManage={canManageProject(p)}
             />
           ))}
         </div>

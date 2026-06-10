@@ -15,6 +15,8 @@ import { FileItem } from './Sidebar';
 export function AnalysisView() {
   const { state, setActiveFile, openConfigModal } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
+  const canRun = state.canRun === true;
+  const canDownload = state.canDownload === true;
   const file = state.files.find(f => f.id === state.activeFileId) || state.files[0];
   
   const [exporting, setExporting] = useState(false);
@@ -57,7 +59,7 @@ export function AnalysisView() {
         />
         <div className="p-4 border-b border-[#333333] flex items-center justify-between">
           <span className="text-[11px] font-bold text-[#858585] uppercase tracking-wider">Project Files</span>
-          {!isReadOnly && (
+          {!canRun ? null : (
           <button onClick={() => openConfigModal('import')} className="text-[#858585] hover:text-white transition-colors bg-[#252526] p-1 rounded-md border border-[#333333] cursor-pointer">
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -127,9 +129,11 @@ export function AnalysisView() {
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            {canDownload && (
             <button onClick={handleExport} className="bg-[#252526] hover:bg-[#2d2d2d] text-white px-4 py-2 rounded-md font-medium text-xs flex items-center gap-2 transition-colors border border-[#3c3c3c]">
               {exporting ? <CheckCircle className="w-4 h-4 text-[#2eb886]" /> : <DownloadCloud className="w-4 h-4" />} {exporting ? 'Exported!' : 'Export Report'}
             </button>
+            )}
             <button onClick={handleShare} className="bg-[#10b981] hover:bg-[#059669] text-white px-4 py-2 rounded-md font-medium text-xs flex items-center gap-2 transition-colors shadow-lg shadow-[#10b981]/20 border border-[#10b981]">
               {sharing ? <CheckCircle className="w-4 h-4 text-white" /> : <Share2 className="w-4 h-4" />} {sharing ? 'Link Copied!' : 'Share'}
             </button>

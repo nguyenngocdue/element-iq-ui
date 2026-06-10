@@ -103,6 +103,8 @@ export interface AppEvent {
   type: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR';
 }
 
+export type PublicAccessLevel = 'view' | 'run' | 'run_download';
+
 export interface Project {
   id: string;
   name: string;
@@ -113,6 +115,7 @@ export interface Project {
   ownerId?: string | null;
   isPublic?: boolean;
   isReadOnly?: boolean;
+  publicAccessLevel?: PublicAccessLevel;
 }
 
 export interface SessionState {
@@ -138,6 +141,10 @@ export interface SessionState {
   currentView: 'projects' | 'editor';
   activeProject?: Project;
   isReadOnly?: boolean;
+  canRun?: boolean;
+  canDownload?: boolean;
+  isProjectOwner?: boolean;
+  guestViewerKey?: string;
   isBotOpen: boolean;
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;

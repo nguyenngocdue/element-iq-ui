@@ -15,7 +15,7 @@ import { Detection, ValidationAnnotation } from '../types';
 import { useResizable } from '../hooks/useResizable';
 import { cn } from '../lib/utils';
 import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
-import { Download } from 'lucide-react';
+import { Download, Eye } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 
 const CARD = 'rounded-md border border-[#3c3c3c] bg-[#1e1e1e]';
@@ -155,6 +155,7 @@ function DrawingStatsBar({ tubeCount, viewChecks }: { tubeCount: number; viewChe
 
 export function ValidationPanel() {
   const { state } = useApp();
+  const canDownload = state.canDownload === true;
   const file = state.files.find(f => f.id === state.activeFileId);
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 350, minWidth: 250, maxWidth: 600, direction: 'right' });
 
@@ -213,13 +214,29 @@ export function ValidationPanel() {
               <div className="space-y-1">
                 {file.artifacts.map(a => {
                   const { Icon, color } = artifactIconMeta(a.type);
+                  const openInViewer = () => {
+                    window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
+                      detail: {
+                        id: a.id,
+                        type: a.type,
+                        downloadUrl: a.downloadUrl,
+                        name: artifactDisplayName(a.type),
+                        sourceFileId: file.id,
+                      },
+                    }));
+                  };
                   return (
                   <button
                     key={a.id}
                     type="button"
                     onClick={async () => {
+                      if (!canDownload) {
+                        openInViewer();
+                        return;
+                      }
                       const { authFetch } = await import('../lib/supabase');
-                      const res = await authFetch(a.downloadUrl);
+                      const sep = a.downloadUrl.includes('?') ? '&' : '?';
+                      const res = await authFetch(`${a.downloadUrl}${sep}download=1`);
                       if (res.ok) {
                         const blob = await res.blob();
                         const url = URL.createObjectURL(blob);
@@ -233,7 +250,9 @@ export function ValidationPanel() {
                   >
                     <Icon className={cn('w-3.5 h-3.5 shrink-0', color)} />
                     <span className="flex-1 truncate">{artifactDisplayName(a.type)}</span>
-                    <Download className="w-3 h-3 text-[#858585] shrink-0" />
+                    {canDownload
+                      ? <Download className="w-3 h-3 text-[#858585] shrink-0" />
+                      : <Eye className="w-3 h-3 text-[#858585] shrink-0" />}
                   </button>
                   );
                 })}

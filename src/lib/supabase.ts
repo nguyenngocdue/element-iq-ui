@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { getGuestViewerId } from './guestViewer';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://mejugvjfdblfhjmhdouy.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -44,6 +45,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  headers.set('X-Guest-Viewer-Id', getGuestViewerId());
   // FormData must not set Content-Type manually — browser adds multipart boundary.
   if (options.body instanceof FormData) {
     headers.delete('Content-Type');

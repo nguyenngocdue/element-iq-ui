@@ -583,6 +583,8 @@ function ArtifactViewer({
 export function MainEditor() {
   const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact, toggleAnalysisTerminal } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
+  const canRun = state.canRun ?? !isReadOnly;
+  const canDownload = state.canDownload === true;
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const { getScale, setScaleForKey } = usePerViewZoom();
@@ -930,7 +932,7 @@ export function MainEditor() {
                 </button>
               ) : null}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
-              {!isReadOnly && (
+              {!canRun ? null : (
               <>
               {file.status === 'PENDING' ? (
                 <button
@@ -954,13 +956,14 @@ export function MainEditor() {
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
               </>
               )}
+              {canDownload && (
               <div
                 className="h-full px-3 flex items-center text-[11px] text-white relative group cursor-pointer hover:bg-[#333] transition-colors border-t-2 border-t-transparent"
               >
                 Export
                 <div className="absolute right-0 top-full mt-0 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl py-1 w-48 hidden group-hover:block z-50">
                   <button
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
                       if (file?.file) {
                         const url = URL.createObjectURL(file.file);
@@ -979,7 +982,8 @@ export function MainEditor() {
                       onClick={async (e) => {
                         e.stopPropagation();
                         const { authFetch } = await import('../lib/supabase');
-                        const res = await authFetch(a.downloadUrl);
+                        const sep = a.downloadUrl.includes('?') ? '&' : '?';
+                        const res = await authFetch(`${a.downloadUrl}${sep}download=1`);
                         if (res.ok) {
                           const blob = await res.blob();
                           const url = URL.createObjectURL(blob);
@@ -1001,6 +1005,7 @@ export function MainEditor() {
                   )}
                 </div>
               </div>
+              )}
             </>
             )}
             {state.activeArtifact?.type === 'ANNOTATED_PNG' && viewSplit ? (

@@ -36,6 +36,8 @@ import { TreeRow } from './TreeRow';
 export function Sidebar() {
   const { state, setActiveFile, clearSession, openConfigModal, analyzeAll, stopAnalysis } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
+  const canRun = state.canRun === true;
+  const isProjectOwner = state.isProjectOwner ?? !isReadOnly;
   const [showStatuses, setShowStatuses] = useState(true);
   const [showFileSizes, setShowFileSizes] = useState(false);
   const [showCreatedDates, setShowCreatedDates] = useState(false);
@@ -385,8 +387,7 @@ export function Sidebar() {
         </div>
         
         <div className={cn('flex text-[12px] font-medium', compactToolbar ? 'gap-1' : 'gap-2')}>
-          {!isReadOnly ? (
-          <>
+          {isProjectOwner && (
           <button
             onClick={() => openConfigModal('import')}
             title="Import"
@@ -398,6 +399,9 @@ export function Sidebar() {
             <CloudUpload className="w-3.5 h-3.5 text-[#858585] shrink-0" />
             {!compactToolbar && 'Import'}
           </button>
+          )}
+          {canRun ? (
+          <>
           {isAnalyzing ? (
             <button
               onClick={stopAnalysis}
@@ -463,6 +467,13 @@ export function Sidebar() {
             <ListChecks className="w-3.5 h-3.5 shrink-0" />
             {!compactToolbar && <span className="text-[11px] font-medium">{isSelectMode ? 'Cancel' : 'Select'}</span>}
           </button>
+          </>
+          ) : !isProjectOwner ? (
+            <p className="text-[11px] text-[#f59e0b] px-2 py-1.5 rounded-md border border-[#f59e0b]/30 bg-[#f59e0b]/10">
+              View only — re-run is disabled for this public project.
+            </p>
+          ) : null}
+          {isProjectOwner && (
           <button
             onClick={() => setShowClearDialog(true)}
             title="Clear All Files"
@@ -474,11 +485,6 @@ export function Sidebar() {
             <Trash2 className="w-3.5 h-3.5 shrink-0" />
             {!compactToolbar && 'Clear'}
           </button>
-          </>
-          ) : (
-            <p className="text-[11px] text-[#f59e0b] px-2 py-1.5 rounded-md border border-[#f59e0b]/30 bg-[#f59e0b]/10">
-              View only — you cannot import or edit files.
-            </p>
           )}
         </div>
 

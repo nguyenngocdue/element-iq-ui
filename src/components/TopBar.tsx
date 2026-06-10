@@ -6,8 +6,9 @@ import { AboutModal, ReportIssueModal } from './Modals';
 import { useAuth } from '../lib/auth-context';
 import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { UserProfileMenu } from './UserProfileMenu';
-import { HoverTooltip } from './HoverTooltip';
+import { publicAccessLevelLabel } from '../lib/projectAccess';
 import { ProjectTooltipContent } from './tooltipContent';
+import { HoverTooltip } from './HoverTooltip';
 
 export function TopBar() {
   const { state, clearSession, setActiveSidebarTab, setCurrentView } = useApp();
@@ -72,9 +73,9 @@ export function TopBar() {
                   <span className="text-[#858585] ml-1">/ {state.activeProject.name}</span>
                 </HoverTooltip>
               )}
-              {state.isReadOnly && (
+              {!state.isProjectOwner && state.activeProject?.isPublic && (
                 <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-[#f59e0b] border border-[#f59e0b]/30 px-1.5 py-0.5 rounded-sm">
-                  View only
+                  {publicAccessLevelLabel(state.activeProject.publicAccessLevel ?? 'view')}
                 </span>
               )}
             </span>
