@@ -183,7 +183,7 @@ function ProjectCard({
         </div>
       </div>
 
-      <div className="flex flex-col flex-1 p-4 gap-2.5 min-h-[148px]">
+      <div className="flex flex-col flex-1 p-4 gap-2.5">
         <div className="flex items-start justify-between gap-2 min-w-0">
           <ProjectNameTooltip
             id={p.id}
@@ -199,7 +199,7 @@ function ProjectCard({
         </div>
 
         <p className={cn(
-          'text-xs leading-relaxed line-clamp-2 min-h-[2.5rem]',
+          'text-xs leading-relaxed whitespace-pre-wrap break-words',
           p.description?.trim() ? 'text-[#777]' : 'text-[#444]',
         )}>
           {p.description?.trim() || 'No description provided.'}
