@@ -54,7 +54,12 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
             const ids = r.matched_cluster?.object_ids ?? [];
             return ids.includes(i + 1);
           });
-          const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
+          const detStatus =
+            report?.status === 'FAIL'
+              ? 'FAIL'
+              : report?.status === 'MISSING-TAG' || report?.status === 'TAG-OCR-SUSPECT'
+                ? 'WARN'
+                : 'PASS';
           return {
             id: `${comp.component_id}-${i}`,
             page: 1,
@@ -871,10 +876,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (job.progress) {
           const stage =
-            job.progress < 20  ? 'Uploading PDF...' :
-            job.progress < 50  ? 'Running YOLO detection...' :
-            job.progress < 80  ? 'Parsing text notes...' :
-            job.progress < 95  ? 'Validating results...' :
+            job.progress < 25  ? 'Uploading PDF...' :
+            job.progress < 45  ? 'Running YOLO detection...' :
+            job.progress < 70  ? 'Reading tags (OCR)...' :
+            job.progress < 85  ? 'Validating results...' :
                                  'Saving artifacts...';
           updateFileStatus(id, { analysisProgress: job.progress, analysisStage: stage });
           if (stage !== lastLoggedStage) {
@@ -924,7 +929,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const ids = r.matched_cluster?.object_ids ?? [];
             return ids.includes(i + 1);  // object id is 1-indexed
           });
-          const detStatus = report?.status === 'FAIL' ? 'FAIL' : report?.status === 'MISSING-TAG' ? 'WARN' : 'PASS';
+          const detStatus =
+            report?.status === 'FAIL'
+              ? 'FAIL'
+              : report?.status === 'MISSING-TAG' || report?.status === 'TAG-OCR-SUSPECT'
+                ? 'WARN'
+                : 'PASS';
           return {
             id: `${comp.component_id}-${i}`,
             page: 1,

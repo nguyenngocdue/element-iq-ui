@@ -88,6 +88,9 @@ export function mapOverallToFileStatus(
   if (!hasAnalysisData) return 'PENDING';
 
   const overall = overallRaw.toUpperCase();
+  if (overall === 'MISSING-TAG' || overall === 'TAG-OCR-SUSPECT') {
+    return 'WARN';
+  }
   if ((KNOWN_OVERALL as readonly string[]).includes(overall)) {
     return overall as DocumentFile['status'];
   }
