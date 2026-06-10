@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from './components/TopBar';
 import { ActivityBar } from './components/ActivityBar';
 import { Sidebar } from './components/Sidebar';
@@ -11,54 +12,56 @@ import { AnalysisView } from './components/AnalysisView';
 import { AppProvider, useApp } from './store';
 import { AnalysisConfigModal } from './components/ImportModal';
 import { ProjectDashboard } from './components/ProjectDashboard';
+import { AccountSettings } from './components/AccountSettings';
 import { ElementIQBot } from './components/ElementIQBot';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { LoginPage } from './components/LoginPage';
 
+/** Home: workspace dashboard. Legacy ?project= links redirect to /projects/:id */
+function HomePage() {
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('project');
+  if (projectId) {
+    const next = new URLSearchParams();
+    const file = searchParams.get('file');
+    const page = searchParams.get('page');
+    if (file) next.set('file', file);
+    if (page) next.set('page', page);
+    const qs = next.toString();
+    return <Navigate to={`/projects/${projectId}${qs ? `?${qs}` : ''}`} replace />;
+  }
+  return <ProjectDashboard activeTab="dashboard" />;
+}
+
 /**
- * URL sync: updates browser URL when project/file changes.
- * Format: ?project={projectId}&file={fileId}&page={page}
- * Users can share these URLs directly. Easy to add more filters later.
+ * Keeps editor URLs in sync: /projects/{id}?file=&page=
  */
 function UrlSync() {
-  const { state, setActiveProject, setActiveFile } = useApp();
+  const { state } = useApp();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // Sync state → URL query params
   useEffect(() => {
+    if (state.currentView !== 'editor' || !state.activeProject) return;
+
     const params = new URLSearchParams();
-    if (state.activeProject) {
-      params.set('project', state.activeProject.id);
-      if (state.activeFileId) {
-        params.set('file', state.activeFileId);
-      }
-      if (state.activePage && state.activePage > 1) {
-        params.set('page', String(state.activePage));
-      }
-    }
+    if (state.activeFileId) params.set('file', state.activeFileId);
+    if (state.activePage && state.activePage > 1) params.set('page', String(state.activePage));
     const search = params.toString();
-    const newUrl = search ? `?${search}` : '/';
-    if (window.location.search !== `?${search}` && !(newUrl === '/' && !window.location.search)) {
-      window.history.replaceState(null, '', newUrl);
+    const nextPath = `/projects/${state.activeProject.id}`;
+    const nextUrl = `${nextPath}${search ? `?${search}` : ''}`;
+    const current = `${location.pathname}${location.search}`;
+    if (current !== nextUrl) {
+      navigate(nextUrl, { replace: true });
     }
-  }, [state.activeProject?.id, state.activeFileId, state.activePage]);
-
-  // On mount: parse URL query params → restore state
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const projectId = params.get('project');
-    if (projectId && !state.activeProject) {
-      setActiveProject({ id: projectId, name: '', role: 'Owner', age: '', hasImage: false });
-    }
-  }, []);
+  }, [state.currentView, state.activeProject?.id, state.activeFileId, state.activePage, navigate, location.pathname, location.search]);
 
   return null;
 }
 
-function AppContent() {
-  const { state, closeConfigModal, setActiveProject } = useApp();
-  const [initialLoad, setInitialLoad] = React.useState(true);
+function EditorLayout() {
+  const { state, closeConfigModal } = useApp();
 
-  // Warn user before leaving if upload/analysis is in progress
   useEffect(() => {
     const hasActiveProcess = state.files.some(f => f.status === 'UPLOADING' || f.status === 'ANALYZING');
     const handler = (e: BeforeUnloadEvent) => {
@@ -71,37 +74,6 @@ function AppContent() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [state.files]);
-
-  // On mount: if URL has ?project=..., restore project view immediately
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const projectId = params.get('project');
-    if (projectId && !state.activeProject) {
-      setActiveProject({ id: projectId, name: '', role: 'Owner', age: '', hasImage: false });
-    }
-    setInitialLoad(false);
-  }, []);
-
-  // While checking URL on first load, show nothing (prevents flash of ProjectDashboard)
-  if (initialLoad && window.location.search.includes('project=')) {
-    return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm text-[#858585]">Loading project...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.currentView === 'projects') {
-    return (
-      <>
-        <UrlSync />
-        <ProjectDashboard />
-      </>
-    );
-  }
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-editor-bg text-fg font-sans antialiased text-[14px]">
@@ -126,15 +98,63 @@ function AppContent() {
         {state.isBotOpen && <ElementIQBot />}
       </div>
       <BottomBar />
-      
-      <AnalysisConfigModal 
-        open={state.showConfigModal} 
-        onClose={closeConfigModal} 
+
+      <AnalysisConfigModal
+        open={state.showConfigModal}
+        onClose={closeConfigModal}
         mode={state.configModalMode}
         targetFileId={state.configTargetFileId}
         targetFileIds={state.configTargetFileIds}
       />
     </div>
+  );
+}
+
+function ProjectEditorPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { state, setActiveProject } = useApp();
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (state.activeProject?.id !== projectId) {
+      setActiveProject({
+        id: projectId,
+        name: '',
+        role: 'Owner',
+        age: '',
+        hasImage: false,
+      });
+    }
+  }, [projectId, state.activeProject?.id, setActiveProject]);
+
+  if (!projectId) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!state.activeProject || state.activeProject.id !== projectId || state.isLoadingFiles) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-[#858585]">Loading project...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <EditorLayout />;
+}
+
+function AppContent() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/projects" element={<ProjectDashboard activeTab="projects" />} />
+      <Route path="/account" element={<AccountSettings />} />
+      <Route path="/projects/:projectId" element={<ProjectEditorPage />} />
+      <Route path="/projects/dashboard" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
@@ -163,7 +183,9 @@ function AuthenticatedApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <AuthenticatedApp />
+      <BrowserRouter>
+        <AuthenticatedApp />
+      </BrowserRouter>
     </AuthProvider>
   );
 }

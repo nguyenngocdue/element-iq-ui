@@ -28,6 +28,8 @@ import {
 } from '../hooks/useExplorerHoverTooltip';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ExplorerArtifactRow } from './ExplorerArtifactRow';
+import { HoverTooltip } from './HoverTooltip';
+import { ProjectTooltipContent } from './tooltipContent';
 import { ExplorerViewMenu } from './ExplorerViewMenu';
 import { TreeRow } from './TreeRow';
 
@@ -358,9 +360,23 @@ export function Sidebar() {
           </span>
           <ChevronDown className="w-3.5 h-3.5 text-[#858585] group-hover:text-white transition-colors" />
         </div>
-        <div className="text-[13px] font-bold text-[#b4c5ff] mb-1 truncate" title={state.activeProject?.name || "Untitled Project"}>
-          {state.activeProject?.name || "Untitled Project"}
-        </div>
+        {state.activeProject ? (
+          <HoverTooltip
+            className="block min-w-0 mb-1"
+            content={
+              <ProjectTooltipContent
+                id={state.activeProject.id}
+                name={state.activeProject.name}
+              />
+            }
+          >
+            <div className="text-[13px] font-bold text-[#b4c5ff] truncate">
+              {state.activeProject.name}
+            </div>
+          </HoverTooltip>
+        ) : (
+          <div className="text-[13px] font-bold text-[#b4c5ff] mb-1 truncate">Untitled Project</div>
+        )}
         <div className="text-[11px] text-[#858585] flex items-center gap-1.5 mb-4">
           <span>{state.files.length} files</span>
           <span className="w-1 h-1 bg-[#858585] rounded-full"></span>

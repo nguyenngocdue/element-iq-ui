@@ -405,13 +405,8 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   if (!open) return null;
 
   // ── Core upload logic ─────────────────────────────────────
-  const buildTakenNames = () => {
-    const taken = new Set(state.files.map(f => f.name.toLowerCase()));
-    for (const f of files) {
-      taken.add(f.name.toLowerCase());
-    }
-    return taken;
-  };
+  /** Filenames already in the project — excludes the import batch so first-time uploads keep their names. */
+  const buildTakenNames = () => new Set(state.files.map(f => f.name.toLowerCase()));
 
   const startUpload = async (filesToUpload: UploadQueueItem[]) => {
     if (uploadLockRef.current) return;
