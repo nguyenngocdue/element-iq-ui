@@ -72,6 +72,11 @@ export function TopBar() {
                   <span className="text-[#858585] ml-1">/ {state.activeProject.name}</span>
                 </HoverTooltip>
               )}
+              {state.isReadOnly && (
+                <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-[#f59e0b] border border-[#f59e0b]/30 px-1.5 py-0.5 rounded-sm">
+                  View only
+                </span>
+              )}
             </span>
           </button>
           <div className="flex gap-3 ml-4 h-full items-center">

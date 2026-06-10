@@ -516,6 +516,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({
       ...prev,
       activeProject: project,
+      isReadOnly: project.isReadOnly ?? false,
       currentView: 'editor',
       files: [],
       activeFileId: null,
@@ -531,24 +532,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const { authFetch } = await import('./lib/supabase');
 
-        // Fetch project details (name) if not provided
-        if (!project.name) {
-          try {
-            const projRes = await authFetch('/api/v1/projects');
-            if (projRes.ok) {
-              const projects = await projRes.json();
-              const found = projects.find((p: any) => p.id === project.id);
-              if (found) {
-                setState((prev) => ({
-                  ...prev,
-                  activeProject: { ...prev.activeProject!, name: found.name },
-                }));
-              }
-            }
-          } catch { /* non-blocking */ }
-        }
-
         const res = await authFetch(`/api/v1/projects/${project.id}/files`);
+        if (res.status === 401) {
+          window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+          return;
+        }
         if (!res.ok) {
           console.error(`[ElementIQ] Failed to load project files: HTTP ${res.status}`, await res.text().catch(() => ''));
           setState((prev) => ({ ...prev, isLoadingFiles: false }));

@@ -565,6 +565,7 @@ function ArtifactViewer({
 
 export function MainEditor() {
   const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact, toggleAnalysisTerminal } = useApp();
+  const isReadOnly = state.isReadOnly ?? false;
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const { getScale, setScaleForKey } = usePerViewZoom();
@@ -833,10 +834,12 @@ export function MainEditor() {
         <div className="w-64 h-64 border-2 border-dashed border-panel-border rounded-lg flex flex-col items-center justify-center text-center p-6 bg-sidebar-bg">
            <svg className="w-12 h-12 mb-4 text-[#10b981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
            <h3 className="text-white font-semibold mb-2 text-sm">Welcome to Element IQ</h3>
-           <p className="text-xs mb-4">Select a file from the workspace or import new drawings to begin analysis.</p>
+           <p className="text-xs mb-4">{isReadOnly ? 'Select a file from the workspace to view drawings and analysis results.' : 'Select a file from the workspace or import new drawings to begin analysis.'}</p>
+           {!isReadOnly && (
            <button onClick={() => openConfigModal('import')} className="bg-[#10b981] text-white px-4 py-2 rounded text-[13px] font-semibold cursor-pointer hover:bg-[#059669] shadow-lg transition-colors border border-[#10b981]">
               Import Drawings
            </button>
+           )}
         </div>
       </div>
     );
@@ -910,6 +913,8 @@ export function MainEditor() {
                 </button>
               ) : null}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
+              {!isReadOnly && (
+              <>
               {file.status === 'PENDING' ? (
                 <button
                   onClick={() => openConfigModal('reanalyze', file.id)}
@@ -930,6 +935,8 @@ export function MainEditor() {
                 </button>
               )}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
+              </>
+              )}
               <div
                 className="h-full px-3 flex items-center text-[11px] text-white relative group cursor-pointer hover:bg-[#333] transition-colors border-t-2 border-t-transparent"
               >

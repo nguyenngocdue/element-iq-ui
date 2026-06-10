@@ -35,6 +35,7 @@ import { TreeRow } from './TreeRow';
 
 export function Sidebar() {
   const { state, setActiveFile, clearSession, openConfigModal, analyzeAll, stopAnalysis } = useApp();
+  const isReadOnly = state.isReadOnly ?? false;
   const [showStatuses, setShowStatuses] = useState(true);
   const [showFileSizes, setShowFileSizes] = useState(false);
   const [showCreatedDates, setShowCreatedDates] = useState(false);
@@ -384,6 +385,8 @@ export function Sidebar() {
         </div>
         
         <div className={cn('flex text-[12px] font-medium', compactToolbar ? 'gap-1' : 'gap-2')}>
+          {!isReadOnly ? (
+          <>
           <button
             onClick={() => openConfigModal('import')}
             title="Import"
@@ -471,6 +474,12 @@ export function Sidebar() {
             <Trash2 className="w-3.5 h-3.5 shrink-0" />
             {!compactToolbar && 'Clear'}
           </button>
+          </>
+          ) : (
+            <p className="text-[11px] text-[#f59e0b] px-2 py-1.5 rounded-md border border-[#f59e0b]/30 bg-[#f59e0b]/10">
+              View only — you cannot import or edit files.
+            </p>
+          )}
         </div>
 
         {isSelectMode && !isAnalyzing && (

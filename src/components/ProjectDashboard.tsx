@@ -1,10 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useApp } from '../store';
 import { useAuth } from '../lib/auth-context';
 import { loginPath } from '../lib/authRoutes';
 import { authFetch } from '../lib/supabase';
-import { Search, ChevronDown, Plus, Bell, LayoutGrid, Box, FolderKanban, X, List, Pencil, Trash2, EllipsisVertical, Upload, BarChart3, Clock } from 'lucide-react';
+import { Search, ChevronDown, Plus, Bell, LayoutGrid, Box, FolderKanban, X, List, Pencil, Trash2, EllipsisVertical, Upload, BarChart3, Clock, Globe, Lock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ConfirmDialog } from './ConfirmDialog';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
@@ -18,6 +17,7 @@ interface ProjectItem {
   name: string;
   description?: string | null;
   is_archived: boolean;
+  is_public?: boolean;
   created_at: string;
   updated_at: string;
   created_by?: string | null;
@@ -36,8 +36,46 @@ interface ProjectDashboardProps {
 const PROJECT_GRID_CLASS =
   'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[1800px]:grid-cols-6 gap-4';
 
-const STATUS_ACTIVE_CLASS =
-  'inline-flex items-center text-[10px] font-medium uppercase tracking-wide text-[#5eead4] bg-[#14b8a6]/10 border border-[#14b8a6]/25 px-2 py-0.5 rounded-sm';
+const BADGE_BASE =
+  'inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-sm border';
+
+const STATUS_PUBLIC_CLASS =
+  `${BADGE_BASE} text-[#5eead4] bg-[#14b8a6]/10 border-[#14b8a6]/25`;
+
+const STATUS_PRIVATE_CLASS =
+  `${BADGE_BASE} text-[#c4b5fd] bg-[#7c3aed]/10 border-[#7c3aed]/25`;
+
+const STATUS_PUBLIC_HEADER_CLASS =
+  `${BADGE_BASE} text-[#5eead4] bg-[#14b8a6]/20 border-[#14b8a6]/35`;
+
+const STATUS_PRIVATE_HEADER_CLASS =
+  `${BADGE_BASE} text-[#c4b5fd] bg-[#7c3aed]/20 border-[#7c3aed]/35`;
+
+function VisibilityBadge({
+  isPublic,
+  variant = 'default',
+  className,
+}: {
+  isPublic?: boolean;
+  variant?: 'default' | 'header';
+  className?: string;
+}) {
+  const isPub = Boolean(isPublic);
+  const label = isPub ? 'Public' : 'Private';
+  const badgeClass = variant === 'header'
+    ? (isPub ? STATUS_PUBLIC_HEADER_CLASS : STATUS_PRIVATE_HEADER_CLASS)
+    : (isPub ? STATUS_PUBLIC_CLASS : STATUS_PRIVATE_CLASS);
+  const iconClass = isPub ? 'text-[#2dd4bf]' : 'text-[#a78bfa]';
+
+  return (
+    <span className={cn(badgeClass, 'shrink-0', className)}>
+      {isPub
+        ? <Globe className={cn('w-3 h-3', iconClass)} strokeWidth={2} />
+        : <Lock className={cn('w-3 h-3', iconClass)} strokeWidth={2} />}
+      {label}
+    </span>
+  );
+}
 
 const SORT_OPTIONS = [
   { value: 'recent' as const, label: 'Most Recent' },
@@ -120,6 +158,8 @@ function ProjectCard({
   onOpen,
   onEdit,
   onDelete,
+  onToggleVisibility,
+  canManage,
 }: {
   project: ProjectItem;
   cardMenuId: string | null;
@@ -127,6 +167,8 @@ function ProjectCard({
   onOpen: (p: ProjectItem) => void;
   onEdit: (p: ProjectItem, e: React.MouseEvent) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onToggleVisibility: (p: ProjectItem, e: React.MouseEvent) => void;
+  canManage: boolean;
 }) {
   const thumbColors = projectThumbPalette(p.id || p.name);
   const fileCount = p.file_count ?? 0;
@@ -135,69 +177,89 @@ function ProjectCard({
   return (
     <div
       onClick={() => onOpen(p)}
-      className="group relative bg-[#141414] border border-[#262626] rounded-lg overflow-hidden cursor-pointer hover:border-[#14b8a6]/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition-all duration-200 flex flex-col"
+      className={cn(
+        'group relative bg-[#141414] border border-[#262626] rounded-lg cursor-pointer hover:border-[#14b8a6]/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition-all duration-200 flex flex-col',
+        cardMenuId === p.id && 'z-30',
+      )}
     >
-      <div className="relative h-12 shrink-0 overflow-hidden border-b border-[#262626]/60">
-        <div
-          className="absolute inset-0"
-          style={{ background: `linear-gradient(135deg, ${thumbColors.from} 0%, ${thumbColors.to} 100%)` }}
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.06),rgba(0,0,0,0.35))]" />
-        <div className="relative flex items-center justify-between px-3.5 h-full">
-          <FolderKanban className="w-3.5 h-3.5 text-white/60" strokeWidth={1.75} />
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setCardMenuId(prev => (prev === p.id ? null : p.id));
-              }}
-              className="p-1 rounded-md text-white/50 hover:text-white hover:bg-black/25 transition-colors opacity-0 group-hover:opacity-100"
-              aria-label="Project actions"
-            >
-              <EllipsisVertical className="w-4 h-4" />
-            </button>
-            {cardMenuId === p.id && (
-              <div
-                className="absolute right-0 top-full mt-1 z-20 min-w-[128px] py-1 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl"
-                onClick={(e) => e.stopPropagation()}
+      <div className={cn(
+        'relative h-[52px] shrink-0 rounded-t-lg border-b border-[#262626]/60',
+        cardMenuId === p.id ? 'z-20' : 'z-10',
+      )}>
+        <div className="absolute inset-0 overflow-hidden rounded-t-lg pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{ background: `linear-gradient(135deg, ${thumbColors.from} 0%, ${thumbColors.to} 100%)` }}
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.06),rgba(0,0,0,0.35))]" />
+        </div>
+        <div className="relative z-10 flex items-center justify-between gap-2 px-3.5 h-full">
+          <FolderKanban className="w-3.5 h-3.5 text-white/60 shrink-0" strokeWidth={1.75} />
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            <VisibilityBadge isPublic={p.is_public} variant="header" />
+            {canManage && (
+            <div className="relative z-20">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCardMenuId(prev => (prev === p.id ? null : p.id));
+                }}
+                className="p-1 rounded-md text-white/70 hover:text-white hover:bg-black/30 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                aria-label="Project actions"
               >
-                <button
-                  type="button"
-                  onClick={(e) => { setCardMenuId(null); onEdit(p, e); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors"
+                <EllipsisVertical className="w-4 h-4" />
+              </button>
+              {cardMenuId === p.id && (
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-[100] min-w-[148px] py-1 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => { setCardMenuId(null); onDelete(p.id, e); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Delete
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { setCardMenuId(null); onToggleVisibility(p, e); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors"
+                  >
+                    {p.is_public
+                      ? <Lock className="w-3.5 h-3.5 text-[#a78bfa]" />
+                      : <Globe className="w-3.5 h-3.5 text-[#2dd4bf]" />}
+                    {p.is_public ? 'Make Private' : 'Make Public'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { setCardMenuId(null); onEdit(p, e); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { setCardMenuId(null); onDelete(p.id, e); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col flex-1 p-4 gap-2.5">
-        <div className="flex items-start justify-between gap-2 min-w-0">
-          <ProjectNameTooltip
-            id={p.id}
-            name={p.name}
-            description={p.description}
-            className="min-w-0 flex-1"
-          >
-            <h3 className="text-[15px] font-semibold text-white leading-snug truncate group-hover:text-[#5eead4] transition-colors cursor-default">
-              {p.name}
-            </h3>
-          </ProjectNameTooltip>
-          <span className={cn(STATUS_ACTIVE_CLASS, 'shrink-0')}>Active</span>
-        </div>
+      <div className="relative z-0 flex flex-col flex-1 p-4 gap-2.5 rounded-b-lg">
+        <ProjectNameTooltip
+          id={p.id}
+          name={p.name}
+          description={p.description}
+          className="min-w-0"
+        >
+          <h3 className="text-[15px] font-semibold text-white leading-snug truncate group-hover:text-[#5eead4] transition-colors cursor-default">
+            {p.name}
+          </h3>
+        </ProjectNameTooltip>
 
         <p className={cn(
           'text-xs leading-relaxed whitespace-pre-wrap break-words',
@@ -254,7 +316,6 @@ function ProjectCard({
 export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setActiveProject } = useApp();
   const { user, loading: authLoading } = useAuth();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -322,9 +383,13 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
 
   const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest';
 
-  // ── Load projects from API (signed-in users only) ─────────
+  // ── Load projects from API ────────────────────────────────
   useEffect(() => {
     if (authLoading) return;
+    if (activeTab === 'dashboard') {
+      loadPublicProjects();
+      return;
+    }
     if (!user) {
       setProjects([]);
       setLoading(false);
@@ -332,7 +397,26 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       return;
     }
     loadProjects();
-  }, [user, authLoading]);
+  }, [user, authLoading, activeTab]);
+
+  async function loadPublicProjects() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/v1/projects/public');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setProjects(data.map((p: ProjectItem) => ({ ...p, hasImage: false })));
+    } catch (err: any) {
+      setError(err.message || 'Failed to load public projects');
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!cardMenuId && !sortMenuOpen) return;
@@ -369,14 +453,29 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     }
   }
 
+  const handleToggleVisibility = async (project: ProjectItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextPublic = !project.is_public;
+    try {
+      const res = await authFetch(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_public: nextPublic }),
+      });
+      if (!res.ok) throw new Error('Failed to update visibility');
+      const updated = await res.json();
+      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, ...updated } : p));
+      showToast(nextPublic ? `"${project.name}" is now public` : `"${project.name}" is now private`);
+    } catch (err) {
+      console.error('Toggle visibility error:', err);
+      showToast('Failed to update project visibility');
+    }
+  };
+
+  const canManageProject = (project: ProjectItem) =>
+    Boolean(user?.id && project.owner_id === user.id);
+
   const handleOpenProject = (project: ProjectItem) => {
-    setActiveProject({
-      id: project.id,
-      name: project.name,
-      role: 'Owner',
-      age: '',
-      hasImage: project.hasImage ?? false,
-    });
     navigate(`/projects/${project.id}`);
   };
 
@@ -568,7 +667,11 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       <div className="bg-[#141414] border border-[#262626] rounded-lg py-16 text-center">
         <FolderKanban className="w-10 h-10 text-[#333] mx-auto mb-3" />
         <p className="text-[#b0b0b0] text-sm">
-          {user ? 'No projects found' : 'Sign in to view and manage your projects.'}
+          {activeTab === 'dashboard'
+            ? 'No public projects yet.'
+            : user
+              ? 'No projects found'
+              : 'Sign in to view and manage your projects.'}
         </p>
         <button
           type="button"
@@ -589,26 +692,31 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             onOpen={handleOpenProject}
             onEdit={openEditModal}
             onDelete={handleDeleteProject}
+            onToggleVisibility={handleToggleVisibility}
+            canManage={canManageProject(p)}
           />
         ))}
       </div>
     )
   ) : (
-    <div className="flex flex-col border border-[#262626] rounded-lg overflow-hidden bg-[#141414] mb-8">
+    <div className="flex flex-col border border-[#262626] rounded-lg overflow-visible bg-[#141414] mb-8">
       <div className="flex items-center px-4 py-2.5 border-b border-[#262626] bg-[#0a0a0a] text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3]">
         <div className="flex-[1.2] min-w-0">Project</div>
         <div className="w-36 shrink-0">Created by</div>
         <div className="w-32 shrink-0">Created</div>
         <div className="w-20 shrink-0">Files</div>
         <div className="flex-1 min-w-0 hidden lg:block">Description</div>
-        <div className="w-28 shrink-0 text-center">Status</div>
+        <div className="w-36 shrink-0 text-center">Visibility</div>
       </div>
       <div className="flex flex-col divide-y divide-[#1f1f1f]">
         {filteredAndSortedProjects.map(p => (
           <div
             key={p.id}
             onClick={() => handleOpenProject(p)}
-            className="flex items-center px-4 py-3 hover:bg-[#1a1a1a] cursor-pointer transition-colors group"
+            className={cn(
+              'flex items-center px-4 py-3 hover:bg-[#1a1a1a] cursor-pointer transition-colors group',
+              cardMenuId === p.id && 'relative z-30',
+            )}
           >
             <div className="flex-[1.2] min-w-0 flex items-center gap-3">
               <div
@@ -652,9 +760,10 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#b0b0b0] italic truncate pr-4">
               {p.description?.trim() || 'No description'}
             </div>
-            <div className="w-28 shrink-0 flex items-center justify-center gap-2">
-              <span className={STATUS_ACTIVE_CLASS}>Active</span>
-              <div className="relative">
+            <div className="w-36 shrink-0 flex items-center justify-center gap-2">
+              <VisibilityBadge isPublic={p.is_public} />
+              {canManageProject(p) && (
+              <div className="relative z-20">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -668,11 +777,15 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 </button>
                 {cardMenuId === p.id && (
                   <div
-                    className="absolute right-0 top-full mt-1 z-20 min-w-[128px] py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl"
+                    className="absolute right-0 top-full mt-1 z-[100] min-w-[148px] py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    <button type="button" onClick={(e) => { setCardMenuId(null); handleToggleVisibility(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
+                      {p.is_public ? <Lock className="w-3.5 h-3.5 text-[#a78bfa]" /> : <Globe className="w-3.5 h-3.5 text-[#2dd4bf]" />}
+                      {p.is_public ? 'Make Private' : 'Make Public'}
+                    </button>
                     <button type="button" onClick={(e) => { setCardMenuId(null); openEditModal(p, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#262626] hover:text-white transition-colors">
-                      <Pencil className="w-3.5 h-3.5" /> Edit
+                      <Pencil className="w-3.5 h-3.5 text-[#94a3b8]" /> Edit
                     </button>
                     <button type="button" onClick={(e) => { setCardMenuId(null); handleDeleteProject(p.id, e); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors">
                       <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -680,6 +793,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                   </div>
                 )}
               </div>
+              )}
             </div>
           </div>
         ))}
@@ -743,9 +857,9 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <div className="mb-7">
               {activeTab === 'dashboard' ? (
                 <>
-                  <h1 className="text-2xl font-semibold text-white mb-1">Workspace Overview</h1>
+                  <h1 className="text-2xl font-semibold text-white mb-1">Public Projects</h1>
                   <p className="text-sm text-[#b0b0b0]">
-                    Manage drawing projects, files, and analysis workflows in one place.
+                    {filteredAndSortedProjects.length} public project{filteredAndSortedProjects.length === 1 ? '' : 's'} shared by the community.
                   </p>
                 </>
               ) : (
@@ -767,7 +881,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             {!user && !authLoading && (
               <div className="mb-6 rounded-lg border border-[#14b8a6]/25 bg-[#14b8a6]/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-[#d1d1d1]">
-                  You are browsing as a guest. Sign in to create projects, import files, and open shared project links.
+                  You are browsing as a guest. Public projects are view-only. Sign in to create and manage your own projects.
                 </p>
                 <button
                   type="button"
@@ -885,7 +999,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                       <th className="text-left px-5 py-3 font-semibold hidden xl:table-cell">Action</th>
                       <th className="text-left px-5 py-3 font-semibold hidden sm:table-cell">User</th>
                       <th className="text-left px-5 py-3 font-semibold">Updated</th>
-                      <th className="text-right px-5 py-3 font-semibold">Status</th>
+                      <th className="text-right px-5 py-3 font-semibold">Visibility</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#1f1f1f]">
@@ -969,9 +1083,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                               </span>
                             </td>
                             <td className="px-5 py-3 text-right">
-                              <span className={STATUS_ACTIVE_CLASS}>
-                                Active
-                              </span>
+                              <VisibilityBadge isPublic={p.is_public} />
                             </td>
                           </tr>
                         );

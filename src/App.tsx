@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { TopBar } from './components/TopBar';
 import { ActivityBar } from './components/ActivityBar';
@@ -17,6 +17,7 @@ import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { LoginPage } from './components/LoginPage';
+import { loginPath } from './lib/authRoutes';
 
 /** Home: workspace dashboard. Legacy ?project= links redirect to /projects/:id */
 function HomePage() {
@@ -113,26 +114,77 @@ function EditorLayout() {
 
 function ProjectEditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
   const { state, setActiveProject } = useApp();
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [resolved, setResolved] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
-    if (state.activeProject?.id !== projectId) {
+
+    let cancelled = false;
+    setResolved(false);
+    setAccessError(null);
+
+    (async () => {
+      const { authFetch } = await import('./lib/supabase');
+      const res = await authFetch(`/api/v1/projects/${projectId}`);
+
+      if (cancelled) return;
+
+      if (res.status === 401) {
+        navigate(loginPath(`${location.pathname}${location.search}`), { replace: true });
+        return;
+      }
+      if (!res.ok) {
+        setAccessError(res.status === 404 ? 'Project not found.' : 'Unable to open this project.');
+        setResolved(true);
+        return;
+      }
+
+      const data = await res.json();
+      const isOwner = Boolean(user?.id && data.owner_id === user.id);
       setActiveProject({
-        id: projectId,
-        name: '',
-        role: 'Owner',
+        id: data.id,
+        name: data.name,
+        role: isOwner ? 'Owner' : 'Viewer',
         age: '',
         hasImage: false,
+        description: data.description,
+        ownerId: data.owner_id,
+        isPublic: data.is_public,
+        isReadOnly: !isOwner,
       });
-    }
-  }, [projectId, state.activeProject?.id, setActiveProject]);
+      setResolved(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, user?.id, navigate, location.pathname, location.search, setActiveProject]);
 
   if (!projectId) {
     return <Navigate to="/" replace />;
   }
 
-  if (!state.activeProject || state.activeProject.id !== projectId || state.isLoadingFiles) {
+  if (accessError) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-4 px-6">
+        <p className="text-sm text-[#b0b0b0]">{accessError}</p>
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="px-4 py-2 rounded-md bg-[#10b981] hover:bg-[#059669] text-white text-sm font-semibold transition-colors"
+        >
+          Back to dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (!resolved || !state.activeProject || state.activeProject.id !== projectId || state.isLoadingFiles) {
     return (
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -155,11 +207,7 @@ function AppContent() {
       <Route path="/account" element={<RequireAuth><AccountSettings /></RequireAuth>} />
       <Route
         path="/projects/:projectId"
-        element={
-          <RequireAuth>
-            <ProjectEditorPage />
-          </RequireAuth>
-        }
+        element={<ProjectEditorPage />}
       />
       <Route path="/projects/dashboard" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />

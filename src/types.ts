@@ -109,6 +109,10 @@ export interface Project {
   role: string;
   age: string;
   hasImage: boolean;
+  description?: string | null;
+  ownerId?: string | null;
+  isPublic?: boolean;
+  isReadOnly?: boolean;
 }
 
 export interface SessionState {
@@ -133,6 +137,7 @@ export interface SessionState {
   configTargetFileIds?: string[];
   currentView: 'projects' | 'editor';
   activeProject?: Project;
+  isReadOnly?: boolean;
   isBotOpen: boolean;
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;

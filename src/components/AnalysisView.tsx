@@ -14,6 +14,7 @@ import { FileItem } from './Sidebar';
 
 export function AnalysisView() {
   const { state, setActiveFile, openConfigModal } = useApp();
+  const isReadOnly = state.isReadOnly ?? false;
   const file = state.files.find(f => f.id === state.activeFileId) || state.files[0];
   
   const [exporting, setExporting] = useState(false);
@@ -56,9 +57,11 @@ export function AnalysisView() {
         />
         <div className="p-4 border-b border-[#333333] flex items-center justify-between">
           <span className="text-[11px] font-bold text-[#858585] uppercase tracking-wider">Project Files</span>
+          {!isReadOnly && (
           <button onClick={() => openConfigModal('import')} className="text-[#858585] hover:text-white transition-colors bg-[#252526] p-1 rounded-md border border-[#333333] cursor-pointer">
             <Plus className="w-3.5 h-3.5" />
           </button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto flex flex-col pb-4 text-sm font-sans border-b border-[#333333]">
           {state.files.map((f) => (
