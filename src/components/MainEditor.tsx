@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../store';
 import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
 import { ReportJsonPanel } from './ReportJsonPanel';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal } from 'lucide-react';
+import { ViewSplitOverlay } from './ViewSplitOverlay';
+import { useViewSplit } from '../hooks/use-view-split';
+import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
@@ -152,7 +155,23 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
   );
 }
 
-function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded }: { file: any, pageNum: number, scale: number, showAnnotations: boolean, onDimensionsLoaded?: (w: number, h: number) => void }) {
+function PdfRenderer({
+  file,
+  pageNum,
+  scale,
+  showAnnotations,
+  showViewSplitOverlay,
+  viewSplit,
+  onDimensionsLoaded,
+}: {
+  file: any;
+  pageNum: number;
+  scale: number;
+  showAnnotations: boolean;
+  showViewSplitOverlay?: boolean;
+  viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
+  onDimensionsLoaded?: (w: number, h: number) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [renderScale, setRenderScale] = useState(scale);
   const [baseSize, setBaseSize] = useState({ w: 0, h: 0 });
@@ -257,7 +276,7 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
       {showAnnotations && file.detections && file.detections.filter((d: any) => d.page === (pageNum || 1)).map((d: any) => (
         <div 
           key={d.id}
-          className={`absolute border-2 pointer-events-none rounded-[2px] ${d.type === 'NF' ? 'border-nf-pass' : d.type === 'FF' ? 'border-ff-fail' : 'border-warning'}`}
+          className={`absolute border-2 pointer-events-none rounded-[2px] z-10 ${d.type === 'NF' ? 'border-nf-pass' : d.type === 'FF' ? 'border-ff-fail' : 'border-warning'}`}
           style={{
             left: `${d.x * scale}px`,
             top: `${d.y * scale}px`,
@@ -271,11 +290,39 @@ function PdfRenderer({ file, pageNum, scale, showAnnotations, onDimensionsLoaded
           </div>
         </div>
       ))}
+
+      {showViewSplitOverlay && viewSplit && baseSize.w > 0 ? (
+        <ViewSplitOverlay
+          split={viewSplit}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onImageDimensions }: { artifact: { id: string; type: string; downloadUrl: string; name: string }; onClose: () => void; scale: number; toolMode: string; onScaleChange: (s: number) => void; onImageDimensions?: (w: number, h: number) => void }) {
+function ArtifactViewer({
+  artifact,
+  onClose,
+  scale,
+  toolMode,
+  onScaleChange,
+  onImageDimensions,
+  viewSplit,
+  showViewSplitOverlay = true,
+}: {
+  artifact: { id: string; type: string; downloadUrl: string; name: string };
+  onClose: () => void;
+  scale: number;
+  toolMode: string;
+  onScaleChange: (s: number) => void;
+  onImageDimensions?: (w: number, h: number) => void;
+  viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
+  showViewSplitOverlay?: boolean;
+}) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -447,7 +494,7 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
           onMouseLeave={handleMouseUp}
         >
           <div 
-            className="flex items-center justify-center"
+            className="relative flex items-center justify-center"
             style={{ 
               minWidth: '100%', 
               minHeight: '100%',
@@ -456,19 +503,31 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
               padding: 32,
             }}
           >
-            <img 
-              ref={imgRef}
-              src={content} 
-              alt="Annotated"
-              draggable={false}
-              onLoad={handleImgLoad}
-              style={{ 
-                width: imgWidth || 'auto',
-                height: imgHeight || 'auto',
-                maxWidth: 'none',
-                userSelect: 'none',
-              }}
-            />
+            <div className="relative shrink-0">
+              <img 
+                ref={imgRef}
+                src={content} 
+                alt="Annotated"
+                draggable={false}
+                onLoad={handleImgLoad}
+                style={{ 
+                  width: imgWidth || 'auto',
+                  height: imgHeight || 'auto',
+                  maxWidth: 'none',
+                  userSelect: 'none',
+                  display: 'block',
+                }}
+              />
+              {showViewSplitOverlay && viewSplit && imgNaturalSize.w > 0 ? (
+                <ViewSplitOverlay
+                  split={viewSplit}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       ) : (artifact.type === 'ANNOTATED_PDF') && content ? (
@@ -512,7 +571,10 @@ export function MainEditor() {
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const { getScale, setScaleForKey } = usePerViewZoom();
   const [showAnnotations, setShowAnnotations] = useState(true);
+  const [showViewSplitOverlay, setShowViewSplitOverlay] = useState(true);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
+
+  const { viewSplit } = useViewSplit(file);
 
   const primaryZoomKey = state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
@@ -840,6 +902,15 @@ export function MainEditor() {
               >
                 <ShieldCheck className="w-3 h-3" /> QA Overlay
               </button>
+              {viewSplit ? (
+                <button
+                  onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
+                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showViewSplitOverlay ? 'border-t-[#ffc800] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                  title="Toggle PLAN / REINFORCEMENT boundary"
+                >
+                  <Columns2 className="w-3 h-3" /> View Split
+                </button>
+              ) : null}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
               {file.status === 'PENDING' ? (
                 <button
@@ -906,6 +977,18 @@ export function MainEditor() {
               </div>
             </>
             )}
+            {state.activeArtifact?.type === 'ANNOTATED_PNG' && viewSplit ? (
+              <>
+                <button
+                  onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
+                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showViewSplitOverlay ? 'border-t-[#ffc800] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                  title="Toggle PLAN / REINFORCEMENT boundary overlay"
+                >
+                  <Columns2 className="w-3 h-3" /> View Split
+                </button>
+                <div className="w-[1px] h-4 bg-[#3c3c3c]" />
+              </>
+            ) : null}
             <button 
               onClick={() => splitEditor('right')}
               className="h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 border-t-transparent text-[#858585] hover:text-white"
@@ -939,7 +1022,16 @@ export function MainEditor() {
 
         {/* Canvas (Pane 1) */}
         {state.activeArtifact ? (
-          <ArtifactViewer artifact={state.activeArtifact} onClose={() => setActiveArtifact(null)} scale={primaryScale} toolMode={toolMode} onScaleChange={setPrimaryScale} onImageDimensions={(w, h) => setPngDimensions({ w, h })} />
+          <ArtifactViewer
+            artifact={state.activeArtifact}
+            onClose={() => setActiveArtifact(null)}
+            scale={primaryScale}
+            toolMode={toolMode}
+            onScaleChange={setPrimaryScale}
+            onImageDimensions={(w, h) => setPngDimensions({ w, h })}
+            viewSplit={viewSplit}
+            showViewSplitOverlay={showViewSplitOverlay}
+          />
         ) : (
         <div 
           ref={pane1Ref}
@@ -964,7 +1056,9 @@ export function MainEditor() {
                pageNum={state.activePage || 1} 
                scale={primaryScale || 0.5} 
                onDimensionsLoaded={(w, h) => setPdfDimensions({w, h})}
-               showAnnotations={showAnnotations} 
+               showAnnotations={showAnnotations}
+               showViewSplitOverlay={showViewSplitOverlay}
+               viewSplit={viewSplit}
             />
           </div>
         </div>

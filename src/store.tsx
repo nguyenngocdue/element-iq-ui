@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
 import { filterArtifactsForFile } from './lib/fileView';
+import { parseViewSplitFromAnalysis, parseViewSplitFromReport } from './lib/viewSplit';
 import {
   hasAnalysisPayload,
   mapOverallToFileStatus,
@@ -80,6 +81,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       detections,
       passRate,
       analyzedComponents,
+      viewSplit: parseViewSplitFromAnalysis(f.analysis),
       uploadedAt: f.uploaded_at,
       localPath: f.local_path,
       fileSizeBytes: f.file_size_bytes,
@@ -969,10 +971,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         fileName,
       );
 
+      let viewSplit = parseViewSplitFromAnalysis({ component_results: components });
+      const reportArtifact = artifacts.find((a) => a.type === 'REPORT_JSON');
+      if (!viewSplit && reportArtifact?.downloadUrl) {
+        try {
+          const reportRes = await authFetch(reportArtifact.downloadUrl);
+          if (reportRes.ok) {
+            viewSplit = parseViewSplitFromReport(await reportRes.text());
+          }
+        } catch {
+          // Report JSON optional for overlay; ignore fetch errors
+        }
+      }
+
       updateFileStatus(id, {
         status: fileStatus,
         detections,
         artifacts,
+        viewSplit,
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [

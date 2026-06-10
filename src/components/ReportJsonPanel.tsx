@@ -1,6 +1,7 @@
 import React from 'react';
 import { JsonViewWithControls } from './ui/json-view-with-controls';
 import { parseJsonContent } from './ui/json-view';
+import { ViewSplitSummary } from './ViewSplitSummary';
 
 interface ReportJsonPanelProps {
   content: string;
@@ -43,6 +44,7 @@ export function ReportJsonPanel({ content, fileName, fileId, className = '' }: R
       </div>
 
       <div className="flex-1 overflow-auto p-4 bg-[#1e1e1e] min-h-0">
+        <ViewSplitSummary data={data} />
         <JsonViewWithControls data={data} title="Report JSON" />
       </div>
     </div>
