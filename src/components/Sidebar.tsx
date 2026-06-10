@@ -359,9 +359,11 @@ export function Sidebar() {
     );
   }
 
-  const toolbarSegBtn = 'flex flex-1 flex-col items-center justify-center gap-1 min-w-0 py-2.5 px-1 text-[10px] font-medium leading-none text-center whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-  const toolbarRunPrimary = 'bg-[#172821] text-[#2eb886] hover:bg-[#1f3630] shadow-[inset_0_0_0_1px_rgba(46,184,134,0.35)]';
-  const toolbarRemovePrimary = 'bg-[#2a1818] text-[#ef4444] hover:bg-[#361f1f] shadow-[inset_0_0_0_1px_rgba(239,68,68,0.35)]';
+  // Segmented toolbar: one outer rounded border + overflow-hidden clips child backgrounds (no per-button radius).
+  const toolbarGroup = 'flex overflow-hidden rounded-md border border-[#3b3d46] divide-x divide-[#3b3d46]';
+  const toolbarSegBtn = 'flex flex-1 flex-col items-center justify-center gap-1 min-w-0 rounded-none py-2 px-1 text-[10px] font-medium leading-none whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+  const toolbarRunPrimary = 'bg-[#172821] text-[#2eb886] hover:bg-[#1c3028]';
+  const toolbarRemovePrimary = 'bg-[#2a1818] text-[#ef4444] hover:bg-[#361f1f]';
   const toolbarSecondary = 'bg-[#262831] text-[#ccc] hover:bg-[#31333d] hover:text-white';
   const toolbarSecondaryActive = 'bg-[#31333d] text-white';
 
@@ -415,17 +417,17 @@ export function Sidebar() {
           <span className="text-[#2eb886] font-medium">{displayPassRate}% pass</span>
         </div>
         
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2">
           {isProjectOwner && (
             <button
               onClick={() => openConfigModal('import')}
               title="Import drawings"
               className={cn(
-                'flex w-full items-center justify-center gap-2 rounded-md border border-[#3b3d46] bg-[#262831] py-2 text-[11px] font-medium text-[#ccc] transition-colors hover:bg-[#31333d] hover:text-white',
+                'flex w-full items-center justify-center gap-2 rounded-md bg-[#222328] py-1.5 text-[11px] font-medium text-[#ccc] ring-1 ring-inset ring-[#3b3d46]/60 transition-colors hover:bg-[#2a2b32] hover:text-white',
                 compactToolbar ? 'px-2' : 'px-3',
               )}
             >
-              <CloudUpload className="w-4 h-4 shrink-0 text-[#858585]" />
+              <CloudUpload className="w-3.5 h-3.5 shrink-0 text-[#858585]" />
               {!compactToolbar && 'Import'}
             </button>
           )}
@@ -443,7 +445,7 @@ export function Sidebar() {
                       Run
                     </span>
                   )}
-                  <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24] divide-x divide-[#3b3d46]">
+                  <div className={toolbarGroup}>
                     {isAnalyzing ? (
                       <>
                         <button
@@ -451,7 +453,7 @@ export function Sidebar() {
                           title="Stop after current file finishes"
                           className={cn(toolbarSegBtn, toolbarRemovePrimary)}
                         >
-                          <X className="w-4 h-4 shrink-0" />
+                          <X className="w-3.5 h-3.5 shrink-0" />
                           {!compactToolbar && 'Stop'}
                         </button>
                         <button
@@ -459,7 +461,7 @@ export function Sidebar() {
                           className={cn(toolbarSegBtn, toolbarSecondary, 'opacity-40 cursor-not-allowed')}
                           aria-hidden
                         >
-                          <ListChecks className="w-4 h-4 shrink-0" />
+                          <ListChecks className="w-3.5 h-3.5 shrink-0" />
                           {!compactToolbar && 'Select'}
                         </button>
                       </>
@@ -474,10 +476,8 @@ export function Sidebar() {
                         title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected`}
                         className={cn(toolbarSegBtn, toolbarRunPrimary)}
                       >
-                        <RefreshCw className="w-4 h-4 shrink-0" />
-                        {!compactToolbar && (
-                          selectedFileIds.size > 0 ? `Run (${selectedFileIds.size})` : 'Run'
-                        )}
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                        {!compactToolbar && (selectedFileIds.size > 0 ? `Run (${selectedFileIds.size})` : 'Run')}
                       </button>
                     ) : (
                       <button
@@ -490,7 +490,7 @@ export function Sidebar() {
                         title="Run analysis on all drawings"
                         className={cn(toolbarSegBtn, toolbarRunPrimary)}
                       >
-                        <RefreshCw className="w-4 h-4 shrink-0" />
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                         {!compactToolbar && 'Run All'}
                       </button>
                     )}
@@ -509,7 +509,7 @@ export function Sidebar() {
                         isRunSelectMode ? toolbarSecondaryActive : toolbarSecondary,
                       )}
                     >
-                      <ListChecks className="w-4 h-4 shrink-0" />
+                      <ListChecks className="w-3.5 h-3.5 shrink-0" />
                       {!compactToolbar && (isRunSelectMode ? 'Done' : 'Select')}
                     </button>
                   </div>
@@ -523,7 +523,7 @@ export function Sidebar() {
                       Remove
                     </span>
                   )}
-                  <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24] divide-x divide-[#3b3d46]">
+                  <div className={toolbarGroup}>
                     <button
                       onClick={() => {
                         if (isDeleteSelectMode) exitBulkMode();
@@ -539,7 +539,7 @@ export function Sidebar() {
                         isDeleteSelectMode ? toolbarSecondaryActive : toolbarRemovePrimary,
                       )}
                     >
-                      <Trash2 className="w-4 h-4 shrink-0" />
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
                       {!compactToolbar && (isDeleteSelectMode ? 'Done' : 'Clear')}
                     </button>
                     <button
@@ -548,7 +548,7 @@ export function Sidebar() {
                       title="Remove every file in this project"
                       className={cn(toolbarSegBtn, toolbarSecondary)}
                     >
-                      <Trash2 className="w-4 h-4 shrink-0 opacity-80" />
+                      <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
                       {!compactToolbar && 'Clear All'}
                     </button>
                   </div>
