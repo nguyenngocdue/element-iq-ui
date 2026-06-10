@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../store';
 import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
+import { attachPaneWheelZoom } from '../lib/paneWheelZoom';
 import { ReportJsonPanel } from './ReportJsonPanel';
 import { ViewSplitOverlay } from './ViewSplitOverlay';
 import { useViewSplit } from '../hooks/use-view-split';
@@ -333,7 +334,7 @@ function ArtifactViewer({
   onClose: () => void;
   scale: number;
   toolMode: string;
-  onScaleChange: (s: number) => void;
+  onScaleChange: (s: number | ((prev: number) => number)) => void;
   onImageDimensions?: (w: number, h: number) => void;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   showViewSplitOverlay?: boolean;
@@ -396,24 +397,13 @@ function ArtifactViewer({
     };
   }, [artifact.id, artifact.downloadUrl, artifact.type]);
 
-  // Ctrl+Wheel zoom for PNG
+  // Ctrl+Wheel zoom for PNG — bind after scroll container mounts (post-load)
   React.useEffect(() => {
+    if (loading || !content || artifact.type !== 'ANNOTATED_PNG') return;
     const el = containerRef.current;
-    if (!el || artifact.type !== 'ANNOTATED_PNG') return;
-
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const nextScale = Math.min(4, Math.max(0.1, scale * zoomFactor));
-        onScaleChange(nextScale);
-      }
-    };
-
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [artifact.type, scale, onScaleChange]);
+    if (!el) return;
+    return attachPaneWheelZoom(el, onScaleChange);
+  }, [artifact.id, artifact.type, content, loading, onScaleChange]);
 
   const handleImgLoad = () => {
     if (imgRef.current) {
@@ -622,6 +612,7 @@ export function MainEditor() {
   const [pngDimensions, setPngDimensions] = useState<{ w: number, h: number } | null>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId: string } | null>(null);
+  const autoFitDoneRef = useRef<string | null>(null);
 
   const fitScreen = () => {
     // For PNG artifact — use pngDimensions
@@ -651,6 +642,28 @@ export function MainEditor() {
       }
     }
   };
+
+  // Fit once when dimensions are ready so ctrl+scroll works without manual Fit click
+  useEffect(() => {
+    if (!primaryZoomKey || autoFitDoneRef.current === primaryZoomKey) return;
+
+    const readyForPng =
+      state.activeArtifact?.type === 'ANNOTATED_PNG' && pngDimensions != null;
+    const readyForPdf = !state.activeArtifact && pdfDimensions != null;
+
+    if (readyForPng || readyForPdf) {
+      autoFitDoneRef.current = primaryZoomKey;
+      fitScreen();
+    }
+  }, [primaryZoomKey, state.activeArtifact, pngDimensions, pdfDimensions]);
+
+  useEffect(() => {
+    setPdfDimensions(null);
+  }, [file?.id, state.activePage]);
+
+  useEffect(() => {
+    setPngDimensions(null);
+  }, [state.activeArtifact?.id]);
 
   const handleMouseDown = (e: React.MouseEvent, paneRef: React.RefObject<HTMLDivElement>) => {
     if (!paneRef.current) return;
@@ -748,60 +761,33 @@ export function MainEditor() {
     // Do nothing here — handled by native event listener below
   };
 
-  const attachPaneWheelZoom = useCallback(
+  const attachWheelZoomForKey = useCallback(
     (pane: HTMLDivElement, zoomKey: string | null) => {
-      const onWheel = (e: WheelEvent) => {
-        if (!zoomKey || !(e.ctrlKey || e.metaKey)) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const rect = pane.getBoundingClientRect();
-        const pointerX = e.clientX - rect.left;
-        const pointerY = e.clientY - rect.top;
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-
-        setScaleForKey(zoomKey, (prevScale) => {
-          const nextScale = Math.min(4, Math.max(0.1, prevScale * zoomFactor));
-          if (nextScale === prevScale) return prevScale;
-
-          const ratio = nextScale / prevScale;
-          const contentX = pointerX + pane.scrollLeft;
-          const contentY = pointerY + pane.scrollTop;
-
-          setTimeout(() => {
-            pane.scrollLeft = contentX * ratio - pointerX;
-            pane.scrollTop = contentY * ratio - pointerY;
-          }, 0);
-
-          return nextScale;
-        });
-      };
-
-      pane.addEventListener('wheel', onWheel, { passive: false });
-      return () => pane.removeEventListener('wheel', onWheel);
+      if (!zoomKey) return;
+      return attachPaneWheelZoom(pane, (value) => setScaleForKey(zoomKey, value));
     },
     [setScaleForKey],
   );
 
   // Native wheel listener to prevent browser zoom and handle PDF zoom (pane 1)
   useEffect(() => {
+    if (state.activeArtifact) return;
     const pane = pane1Ref.current;
     if (!pane || !primaryZoomKey) return;
-    return attachPaneWheelZoom(pane, primaryZoomKey);
-  }, [attachPaneWheelZoom, primaryZoomKey]);
+    return attachWheelZoomForKey(pane, primaryZoomKey);
+  }, [attachWheelZoomForKey, primaryZoomKey, state.activeArtifact]);
 
   // Wheel zoom for split pane (pane 2)
   useEffect(() => {
     if (state.splitMode === 'none' || !splitZoomKey) return;
     const pane = pane2Ref.current;
     if (!pane) return;
-    return attachPaneWheelZoom(pane, splitZoomKey);
-  }, [attachPaneWheelZoom, splitZoomKey, state.splitMode]);
+    return attachWheelZoomForKey(pane, splitZoomKey);
+  }, [attachWheelZoomForKey, splitZoomKey, state.splitMode]);
 
-  // Prevent browser zoom when viewing artifact (pane1Ref not mounted)
+  // Block browser zoom for artifact types without a custom wheel handler
   useEffect(() => {
-    if (!state.activeArtifact) return;
+    if (!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') return;
     
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
