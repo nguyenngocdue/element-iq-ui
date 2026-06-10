@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store';
 import { useAuth } from '../lib/auth-context';
 import { authFetch } from '../lib/supabase';
-import { Search, ChevronDown, Plus, Download, Bell, User, LayoutGrid, MessageSquare, Box, FolderKanban, Users, History, FileText, Code, X, List, Pencil, Trash2 } from 'lucide-react';
+import { Search, ChevronDown, Plus, Download, Bell, User, LayoutGrid, MessageSquare, Box, FolderKanban, Code, X, List, Pencil, Trash2, EllipsisVertical } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -13,8 +13,23 @@ interface ProjectItem {
   is_archived: boolean;
   created_at: string;
   updated_at: string;
-  role?: string;
+  created_by?: string | null;
+  file_count?: number;
   hasImage?: boolean;
+}
+
+function formatProjectDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatFileCount(count: number | undefined): string {
+  const n = count ?? 0;
+  return n === 1 ? '1 file' : `${n} files`;
 }
 
 export function ProjectDashboard() {
@@ -25,8 +40,9 @@ export function ProjectDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortBy, setSortBy] = useState<'alphabetical' | 'recent' | 'oldest'>('alphabetical');
+  const [sortBy, setSortBy] = useState<'alphabetical' | 'recent' | 'oldest'>('recent');
   const [searchQuery, setSearchQuery] = useState('');
+  const [cardMenuId, setCardMenuId] = useState<string | null>(null);
 
   const filteredAndSortedProjects = useMemo(() => {
     let result = projects.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -50,6 +66,13 @@ export function ProjectDashboard() {
     loadProjects();
   }, []);
 
+  useEffect(() => {
+    if (!cardMenuId) return;
+    const closeMenu = () => setCardMenuId(null);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
+  }, [cardMenuId]);
+
   async function loadProjects() {
     setLoading(true);
     setError(null);
@@ -65,7 +88,7 @@ export function ProjectDashboard() {
         throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${res.status}`);
       }
       const data = await res.json();
-      setProjects(data.map((p: any) => ({ ...p, role: 'Owner', hasImage: false })));
+      setProjects(data.map((p: ProjectItem) => ({ ...p, hasImage: false })));
     } catch (err: any) {
       setError(err.message || 'Failed to load projects');
       // Fallback: show empty state
@@ -159,7 +182,7 @@ export function ProjectDashboard() {
         throw new Error(detail);
       }
       const created = await res.json();
-      setProjects(prev => [{ ...created, role: 'Owner', hasImage: false }, ...prev]);
+      setProjects(prev => [{ ...created, hasImage: false }, ...prev]);
       setIsCreateModalOpen(false);
       setNewProjectName('');
       setCreateDescription('');
@@ -187,8 +210,8 @@ export function ProjectDashboard() {
       {/* Left Sidebar */}
       <div className="w-64 border-r border-[#333] flex flex-col shrink-0">
         <div className="h-16 flex items-center justify-between px-4 border-b border-[#333]">
-          <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <span className="text-[#a0a5b5]">Element</span> <span className="text-white">IQ</span>
+          <div className="font-bold text-xl tracking-tight whitespace-nowrap">
+            <span className="text-[#a0a5b5]">Element</span><span className="text-white"> IQ</span>
           </div>
           <Bell className="w-5 h-5 text-[#858585] cursor-pointer hover:text-white" />
         </div>
@@ -285,8 +308,8 @@ export function ProjectDashboard() {
                   onChange={(e) => setSortBy(e.target.value as any)}
                   className="appearance-none bg-[#121212] border border-[#333] rounded pl-3 pr-8 py-2 text-sm cursor-pointer hover:bg-[#252526] focus:outline-none focus:border-[#10b981] text-white transition-colors"
                 >
-                  <option value="alphabetical">Alphabetical</option>
                   <option value="recent">Most Recent</option>
+                  <option value="alphabetical">Alphabetical</option>
                   <option value="oldest">Oldest</option>
                 </select>
                 <ChevronDown className="w-4 h-4 text-[#858585] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -299,13 +322,17 @@ export function ProjectDashboard() {
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="bg-[#252526] border border-[#333] rounded-lg overflow-hidden flex flex-col h-[280px] animate-pulse">
-                  <div className="p-4 flex flex-col flex-1 border-b border-[#333] bg-[#1e1e1e]">
-                    <div className="h-4 bg-[#333] rounded w-16 mb-3" />
-                    <div className="h-5 bg-[#333] rounded w-3/4 mb-2" />
-                    <div className="h-3 bg-[#333] rounded w-1/2" />
+                <div key={i} className="bg-[#1e1e1e] border border-[#333]/60 rounded-xl overflow-hidden flex flex-col h-[292px] animate-pulse">
+                  <div className="p-4 flex flex-col flex-1 gap-3">
+                    <div className="flex justify-between">
+                      <div className="h-5 bg-[#333] rounded-full w-14" />
+                      <div className="h-5 w-5 bg-[#333] rounded" />
+                    </div>
+                    <div className="h-5 bg-[#333] rounded w-2/3" />
+                    <div className="h-3 bg-[#333] rounded w-full" />
+                    <div className="h-3 bg-[#333] rounded w-4/5 mt-auto" />
                   </div>
-                  <div className="h-[140px] bg-[#121212]" />
+                  <div className="h-[108px] bg-[#121212]" />
                 </div>
               ))}
             </div>
@@ -315,38 +342,81 @@ export function ProjectDashboard() {
                 <div 
                   key={p.id} 
                   onClick={() => handleOpenProject(p)}
-                  className="bg-[#252526] border border-[#333] rounded-lg overflow-hidden cursor-pointer hover:border-[#10b981] transition-all group flex flex-col h-[280px]"
+                  className="group bg-[#1e1e1e] border border-[#333]/60 rounded-xl overflow-hidden cursor-pointer hover:border-[#10b981]/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition-all duration-200 flex flex-col h-[292px]"
                 >
-                  <div className="p-4 flex flex-col flex-1 border-b border-[#333] bg-[#1e1e1e]">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#2eb886] border border-[#2eb886] bg-[#2eb886]/10 px-2 py-0.5 rounded">Active</span>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => openEditModal(p, e)} className="p-1 hover:bg-[#333] rounded text-[#858585] hover:text-white transition-colors">
-                          <Pencil className="w-3.5 h-3.5" />
+                  <div className="px-4 pt-3.5 pb-3 flex flex-col flex-1 min-h-0">
+                    <div className="flex items-start justify-between gap-2 mb-2.5">
+                      <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-widest text-[#34d399] bg-[#10b981]/10 border border-[#10b981]/30 px-2 py-0.5 rounded-full">
+                        Active
+                      </span>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardMenuId(prev => (prev === p.id ? null : p.id));
+                          }}
+                          className="p-1 rounded-md text-[#666] hover:text-white hover:bg-[#333]/80 transition-colors"
+                          aria-label="Project actions"
+                        >
+                          <EllipsisVertical className="w-4 h-4" />
                         </button>
-                        <button onClick={(e) => handleDeleteProject(p.id, e)} className="p-1 hover:bg-[#ef4444]/20 rounded text-[#858585] hover:text-[#ef4444] transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {cardMenuId === p.id && (
+                          <div
+                            className="absolute right-0 top-full mt-1 z-20 min-w-[128px] py-1 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => { setCardMenuId(null); openEditModal(p, e); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#333] hover:text-white transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { setCardMenuId(null); handleDeleteProject(p.id, e); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <h3 className="font-semibold text-white truncate mb-2 group-hover:text-[#10b981] transition-colors">{p.name}</h3>
-                    <div className="flex items-center gap-4 text-xs text-[#858585]">
-                      <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {p.role || 'Owner'}</span>
-                      <span className="flex items-center gap-1"><History className="w-3.5 h-3.5" /> {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}</span>
-                    </div>
+
+                    <h3 className="text-[15px] font-semibold text-white leading-snug truncate group-hover:text-[#34d399] transition-colors">
+                      {p.name}
+                    </h3>
+
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-[#666] italic line-clamp-2 min-h-[2.5rem]">
+                      <span className="not-italic text-[#555]">Description: </span>
+                      {p.description?.trim() || 'No description'}
+                    </p>
+
+                    <p className="mt-auto pt-2.5 text-[11px] leading-relaxed text-[#666] truncate">
+                      Created by{' '}
+                      <span className="font-medium text-[#999] not-italic">{p.created_by || 'Unknown'}</span>
+                      <span className="mx-1.5 text-[#444]">·</span>
+                      {formatProjectDate(p.created_at)}
+                      <span className="mx-1.5 text-[#444]">·</span>
+                      {formatFileCount(p.file_count)}
+                    </p>
                   </div>
                   
-                  <div className="h-[140px] bg-[#121212] relative overflow-hidden flex items-center justify-center">
+                  <div className="h-[108px] bg-[#0a0a0a] border-t border-[#333]/40 relative overflow-hidden flex items-center justify-center shrink-0">
                     {p.hasImage ? (
-                      <div className="absolute inset-0 bg-[#10b981]/20 flex items-center justify-center p-2">
-                        <div className="w-full h-full bg-gradient-to-br from-[#1a1a1a] to-[#252526] border border-[#333] rounded flex items-center justify-center">
-                           <Box className="w-10 h-10 text-[#10b981]/40" />
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#10b981]/10 via-transparent to-[#1a1a1a] flex items-center justify-center p-3">
+                        <div className="w-full h-full bg-[#141414] border border-[#333]/50 rounded-md flex items-center justify-center">
+                          <Box className="w-8 h-8 text-[#10b981]/50" />
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center gap-3 text-[#333]">
-                        <Box className="w-10 h-10" />
-                        <span className="text-xs font-bold uppercase tracking-widest text-[#555]">No Thumbnail</span>
+                      <div className="flex flex-col items-center gap-2">
+                        <Box className="w-7 h-7 text-[#333]" strokeWidth={1.25} />
+                        <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-[#444]">No thumbnail</span>
                       </div>
                     )}
                   </div>
@@ -354,41 +424,77 @@ export function ProjectDashboard() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col border border-[#333] rounded-lg overflow-hidden bg-[#1e1e1e]">
-               <div className="flex items-center px-4 py-3 border-b border-[#333] bg-[#252526] text-xs font-semibold uppercase tracking-wider text-[#858585]">
-                  <div className="flex-1">Name</div>
-                  <div className="w-32">Role</div>
-                  <div className="w-48">Last Modified</div>
-                  <div className="w-32 text-center">Status</div>
+            <div className="flex flex-col border border-[#333]/60 rounded-xl overflow-hidden bg-[#1e1e1e]">
+               <div className="flex items-center px-4 py-2.5 border-b border-[#333]/60 bg-[#252526]/80 text-[10px] font-semibold uppercase tracking-widest text-[#666]">
+                  <div className="flex-[1.2] min-w-0">Project</div>
+                  <div className="w-36 shrink-0">Created by</div>
+                  <div className="w-32 shrink-0">Created</div>
+                  <div className="w-20 shrink-0">Files</div>
+                  <div className="flex-1 min-w-0 hidden lg:block">Description</div>
+                  <div className="w-28 shrink-0 text-center">Status</div>
                </div>
-               <div className="flex flex-col divide-y divide-[#333]">
+               <div className="flex flex-col divide-y divide-[#333]/40">
                  {filteredAndSortedProjects.map(p => (
                    <div 
                      key={p.id} 
                      onClick={() => handleOpenProject(p)}
-                     className="flex items-center px-4 py-3 hover:bg-[#2a2a2a] cursor-pointer transition-colors group"
+                     className="flex items-center px-4 py-3 hover:bg-[#252526]/60 cursor-pointer transition-colors group"
                    >
-                      <div className="flex-1 flex items-center gap-3 w-0">
-                         <div className="w-8 h-8 shrink-0 rounded bg-[#1a1a1a] border border-[#333] flex items-center justify-center">
-                           <Box className={cn("w-4 h-4", p.hasImage ? "text-[#10b981]" : "text-[#555]")} />
+                      <div className="flex-[1.2] min-w-0 flex items-center gap-3">
+                         <div className="w-8 h-8 shrink-0 rounded-md bg-[#141414] border border-[#333]/60 flex items-center justify-center">
+                           <Box className={cn("w-4 h-4", p.hasImage ? "text-[#34d399]" : "text-[#444]")} strokeWidth={1.5} />
                          </div>
-                         <span className="font-semibold text-white truncate group-hover:text-[#10b981] transition-colors">{p.name}</span>
+                         <span className="text-sm font-semibold text-white truncate group-hover:text-[#34d399] transition-colors">{p.name}</span>
                       </div>
-                      <div className="w-32 shrink-0 flex items-center gap-2 text-sm text-[#858585]">
-                         <Users className="w-3.5 h-3.5" /> <span className="truncate">{p.role || 'Owner'}</span>
+                      <div className="w-36 shrink-0 text-xs text-[#888] min-w-0">
+                         <span className="truncate block">{p.created_by || 'Unknown'}</span>
                       </div>
-                      <div className="w-48 shrink-0 flex items-center gap-2 text-sm text-[#858585]">
-                         <History className="w-3.5 h-3.5" /> <span className="truncate">{p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}</span>
+                      <div className="w-32 shrink-0 text-xs text-[#888] tabular-nums">
+                         {formatProjectDate(p.created_at)}
                       </div>
-                      <div className="w-32 shrink-0 flex items-center justify-center gap-3">
-                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#2eb886] border border-[#2eb886] bg-[#2eb886]/10 px-2 py-0.5 rounded">Active</span>
-                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={(e) => openEditModal(p, e)} className="p-1 hover:bg-[#333] rounded text-[#858585] hover:text-white transition-colors">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={(e) => handleDeleteProject(p.id, e)} className="p-1 hover:bg-[#ef4444]/20 rounded text-[#858585] hover:text-[#ef4444] transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                      <div className="w-20 shrink-0 text-xs text-[#888] tabular-nums">
+                         {p.file_count ?? 0}
+                      </div>
+                      <div className="flex-1 min-w-0 hidden lg:block text-xs text-[#666] italic truncate pr-4">
+                         {p.description?.trim() || 'No description'}
+                      </div>
+                      <div className="w-28 shrink-0 flex items-center justify-center gap-2">
+                         <span className="text-[10px] font-semibold uppercase tracking-widest text-[#34d399] bg-[#10b981]/10 border border-[#10b981]/30 px-2 py-0.5 rounded-full">Active</span>
+                         <div className="relative">
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setCardMenuId(prev => (prev === p.id ? null : p.id));
+                             }}
+                             className="p-1 rounded-md text-[#666] hover:text-white hover:bg-[#333]/80 opacity-0 group-hover:opacity-100 transition-all"
+                             aria-label="Project actions"
+                           >
+                             <EllipsisVertical className="w-3.5 h-3.5" />
+                           </button>
+                           {cardMenuId === p.id && (
+                             <div
+                               className="absolute right-0 top-full mt-1 z-20 min-w-[128px] py-1 bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-xl"
+                               onClick={(e) => e.stopPropagation()}
+                             >
+                               <button
+                                 type="button"
+                                 onClick={(e) => { setCardMenuId(null); openEditModal(p, e); }}
+                                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ccc] hover:bg-[#333] hover:text-white transition-colors"
+                               >
+                                 <Pencil className="w-3.5 h-3.5" />
+                                 Edit
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={(e) => { setCardMenuId(null); handleDeleteProject(p.id, e); }}
+                                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors"
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                                 Delete
+                               </button>
+                             </div>
+                           )}
                          </div>
                       </div>
                    </div>

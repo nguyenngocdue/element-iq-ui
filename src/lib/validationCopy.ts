@@ -203,27 +203,27 @@ export const TONE_STYLES: Record<
   { border: string; bg: string; text: string; icon: string }
 > = {
   pass: {
-    border: 'border-[#22c55e]/40',
-    bg: 'bg-[#22c55e]/10',
-    text: 'text-[#22c55e]',
-    icon: 'text-[#22c55e]',
+    border: 'border-[#4ade80]/55',
+    bg: 'bg-[#1a3d28]',
+    text: 'text-[#86efac]',
+    icon: 'text-[#4ade80]',
   },
   fail: {
-    border: 'border-[#ef4444]/40',
-    bg: 'bg-[#ef4444]/10',
-    text: 'text-[#ef4444]',
-    icon: 'text-[#ef4444]',
+    border: 'border-[#f87171]/55',
+    bg: 'bg-[#3d1818]',
+    text: 'text-[#fca5a5]',
+    icon: 'text-[#f87171]',
   },
   warn: {
-    border: 'border-[#f59e0b]/40',
-    bg: 'bg-[#f59e0b]/10',
-    text: 'text-[#f59e0b]',
-    icon: 'text-[#f59e0b]',
+    border: 'border-[#fbbf24]/55',
+    bg: 'bg-[#3d2a0f]',
+    text: 'text-[#fde047]',
+    icon: 'text-[#fbbf24]',
   },
   info: {
-    border: 'border-[#38bdf8]/30',
-    bg: 'bg-[#38bdf8]/8',
-    text: 'text-[#7dd3fc]',
+    border: 'border-[#38bdf8]/50',
+    bg: 'bg-[#152838]',
+    text: 'text-[#bae6fd]',
     icon: 'text-[#38bdf8]',
   },
 };

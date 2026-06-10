@@ -35,10 +35,7 @@ function statCircleStyles(tone?: AnnotationTone) {
     };
   }
   const s = TONE_STYLES[tone];
-  return {
-    ring: cn(s.border.replace('/40', '/60').replace('/30', '/60'), s.bg),
-    text: s.text,
-  };
+  return { ring: cn(s.border, s.bg), text: s.text };
 }
 
 function StatCircle({
@@ -71,7 +68,7 @@ function StatCircle({
           circleSize,
         )}
       >
-        <span className={cn('font-mono font-semibold tabular-nums leading-none', circleStyle.text, textSize)}>
+        <span className={cn('font-mono font-bold tabular-nums leading-none', circleStyle.text, textSize)}>
           {value}
         </span>
       </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { ComponentCard } from './ComponentCard';
-import { X, Upload, FileText, RefreshCw, AlertTriangle } from 'lucide-react';
+import { X, Upload, FileText, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export interface AnalysisConfigModalProps {
@@ -13,38 +13,117 @@ export interface AnalysisConfigModalProps {
 }
 
 // ── Duplicate resolution types ────────────────────────────────
-type DuplicateResolution = 'rename-auto' | 'rename-custom' | 'skip';
+type DuplicateResolution = 'rename-auto' | 'rename-custom' | 'override' | 'skip';
 
 interface DuplicateConflict {
   file: File;
   existingName: string;
+  existingFileId: string | null;
   suggestedName: string;
   resolution: DuplicateResolution;
   customName: string;
 }
 
+interface UploadQueueItem {
+  file: File;
+  uploadName: string;
+  replaceExisting?: boolean;
+}
+
 // ── Helpers ───────────────────────────────────────────────────
-function buildSuggestedName(original: string): string {
-  const now = new Date();
-  const ts = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-    String(now.getHours()).padStart(2, '0'),
-    String(now.getMinutes()).padStart(2, '0'),
-    String(now.getSeconds()).padStart(2, '0'),
-  ].join('');
-  const dot = original.lastIndexOf('.');
-  if (dot === -1) return `${original}_${ts}`;
-  return `${original.slice(0, dot)}_${ts}${original.slice(dot)}`;
+function splitFilename(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.');
+  if (dot === -1) return { stem: name, ext: '' };
+  return { stem: name.slice(0, dot), ext: name.slice(dot) };
+}
+
+/** Next `{stem}-new-01{ext}` slot based on names already in project / batch. */
+function reserveAutoRenameName(original: string, takenNames: Set<string>): string {
+  const { stem, ext } = splitFilename(original);
+  const stemLower = stem.toLowerCase();
+  const extLower = ext.toLowerCase();
+  const prefixLower = `${stemLower}-new-`;
+
+  let maxNum = 0;
+  for (const taken of takenNames) {
+    const { stem: takenStem, ext: takenExt } = splitFilename(taken);
+    if (takenExt.toLowerCase() !== extLower) continue;
+    const takenStemLower = takenStem.toLowerCase();
+    if (takenStemLower === stemLower) {
+      maxNum = Math.max(maxNum, 0);
+      continue;
+    }
+    if (!takenStemLower.startsWith(prefixLower)) continue;
+    const suffix = takenStemLower.slice(prefixLower.length);
+    if (/^\d+$/.test(suffix)) {
+      maxNum = Math.max(maxNum, parseInt(suffix, 10));
+    }
+  }
+
+  let num = maxNum + 1;
+  let candidate = `${stem}-new-${String(num).padStart(2, '0')}${ext}`;
+  while (takenNames.has(candidate.toLowerCase())) {
+    num += 1;
+    candidate = `${stem}-new-${String(num).padStart(2, '0')}${ext}`;
+  }
+  takenNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function uploadNameFor(item: DuplicateConflict): string | null {
+  if (item.resolution === 'skip') return null;
+  if (item.resolution === 'override') return item.existingName;
+  if (item.resolution === 'rename-custom' && item.customName.trim()) {
+    return item.customName.trim();
+  }
+  return item.suggestedName;
+}
+
+function assignUniqueSuggestedNames(
+  conflicts: DuplicateConflict[],
+  takenNames: Set<string>,
+): DuplicateConflict[] {
+  const used = new Set(takenNames);
+  return conflicts.map((item) => {
+    const suggested = reserveAutoRenameName(item.file.name, used);
+    return {
+      ...item,
+      suggestedName: suggested,
+      customName:
+        item.resolution === 'rename-custom' && item.customName.trim()
+          ? item.customName
+          : suggested,
+    };
+  });
+}
+
+function ensureUniqueUploadNames(
+  items: UploadQueueItem[],
+  takenNames: Set<string>,
+): UploadQueueItem[] {
+  const used = new Set(takenNames);
+  return items.map((item) => {
+    if (item.replaceExisting) {
+      used.add(item.uploadName.toLowerCase());
+      return item;
+    }
+    const lower = item.uploadName.toLowerCase();
+    if (!used.has(lower)) {
+      used.add(lower);
+      return item;
+    }
+    return { file: item.file, uploadName: reserveAutoRenameName(item.file.name, used) };
+  });
 }
 
 // ── Duplicate Resolution Dialog ───────────────────────────────
 function DuplicateDialog({
   conflicts,
+  takenNames,
   onResolve,
 }: {
   conflicts: DuplicateConflict[];
+  takenNames: Set<string>;
   onResolve: (resolved: DuplicateConflict[]) => void;
 }) {
   const [items, setItems] = useState<DuplicateConflict[]>(conflicts);
@@ -53,11 +132,44 @@ function DuplicateDialog({
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
   };
 
+  const applySkipAll = () => {
+    setItems(prev => prev.map(it => ({ ...it, resolution: 'skip' as DuplicateResolution })));
+  };
+
+  const applyAutoRenameAll = () => {
+    setItems(prev => {
+      const renamed = prev.map(it => ({
+        ...it,
+        resolution: 'rename-auto' as DuplicateResolution,
+      }));
+      return assignUniqueSuggestedNames(renamed, takenNames);
+    });
+  };
+
+  const applyOverrideAll = () => {
+    setItems(prev => prev.map(it => ({
+      ...it,
+      resolution: 'override' as DuplicateResolution,
+    })));
+  };
+
   const allResolved = items.every(it =>
     it.resolution === 'skip' ||
+    it.resolution === 'override' ||
     it.resolution === 'rename-auto' ||
     (it.resolution === 'rename-custom' && it.customName.trim().length > 0)
   );
+
+  const uploadPreview = items
+    .map(it => ({
+      item: it,
+      name: uploadNameFor(it),
+      override: it.resolution === 'override',
+    }))
+    .filter((row): row is { item: DuplicateConflict; name: string; override: boolean } => row.name != null);
+
+  const skipCount = items.filter(it => it.resolution === 'skip').length;
+  const overrideCount = items.filter(it => it.resolution === 'override').length;
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -71,15 +183,77 @@ function DuplicateDialog({
           </div>
         </div>
 
+        {uploadPreview.length > 0 && (
+          <div className="px-4 pt-3 pb-1 border-b border-[#3c3c3c]">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#858585] mb-2">
+              Upload preview ({uploadPreview.length} file{uploadPreview.length !== 1 ? 's' : ''})
+            </p>
+            <div className="space-y-1.5 max-h-28 overflow-y-auto">
+              {uploadPreview.map(({ item, name, override }) => (
+                <div
+                  key={`${item.existingName}-${name}-${override ? 'ov' : 'rn'}`}
+                  className="flex items-center gap-1.5 text-[10px] font-mono min-w-0"
+                >
+                  {override ? (
+                    <>
+                      <span className="text-[#fbbf24] font-medium truncate">{name}</span>
+                      <span className="shrink-0 rounded bg-[#f59e0b]/15 px-1 py-0.5 text-[9px] text-[#fbbf24]">
+                        replace
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[#858585] truncate shrink">{item.existingName}</span>
+                      <ArrowRight className="w-3 h-3 text-[#555] shrink-0" />
+                      <span className="text-[#10b981] font-medium truncate">{name}</span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            {overrideCount > 0 && (
+              <p className="text-[10px] text-[#fbbf24] mt-2">
+                {overrideCount} file{overrideCount !== 1 ? 's' : ''} will replace existing drawing(s)
+              </p>
+            )}
+            {skipCount > 0 && (
+              <p className="text-[10px] text-[#858585] mt-2">
+                {skipCount} file{skipCount !== 1 ? 's' : ''} will be skipped
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Conflict list */}
         <div className="flex-1 overflow-y-auto max-h-[50vh] p-4 space-y-3">
-          {items.map((item, idx) => (
+          {items.map((item, idx) => {
+            const previewName = uploadNameFor(item);
+            return (
             <div key={idx} className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
                 <FileText className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
                 <span className="text-white text-[12px] font-medium truncate flex-1">{item.existingName}</span>
                 <span className="text-[#f59e0b] text-[10px] font-bold bg-[#f59e0b]/10 px-1.5 py-0.5 rounded shrink-0">EXISTS</span>
               </div>
+
+              {previewName && item.resolution === 'override' && (
+                <div className="flex items-center gap-1.5 rounded-md bg-[#3d2a0f]/50 border border-[#f59e0b]/30 px-2.5 py-1.5">
+                  <span className="text-[10px] text-[#fbbf24] font-mono font-semibold truncate">{previewName}</span>
+                  <span className="shrink-0 text-[9px] text-[#f59e0b]">replaces existing file</span>
+                </div>
+              )}
+
+              {previewName && item.resolution !== 'override' && (
+                <div className="flex items-center gap-1.5 rounded-md bg-[#1a3d28]/40 border border-[#10b981]/25 px-2.5 py-1.5">
+                  <span className="text-[10px] text-[#858585] font-mono truncate">{item.existingName}</span>
+                  <ArrowRight className="w-3 h-3 text-[#10b981] shrink-0" />
+                  <span className="text-[10px] text-[#86efac] font-mono font-semibold truncate">{previewName}</span>
+                </div>
+              )}
+
+              {item.resolution === 'skip' && (
+                <p className="text-[10px] text-[#ef4444]/80 italic">This file will not be uploaded</p>
+              )}
 
               {/* Resolution options */}
               <div className="space-y-1.5 pt-1">
@@ -122,7 +296,23 @@ function DuplicateDialog({
                   </div>
                 </label>
 
-                {/* Option 3: Skip */}
+                {/* Option 3: Override */}
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`res-${idx}`}
+                    checked={item.resolution === 'override'}
+                    onChange={() => update(idx, { resolution: 'override' })}
+                    className="mt-0.5 accent-[#f59e0b]"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-white font-medium">Override existing file</span>
+                    <p className="text-[10px] text-[#fbbf24] font-mono truncate mt-0.5">{item.existingName}</p>
+                    <p className="text-[10px] text-[#858585] mt-0.5">Replace the current drawing — analysis data will be removed.</p>
+                  </div>
+                </label>
+
+                {/* Option 4: Skip */}
                 <label className="flex items-center gap-2.5 cursor-pointer">
                   <input
                     type="radio"
@@ -135,19 +325,26 @@ function DuplicateDialog({
                 </label>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t border-[#3c3c3c] bg-[#252526] flex justify-end gap-2">
           <button
-            onClick={() => onResolve(items.map(it => ({ ...it, resolution: 'skip' as DuplicateResolution })))}
+            onClick={applySkipAll}
             className="px-3 py-1.5 text-[12px] text-[#858585] hover:text-white transition-colors"
           >
             Skip All
           </button>
           <button
-            onClick={() => onResolve(items.map(it => ({ ...it, resolution: (it.resolution === 'skip' ? 'skip' : 'rename-auto') as DuplicateResolution })))}
+            onClick={applyOverrideAll}
+            className="px-3 py-1.5 text-[12px] bg-[#252526] border border-[#f59e0b]/40 text-[#fbbf24] rounded hover:bg-[#3d2a0f]/40 transition-colors"
+          >
+            Override All
+          </button>
+          <button
+            onClick={applyAutoRenameAll}
             className="px-3 py-1.5 text-[12px] bg-[#252526] border border-[#3c3c3c] text-white rounded hover:bg-[#333] transition-colors"
           >
             Auto Rename All
@@ -162,7 +359,9 @@ function DuplicateDialog({
                 : 'bg-[#3c3c3c] text-[#555] cursor-not-allowed'
             )}
           >
-            Confirm & Upload
+            {uploadPreview.length === 0
+              ? 'Close'
+              : `Confirm & Upload (${uploadPreview.length})`}
           </button>
         </div>
       </div>
@@ -180,6 +379,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   const [uploadTotal, setUploadTotal] = useState(0);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [duplicateConflicts, setDuplicateConflicts] = useState<DuplicateConflict[] | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[] | null>(null);
   const uploadLockRef = React.useRef(false);
 
   const isBusy = uploadPhase !== 'idle';
@@ -205,53 +405,116 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   if (!open) return null;
 
   // ── Core upload logic ─────────────────────────────────────
-  const startUpload = async (filesToUpload: { file: File; uploadName: string }[]) => {
+  const buildTakenNames = () => {
+    const taken = new Set(state.files.map(f => f.name.toLowerCase()));
+    for (const f of files) {
+      taken.add(f.name.toLowerCase());
+    }
+    return taken;
+  };
+
+  const startUpload = async (filesToUpload: UploadQueueItem[]) => {
     if (uploadLockRef.current) return;
     uploadLockRef.current = true;
+    const queue = ensureUniqueUploadNames(filesToUpload, buildTakenNames());
+    setUploadQueue(queue);
     setUploadPhase('uploading');
     setUploadedCount(0);
-    setUploadTotal(filesToUpload.length);
+    setUploadTotal(queue.length);
     setUploadErrors([]);
 
     const { authFetch } = await import('../lib/supabase');
     const projectId = state.activeProject?.id;
     const errors: string[] = [];
+    const uploadedIds: string[] = [];
+    const reservedNames = buildTakenNames();
+
+    const deleteExistingForOverride = async (name: string): Promise<boolean> => {
+      const existing = state.files.find(f => f.name.toLowerCase() === name.toLowerCase());
+      if (!existing) return true;
+      const delRes = await authFetch(`/api/v1/files/${existing.id}`, { method: 'DELETE' });
+      if (delRes.ok || delRes.status === 404) {
+        reservedNames.delete(name.toLowerCase());
+        return true;
+      }
+      const errBody = await delRes.json().catch(() => ({ detail: `HTTP ${delRes.status}` }));
+      const detail = typeof errBody?.detail === 'string'
+        ? errBody.detail
+        : `HTTP ${delRes.status}`;
+      errors.push(`${name}: could not replace existing file — ${detail}`);
+      return false;
+    };
+
+    const uploadSingle = async (
+      file: File,
+      initialName: string,
+      replaceExisting = false,
+    ): Promise<boolean> => {
+      let uploadName = initialName;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (replaceExisting) {
+          const deleted = await deleteExistingForOverride(uploadName);
+          if (!deleted) return false;
+        } else if (reservedNames.has(uploadName.toLowerCase())) {
+          uploadName = reserveAutoRenameName(file.name, reservedNames);
+        } else {
+          reservedNames.add(uploadName.toLowerCase());
+        }
+
+        if (replaceExisting) {
+          reservedNames.add(uploadName.toLowerCase());
+        }
+
+        const arrayBuffer = await file.arrayBuffer();
+        const uploadFile = new File([arrayBuffer], uploadName, {
+          type: file.type || 'application/pdf',
+        });
+        const formData = new FormData();
+        formData.append('file', uploadFile, uploadName);
+        if (projectId) formData.append('project_id', projectId);
+        const res = await authFetch('/api/v1/files', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          uploadedIds.push(String(data.id));
+          if (data.duplicate) {
+            console.info(`[ImportModal] "${uploadName}" already exists in project (same filename)`);
+          }
+          window.dispatchEvent(new CustomEvent('elementiq:file-uploaded', {
+            detail: {
+              id: data.id,
+              name: data.filename ?? uploadName,
+              size: uploadFile.size,
+              file: uploadFile,
+              localPath: data.local_path,
+              duplicate: !!data.duplicate,
+            },
+          }));
+          return true;
+        }
+
+        const errBody = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        const detail = typeof errBody?.detail === 'string'
+          ? errBody.detail
+          : `HTTP ${res.status}`;
+
+        if (res.status === 409 && attempt === 0) {
+          reservedNames.delete(uploadName.toLowerCase());
+          uploadName = reserveAutoRenameName(file.name, reservedNames);
+          continue;
+        }
+
+        errors.push(`${uploadName}: ${detail}`);
+        console.error(`[ImportModal] Upload failed for "${uploadName}": ${res.status}`, errBody);
+        return false;
+      }
+      return false;
+    };
 
     try {
-      for (let i = 0; i < filesToUpload.length; i++) {
-        const { file, uploadName } = filesToUpload[i];
+      for (let i = 0; i < queue.length; i++) {
+        const { file, uploadName, replaceExisting } = queue[i];
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const uploadFile = new File([arrayBuffer], uploadName, {
-            type: file.type || 'application/pdf',
-          });
-          const formData = new FormData();
-          formData.append('file', uploadFile, uploadName);
-          if (projectId) formData.append('project_id', projectId);
-          const res = await authFetch('/api/v1/files', { method: 'POST', body: formData });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.duplicate) {
-              console.info(`[ImportModal] "${uploadName}" matches existing file in project (same content)`);
-            }
-            window.dispatchEvent(new CustomEvent('elementiq:file-uploaded', {
-              detail: {
-                id: data.id,
-                name: uploadName,
-                size: uploadFile.size,
-                file: uploadFile,
-                localPath: data.local_path,
-                duplicate: !!data.duplicate,
-              },
-            }));
-          } else {
-            const errBody = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
-            const detail = typeof errBody?.detail === 'string'
-              ? errBody.detail
-              : `HTTP ${res.status}`;
-            errors.push(`${uploadName}: ${detail}`);
-            console.error(`[ImportModal] Upload failed for "${uploadName}": ${res.status}`, errBody);
-          }
+          await uploadSingle(file, uploadName, replaceExisting);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           errors.push(`${uploadName}: ${msg}`);
@@ -266,12 +529,20 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
       }
 
       setUploadPhase('syncing');
-      await refreshProjectFiles({ silent: true });
+      try {
+        await refreshProjectFiles({ silent: true, focusFileIds: uploadedIds });
+      } catch (refreshErr) {
+        console.error('[ImportModal] Failed to refresh project files after upload:', refreshErr);
+        errors.push('Could not refresh project file list — try reloading the project.');
+        setUploadErrors(errors);
+        return;
+      }
     } finally {
       uploadLockRef.current = false;
       if (errors.length === 0) {
         setUploadPhase('idle');
         setFiles([]);
+        setUploadQueue(null);
         setUploadedCount(0);
         setUploadTotal(0);
         setDuplicateConflicts(null);
@@ -293,9 +564,8 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
       .filter(c => c.resolution !== 'skip')
       .map(c => ({
         file: c.file,
-        uploadName: c.resolution === 'rename-custom' && c.customName.trim()
-          ? c.customName.trim()
-          : c.suggestedName,
+        uploadName: uploadNameFor(c)!,
+        replaceExisting: c.resolution === 'override',
       }));
     const allToUpload = [...nonConflict, ...resolvedUploads];
     if (allToUpload.length === 0) { requestClose(); return; }
@@ -336,15 +606,28 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
 
       // Check for filename conflicts with existing project files
       const existingNames = new Set(state.files.map(f => f.name.toLowerCase()));
-      const conflicts: DuplicateConflict[] = files
+      const takenNames = new Set(existingNames);
+      for (const f of files) {
+        if (!existingNames.has(f.name.toLowerCase())) {
+          takenNames.add(f.name.toLowerCase());
+        }
+      }
+      const rawConflicts: DuplicateConflict[] = files
         .filter(f => existingNames.has(f.name.toLowerCase()))
-        .map(f => ({
-          file: f,
-          existingName: f.name,
-          suggestedName: buildSuggestedName(f.name),
-          resolution: 'rename-auto' as DuplicateResolution,
-          customName: buildSuggestedName(f.name),
-        }));
+        .map(f => {
+          const existing = state.files.find(
+            sf => sf.name.toLowerCase() === f.name.toLowerCase(),
+          );
+          return {
+            file: f,
+            existingName: f.name,
+            existingFileId: existing?.id ?? null,
+            suggestedName: '',
+            resolution: 'rename-auto' as DuplicateResolution,
+            customName: '',
+          };
+        });
+      const conflicts = assignUniqueSuggestedNames(rawConflicts, takenNames);
 
       if (conflicts.length > 0) {
         setDuplicateConflicts(conflicts);
@@ -371,11 +654,26 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
   const canAnalyze = mode === 'import' ? files.length > 0 : selectedCount > 0;
   const targetFileCount = targetFileIds?.length ?? (targetFileId ? 1 : state.files.length);
 
+  const progressItems: UploadQueueItem[] = uploadQueue ?? files.map(f => ({ file: f, uploadName: f.name }));
+  const progressListActive = isBusy && uploadQueue != null;
+  const listCount = progressListActive ? uploadQueue.length : files.length;
+
   return (
     <>
       {/* Duplicate resolution dialog — rendered on top of the import modal */}
       {duplicateConflicts && (
-        <DuplicateDialog conflicts={duplicateConflicts} onResolve={handleDuplicateResolved} />
+        <DuplicateDialog
+          conflicts={duplicateConflicts}
+          takenNames={
+            new Set([
+              ...state.files.map(f => f.name.toLowerCase()),
+              ...files
+                .filter(f => !state.files.some(sf => sf.name.toLowerCase() === f.name.toLowerCase()))
+                .map(f => f.name.toLowerCase()),
+            ])
+          }
+          onResolve={handleDuplicateResolved}
+        />
       )}
 
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm shadow-2xl">
@@ -461,24 +759,30 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                   {/* Right: File List */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">Files ({files.length}/100)</h3>
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">Files ({listCount}/100)</h3>
                       {files.length > 0 && !isBusy && (
                         <button onClick={() => setFiles([])} className="text-xs text-[#ef4444] hover:underline">Clear All</button>
                       )}
                     </div>
-                    {files.length === 0 ? (
+                    {listCount === 0 ? (
                       <div className="h-[200px] flex items-center justify-center border border-[#3c3c3c] rounded-lg bg-[#1e1e1e]">
                         <p className="text-[#858585] text-xs">No files selected</p>
                       </div>
                     ) : (
                       <div className="overflow-y-auto space-y-1 max-h-[300px]">
-                        {files.map((file, index) => (
-                          <div key={index} className="flex items-center justify-between bg-[#1e1e1e] border border-[#3c3c3c] rounded px-2 py-1.5 text-[12px]">
+                        {(progressListActive ? uploadQueue! : progressItems).map((item, index) => {
+                          const { file, uploadName } = item;
+                          const replacing = progressListActive && 'replaceExisting' in item && item.replaceExisting;
+                          const renamed = uploadName !== file.name;
+                          const done = isBusy && (index < uploadedCount || uploadPhase === 'syncing');
+                          const active = isBusy && index === uploadedCount && uploadPhase === 'uploading';
+                          return (
+                          <div key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between bg-[#1e1e1e] border border-[#3c3c3c] rounded px-2 py-1.5 text-[12px]">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
                               {isBusy ? (
-                                index < uploadedCount || uploadPhase === 'syncing' ? (
+                                done ? (
                                   <svg className="w-3.5 h-3.5 text-[#22c55e] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
-                                ) : index === uploadedCount && uploadPhase === 'uploading' ? (
+                                ) : active ? (
                                   <div className="w-3.5 h-3.5 border-2 border-[#3b82f6] border-t-transparent rounded-full animate-spin shrink-0" />
                                 ) : (
                                   <FileText className="w-3.5 h-3.5 text-[#858585] shrink-0" />
@@ -486,19 +790,43 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                               ) : (
                                 <FileText className={cn('w-3.5 h-3.5 shrink-0', state.files.some(f => f.name.toLowerCase() === file.name.toLowerCase()) ? 'text-[#f59e0b]' : 'text-[#10b981]')} />
                               )}
-                              <span className={cn('truncate', isBusy && index < uploadedCount ? 'text-[#858585]' : 'text-white')}>{file.name}</span>
+                              {replacing ? (
+                                <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-[#f59e0b]/30 bg-[#3d2a0f]/40 px-1.5 py-0.5">
+                                  <span className={cn(
+                                    'truncate text-[11px] font-mono font-semibold text-[#fbbf24]',
+                                    done && 'text-[#858585]',
+                                  )}>
+                                    {uploadName}
+                                  </span>
+                                  <span className="shrink-0 text-[9px] text-[#f59e0b]">replace</span>
+                                </div>
+                              ) : renamed && progressListActive ? (
+                                <div className="flex min-w-0 flex-1 items-center gap-1 rounded-md border border-[#10b981]/25 bg-[#1a3d28]/40 px-1.5 py-0.5">
+                                  <span className="truncate text-[10px] font-mono text-[#858585]">{file.name}</span>
+                                  <ArrowRight className="w-3 h-3 shrink-0 text-[#10b981]" />
+                                  <span className={cn(
+                                    'truncate text-[11px] font-mono font-semibold text-[#86efac]',
+                                    done && 'text-[#858585]',
+                                  )}>
+                                    {uploadName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={cn('truncate', done ? 'text-[#858585]' : 'text-white')}>{file.name}</span>
+                              )}
                               {!isBusy && state.files.some(f => f.name.toLowerCase() === file.name.toLowerCase()) && (
                                 <span className="text-[9px] text-[#f59e0b] bg-[#f59e0b]/10 px-1 py-0.5 rounded shrink-0">duplicate</span>
                               )}
                               <span className="text-[10px] text-[#858585] shrink-0 ml-1">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
                             </div>
                             {!isBusy && (
-                              <button onClick={() => removeFile(index)} className="p-0.5 hover:bg-[#3c3c3c] rounded text-[#ef4444] shrink-0 ml-1">
+                              <button onClick={() => removeFile(files.indexOf(file))} className="p-0.5 hover:bg-[#3c3c3c] rounded text-[#ef4444] shrink-0 ml-1">
                                 <X className="w-3 h-3" />
                               </button>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -526,7 +854,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                     uploadPhase === 'syncing' ? (
                       <span className="text-[#3b82f6]">Syncing project file list…</span>
                     ) : (
-                      <span className="text-[#3b82f6]">Uploading <span className="text-white font-semibold">{uploadedCount}/{uploadTotal || files.length}</span> file(s) • {(files.reduce((a, f) => a + f.size, 0) / 1024 / 1024).toFixed(1)} MB</span>
+                      <span className="text-[#3b82f6]">Uploading <span className="text-white font-semibold">{uploadedCount}/{uploadTotal || listCount}</span> file(s) • {((uploadQueue ?? progressItems).reduce((a, item) => a + item.file.size, 0) / 1024 / 1024).toFixed(1)} MB</span>
                     )
                   ) : uploadErrors.length > 0 ? (
                     <span className="text-[#ef4444]">Fix errors above and click Import Files to retry failed uploads.</span>
@@ -566,7 +894,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                 {isBusy
                   ? uploadPhase === 'syncing'
                     ? 'Syncing…'
-                    : `${uploadedCount}/${uploadTotal || files.length}`
+                    : `${uploadedCount}/${uploadTotal || listCount}`
                   : mode === 'import'
                     ? 'Import Files'
                     : 'Start Analysis'}

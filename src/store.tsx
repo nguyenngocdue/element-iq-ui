@@ -150,7 +150,7 @@ interface AppContextType {
   closeConfigModal: () => void;
   setCurrentView: (view: 'projects' | 'editor') => void;
   setActiveProject: (project: Project) => void;
-  refreshProjectFiles: (options?: { silent?: boolean }) => Promise<void>;
+  refreshProjectFiles: (options?: { silent?: boolean; focusFileIds?: string[] }) => Promise<void>;
   toggleBot: () => void;
   setActiveArtifact: (artifact: SessionState['activeArtifact']) => void;
 }
@@ -602,7 +602,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const refreshProjectFiles = useCallback(async (options?: { silent?: boolean }) => {
+  const refreshProjectFiles = useCallback(async (options?: { silent?: boolean; focusFileIds?: string[] }) => {
     const projectId = state.activeProject?.id;
     if (!projectId) return;
 
@@ -612,14 +612,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const docs = await fetchProjectFileDocs(projectId);
+      const focusIds = (options?.focusFileIds ?? []).filter((id) => docs.some((d) => d.id === id));
       setState((prev) => {
         const preservedActive =
-          prev.activeFileId && docs.some((d) => d.id === prev.activeFileId)
+          focusIds.find((id) => docs.some((d) => d.id === id))
+          ?? (prev.activeFileId && docs.some((d) => d.id === prev.activeFileId)
             ? prev.activeFileId
             : docs.length > 0
               ? docs[0].id
-              : null;
-        const openFiles = prev.openFiles.filter((id) => docs.some((d) => d.id === id));
+              : null);
+        const openFiles = [
+          ...new Set([
+            ...prev.openFiles.filter((id) => docs.some((d) => d.id === id)),
+            ...focusIds,
+          ]),
+        ];
         const nextOpen =
           openFiles.length > 0
             ? openFiles
@@ -635,6 +642,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           openFiles: nextOpen,
         };
       });
+
+      if (focusIds.length > 0) {
+        const activeId = focusIds[0];
+        const activeDoc = docs.find((d) => d.id === activeId);
+        if (activeDoc) {
+          try {
+            const { authFetch } = await import('./lib/supabase');
+            const dlRes = await authFetch(`/api/v1/files/${activeDoc.id}/download`);
+            if (dlRes.ok) {
+              const blob = await dlRes.blob();
+              const realFile = new File([blob], activeDoc.name, { type: 'application/pdf' });
+              setState((prev) => ({
+                ...prev,
+                files: prev.files.map((f) => (f.id === activeDoc.id ? { ...f, file: realFile } : f)),
+              }));
+            }
+          } catch {
+            // Non-blocking
+          }
+        }
+      }
     } catch (err) {
       console.error('Failed to refresh project files:', err);
       setState((prev) => ({ ...prev, isLoadingFiles: false }));
