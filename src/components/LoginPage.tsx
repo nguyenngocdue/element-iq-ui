@@ -2,17 +2,28 @@
  * Login/Signup page — shown when user is not authenticated.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
 
 export function LoginPage() {
-  const { signIn, signUp } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user, signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const returnTo = searchParams.get('returnTo') || '/';
+
+  useEffect(() => {
+    if (user) {
+      navigate(returnTo, { replace: true });
+    }
+  }, [user, navigate, returnTo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +111,7 @@ export function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-[#858585]">
+          <div className="mt-6 text-center text-sm text-[#858585] space-y-3">
             {mode === 'login' ? (
               <p>
                 Don't have an account?{' '}
@@ -116,6 +127,11 @@ export function LoginPage() {
                 </button>
               </p>
             )}
+            <p>
+              <Link to="/" className="text-[#b0b0b0] hover:text-white transition-colors">
+                Continue to dashboard without signing in
+              </Link>
+            </p>
           </div>
         </div>
       </div>

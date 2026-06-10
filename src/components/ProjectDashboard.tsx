@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../store';
 import { useAuth } from '../lib/auth-context';
+import { loginPath } from '../lib/authRoutes';
 import { authFetch } from '../lib/supabase';
 import { Search, ChevronDown, Plus, Bell, LayoutGrid, Box, FolderKanban, X, List, Pencil, Trash2, EllipsisVertical, Upload, BarChart3, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -252,8 +253,9 @@ function ProjectCard({
 
 export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setActiveProject } = useApp();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -269,8 +271,23 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   };
 
   const handleWorkspaceNavigate = (nav: 'dashboard' | 'projects' | 'account') => {
-    if (nav === 'account') navigate('/account');
-    else goToTab(nav);
+    if (nav === 'account') {
+      if (!user) {
+        navigate(loginPath('/account'));
+        return;
+      }
+      navigate('/account');
+      return;
+    }
+    goToTab(nav);
+  };
+
+  const redirectToLogin = (returnTo?: string) => {
+    navigate(loginPath(returnTo ?? `${location.pathname}${location.search}`));
+  };
+
+  const promptSignInForAction = () => {
+    redirectToLogin(`${location.pathname}${location.search}`);
   };
 
   const filteredAndSortedProjects = useMemo(() => {
@@ -303,12 +320,19 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       .slice(0, 8);
   }, [projects]);
 
-  const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'User';
+  const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest';
 
-  // ── Load projects from API ─────────────────────────────────
+  // ── Load projects from API (signed-in users only) ─────────
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setProjects([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     loadProjects();
-  }, []);
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (!cardMenuId && !sortMenuOpen) return;
@@ -543,13 +567,15 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     filteredAndSortedProjects.length === 0 ? (
       <div className="bg-[#141414] border border-[#262626] rounded-lg py-16 text-center">
         <FolderKanban className="w-10 h-10 text-[#333] mx-auto mb-3" />
-        <p className="text-[#b0b0b0] text-sm">No projects found</p>
+        <p className="text-[#b0b0b0] text-sm">
+          {user ? 'No projects found' : 'Sign in to view and manage your projects.'}
+        </p>
         <button
           type="button"
-          onClick={() => setIsCreateModalOpen(true)}
+          onClick={() => (user ? setIsCreateModalOpen(true) : promptSignInForAction())}
           className="mt-4 text-sm text-[#00e676] hover:underline"
         >
-          Create your first project
+          {user ? 'Create your first project' : 'Sign In'}
         </button>
       </div>
     ) : (
@@ -666,7 +692,13 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       <WorkspaceSidebar
         activeNav={activeTab}
         displayName={displayName}
-        onCreateProject={() => setIsCreateModalOpen(true)}
+        onCreateProject={() => {
+          if (!user) {
+            promptSignInForAction();
+            return;
+          }
+          setIsCreateModalOpen(true);
+        }}
         onNavigate={handleWorkspaceNavigate}
         onAiChat={() => showToast('Feature in development')}
         onHelp={() => showToast('Help Center coming soon')}
@@ -691,7 +723,17 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             <button type="button" className="p-2 rounded-md text-[#b0b0b0] hover:text-white hover:bg-[#141414] transition-colors">
               <Bell className="w-4 h-4" />
             </button>
-            <UserProfileMenu variant="workspace" />
+            {user ? (
+              <UserProfileMenu variant="workspace" />
+            ) : (
+              <button
+                type="button"
+                onClick={() => redirectToLogin()}
+                className="px-3 py-1.5 rounded-md bg-[#10b981] hover:bg-[#059669] text-white text-sm font-semibold transition-colors"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </header>
 
@@ -719,6 +761,21 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
             {error && (
               <div className="mb-6 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
                 {error}
+              </div>
+            )}
+
+            {!user && !authLoading && (
+              <div className="mb-6 rounded-lg border border-[#14b8a6]/25 bg-[#14b8a6]/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-[#d1d1d1]">
+                  You are browsing as a guest. Sign in to create projects, import files, and open shared project links.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => redirectToLogin()}
+                  className="shrink-0 px-4 py-2 rounded-md bg-[#10b981] hover:bg-[#059669] text-white text-sm font-semibold transition-colors"
+                >
+                  Sign In
+                </button>
               </div>
             )}
 
@@ -753,7 +810,20 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                     );
                   })()
                 ) : (
-                  <p className="text-sm text-[#a3a3a3] flex-1">No projects yet. Create one to get started.</p>
+                  <div className="flex-1 flex flex-col justify-center gap-3">
+                    <p className="text-sm text-[#a3a3a3]">
+                      {user ? 'No projects yet. Create one to get started.' : 'Sign in to create and manage your projects.'}
+                    </p>
+                    {!user && (
+                      <button
+                        type="button"
+                        onClick={() => redirectToLogin('/')}
+                        className="self-start px-3 py-1.5 rounded-md border border-[#14b8a6]/30 text-[#5eead4] hover:bg-[#14b8a6]/10 text-sm font-medium transition-colors"
+                      >
+                        Sign In
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -780,7 +850,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#a3a3a3] mb-3">Quick Actions</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'New Project', icon: Plus, action: () => setIsCreateModalOpen(true) },
+                    { label: 'New Project', icon: Plus, action: () => (user ? setIsCreateModalOpen(true) : promptSignInForAction()) },
                     { label: 'All Projects', icon: FolderKanban, action: () => goToTab('projects') },
                     { label: 'Import Files', icon: Upload, action: () => showToast('Open a project to import files') },
                     { label: 'Analytics', icon: BarChart3, action: () => showToast('Feature in development') },

@@ -14,6 +14,7 @@ import { AnalysisConfigModal } from './components/ImportModal';
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { AccountSettings } from './components/AccountSettings';
 import { ElementIQBot } from './components/ElementIQBot';
+import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { LoginPage } from './components/LoginPage';
 
@@ -136,7 +137,7 @@ function ProjectEditorPage() {
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-[#858585]">Loading project...</p>
+          <p className="text-sm text-[#b0b0b0]">Loading project...</p>
         </div>
       </div>
     );
@@ -150,16 +151,24 @@ function AppContent() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/projects" element={<ProjectDashboard activeTab="projects" />} />
-      <Route path="/account" element={<AccountSettings />} />
-      <Route path="/projects/:projectId" element={<ProjectEditorPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/account" element={<RequireAuth><AccountSettings /></RequireAuth>} />
+      <Route
+        path="/projects/:projectId"
+        element={
+          <RequireAuth>
+            <ProjectEditorPage />
+          </RequireAuth>
+        }
+      />
       <Route path="/projects/dashboard" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-function AuthenticatedApp() {
-  const { user, loading } = useAuth();
+function AppShell() {
+  const { loading } = useAuth();
 
   if (loading) {
     return (
@@ -167,10 +176,6 @@ function AuthenticatedApp() {
         <div className="text-[#10b981] text-lg font-medium animate-pulse">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    return <LoginPage />;
   }
 
   return (
@@ -184,7 +189,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <AuthenticatedApp />
+        <AppShell />
       </BrowserRouter>
     </AuthProvider>
   );
