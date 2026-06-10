@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { highlightMatch } from '../lib/fileSearch';
 import {
@@ -34,14 +34,21 @@ import { ExplorerViewMenu } from './ExplorerViewMenu';
 import { TreeRow } from './TreeRow';
 
 export function Sidebar() {
-  const { state, setActiveFile, clearSession, openConfigModal, analyzeAll, stopAnalysis } = useApp();
+  const { state, setActiveFile, clearSession, deleteFiles, renameFile, openConfigModal, analyzeAll, stopAnalysis } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun === true;
   const isProjectOwner = state.isProjectOwner ?? !isReadOnly;
   const [showStatuses, setShowStatuses] = useState(true);
   const [showFileSizes, setShowFileSizes] = useState(false);
   const [showCreatedDates, setShowCreatedDates] = useState(false);
-  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
+  const [showRemoveOneDialog, setShowRemoveOneDialog] = useState(false);
+  const [removeOneFileId, setRemoveOneFileId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState('');
   const [clearLoading, setClearLoading] = useState(false);
   const [clearProgress, setClearProgress] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,8 +66,9 @@ export function Sidebar() {
     writeExplorerViewPrefs({ sort });
   }, []);
 
-  // Select mode state
-  const [isSelectMode, setIsSelectMode] = useState(false);
+  // Bulk select: run analysis or delete files
+  type BulkMode = 'run' | 'delete';
+  const [bulkMode, setBulkMode] = useState<BulkMode | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
 
   // Keep expansion sets in sync when files are added or removed.
@@ -156,10 +164,14 @@ export function Sidebar() {
     .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
     .map(f => f.id);
 
-  const exitSelectMode = () => {
-    setIsSelectMode(false);
+  const exitBulkMode = () => {
+    setBulkMode(null);
     setSelectedFileIds(new Set());
   };
+
+  const isRunSelectMode = bulkMode === 'run';
+  const isDeleteSelectMode = bulkMode === 'delete';
+  const isBulkSelectMode = bulkMode !== null;
 
   const selectAllFiles = () => {
     setSelectedFileIds(new Set(selectableFileIds));
@@ -226,7 +238,18 @@ export function Sidebar() {
                 return next;
               });
             }}
-            selectMode={isSelectMode}
+            selectMode={isBulkSelectMode}
+            bulkMode={bulkMode}
+            canManage={isProjectOwner}
+            onRename={(id, name) => {
+              setRenameTarget({ id, name });
+              setRenameValue(name);
+              setRenameError('');
+            }}
+            onRemove={(id) => {
+              setRemoveOneFileId(id);
+              setShowRemoveOneDialog(true);
+            }}
             isSelected={selectedFileIds.has(file.id)}
             onToggleSelect={() => {
               if (file.status === 'ANALYZING' || file.status === 'UPLOADING') return;
@@ -336,6 +359,8 @@ export function Sidebar() {
     );
   }
 
+  const toolbarSegBtn = 'flex flex-1 flex-col items-center justify-center gap-0.5 min-w-0 py-2 px-1 text-[10px] leading-tight text-center transition-colors';
+
   const passList = filterFilesByBucket(state.files, 'pass');
   const failList = filterFilesByBucket(state.files, 'fail');
   const noNoteList = filterFilesByBucket(state.files, 'noNote');
@@ -386,130 +411,156 @@ export function Sidebar() {
           <span className="text-[#2eb886] font-medium">{displayPassRate}% pass</span>
         </div>
         
-        <div className={cn('flex text-[12px] font-medium', compactToolbar ? 'gap-1' : 'gap-2')}>
+        <div className="flex flex-col gap-2">
           {isProjectOwner && (
-          <button
-            onClick={() => openConfigModal('import')}
-            title="Import"
-            className={cn(
-              'flex items-center justify-center bg-[#262831] hover:bg-[#31333d] border border-[#3b3d46] text-white py-1.5 rounded-md transition-colors',
-              compactToolbar ? 'px-2' : 'flex-1 gap-2',
-            )}
-          >
-            <CloudUpload className="w-3.5 h-3.5 text-[#858585] shrink-0" />
-            {!compactToolbar && 'Import'}
-          </button>
-          )}
-          {canRun ? (
-          <>
-          {isAnalyzing ? (
             <button
-              onClick={stopAnalysis}
-              title="Stop after current file finishes"
+              onClick={() => openConfigModal('import')}
+              title="Import drawings"
               className={cn(
-                'flex items-center justify-center bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#ef4444]/30 text-[#ef4444] py-1.5 rounded-md transition-colors',
-                compactToolbar ? 'px-2' : 'flex-1 gap-2',
+                'flex w-full flex-col items-center justify-center gap-1 rounded-md border border-[#3b3d46] bg-[#262831] py-2 text-[10px] leading-tight text-[#ccc] transition-colors hover:bg-[#31333d] hover:text-white',
+                compactToolbar ? 'px-2' : 'px-3',
               )}
             >
-              <X className="w-3.5 h-3.5 shrink-0" />
-              {!compactToolbar && 'Stop Queue'}
-            </button>
-          ) : isSelectMode ? (
-            <button
-              onClick={() => {
-                if (selectedFileIds.size === 0) return;
-                openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
-                exitSelectMode();
-              }}
-              disabled={selectedFileIds.size === 0}
-              title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected file(s)`}
-              className={cn(
-                'flex items-center justify-center bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                compactToolbar ? 'px-2' : 'flex-1 gap-2',
-              )}
-            >
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              {!compactToolbar && <>Run Selected{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}</>}
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                const ids = getRunnableIdsInSortOrder();
-                if (ids.length === 0) return;
-                openConfigModal('reanalyze', undefined, ids);
-              }}
-              disabled={state.files.length === 0}
-              title="Run All"
-              className={cn(
-                'flex items-center justify-center bg-[#1a3a2a] hover:bg-[#224d36] border border-[#2eb886]/30 text-[#2eb886] py-1.5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-                compactToolbar ? 'px-2' : 'flex-1 gap-2',
-              )}
-            >
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              {!compactToolbar && 'Run All'}
+              <CloudUpload className="w-3.5 h-3.5 shrink-0 text-[#858585]" />
+              {!compactToolbar && 'Import'}
             </button>
           )}
-          <button
-            onClick={() => {
-              if (isSelectMode) exitSelectMode();
-              else setIsSelectMode(true);
-            }}
-            disabled={state.files.length === 0 || isAnalyzing}
-            title={isSelectMode ? 'Exit select mode' : 'Choose specific files to run'}
-            className={cn(
-              'flex items-center justify-center rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-              compactToolbar ? 'px-2' : 'px-2 gap-1',
-              isSelectMode
-                ? 'bg-[#2a2a1a] border-[#f59e0b]/40 text-[#f59e0b] hover:bg-[#3a3a20]'
-                : 'bg-[#262831] border-[#3b3d46] text-[#858585] hover:bg-[#31333d] hover:text-white',
-            )}
-          >
-            <ListChecks className="w-3.5 h-3.5 shrink-0" />
-            {!compactToolbar && <span className="text-[11px] font-medium">{isSelectMode ? 'Cancel' : 'Select'}</span>}
-          </button>
-          </>
-          ) : !isProjectOwner ? (
-            <p className="text-[11px] text-[#f59e0b] px-2 py-1.5 rounded-md border border-[#f59e0b]/30 bg-[#f59e0b]/10">
-              View only — re-run is disabled for this public project.
+
+          {!isProjectOwner && !canRun ? (
+            <p className="text-[11px] text-[#858585] leading-snug px-0.5">
+              View only — you cannot run analysis or remove files on this project.
             </p>
-          ) : null}
-          {isProjectOwner && (
-          <button
-            onClick={() => setShowClearDialog(true)}
-            title="Clear All Files"
-            className={cn(
-              'flex items-center justify-center bg-[#3d2c2e] hover:bg-[#4d3235] border border-[#522b30] text-[#ff7b7b] rounded-md transition-colors',
-              compactToolbar ? 'px-2 py-1.5' : 'px-3 gap-1.5',
-            )}
-          >
-            <Trash2 className="w-3.5 h-3.5 shrink-0" />
-            {!compactToolbar && 'Clear'}
-          </button>
+          ) : (
+            <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24]">
+              {canRun && (
+                <div className="flex min-w-0 flex-1 divide-x divide-[#3b3d46]">
+                  {isAnalyzing ? (
+                    <button
+                      onClick={stopAnalysis}
+                      title="Stop after current file finishes"
+                      className={cn(toolbarSegBtn, 'text-[#ef4444] hover:bg-[#262831]')}
+                    >
+                      <X className="w-3.5 h-3.5 shrink-0" />
+                      {!compactToolbar && 'Stop'}
+                    </button>
+                  ) : isRunSelectMode ? (
+                    <button
+                      onClick={() => {
+                        if (selectedFileIds.size === 0) return;
+                        openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                        exitBulkMode();
+                      }}
+                      disabled={selectedFileIds.size === 0}
+                      title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected`}
+                      className={cn(toolbarSegBtn, 'text-[#2eb886] hover:bg-[#262831] disabled:opacity-40 disabled:cursor-not-allowed')}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                      {!compactToolbar && <>Run{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}</>}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const ids = getRunnableIdsInSortOrder();
+                        if (ids.length === 0) return;
+                        openConfigModal('reanalyze', undefined, ids);
+                      }}
+                      disabled={state.files.length === 0 || isDeleteSelectMode}
+                      title="Run analysis on all drawings"
+                      className={cn(toolbarSegBtn, 'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#2eb886] disabled:opacity-40 disabled:cursor-not-allowed')}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                      {!compactToolbar && 'Run all'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (isRunSelectMode) exitBulkMode();
+                      else {
+                        setBulkMode('run');
+                        setSelectedFileIds(new Set());
+                      }
+                    }}
+                    disabled={state.files.length === 0 || isAnalyzing || isDeleteSelectMode}
+                    title={isRunSelectMode ? 'Cancel picking files' : 'Pick specific drawings to run'}
+                    className={cn(
+                      toolbarSegBtn,
+                      'disabled:opacity-40 disabled:cursor-not-allowed',
+                      isRunSelectMode
+                        ? 'bg-[#262831] text-white'
+                        : 'text-[#a0a5b5] hover:bg-[#262831] hover:text-white',
+                    )}
+                  >
+                    <ListChecks className="w-3.5 h-3.5 shrink-0" />
+                    {!compactToolbar && (isRunSelectMode ? 'Done' : 'Run selected…')}
+                  </button>
+                </div>
+              )}
+
+              {canRun && isProjectOwner && (
+                <div className="w-px shrink-0 bg-[#3b3d46]" aria-hidden />
+              )}
+
+              {isProjectOwner && (
+                <div className="flex min-w-0 flex-1 divide-x divide-[#3b3d46]">
+                  <button
+                    onClick={() => {
+                      if (isDeleteSelectMode) exitBulkMode();
+                      else {
+                        setBulkMode('delete');
+                        setSelectedFileIds(new Set());
+                      }
+                    }}
+                    disabled={state.files.length === 0 || isAnalyzing || isRunSelectMode}
+                    title={isDeleteSelectMode ? 'Cancel picking files' : 'Pick specific drawings to remove'}
+                    className={cn(
+                      toolbarSegBtn,
+                      'disabled:opacity-40 disabled:cursor-not-allowed',
+                      isDeleteSelectMode
+                        ? 'bg-[#262831] text-white'
+                        : 'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#ff7b7b]',
+                    )}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    {!compactToolbar && (isDeleteSelectMode ? 'Done' : 'Remove selected…')}
+                  </button>
+                  <button
+                    onClick={() => setShowClearAllDialog(true)}
+                    disabled={state.files.length === 0 || isAnalyzing}
+                    title="Remove every file in this project"
+                    className={cn(
+                      toolbarSegBtn,
+                      'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#ff7b7b] disabled:opacity-40 disabled:cursor-not-allowed',
+                    )}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    {!compactToolbar ? 'Clear all' : <span className="font-medium">All</span>}
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {isSelectMode && !isAnalyzing && (
-          <div className="mt-2 rounded-md border border-[#f59e0b]/35 bg-[#f59e0b]/10 px-3 py-2">
+        {isRunSelectMode && !isAnalyzing && (
+          <div className="mt-2 rounded-md border border-[#3b3d46] bg-[#1e1f24] px-3 py-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold text-[#f59e0b]">Select mode</p>
-                <p className="text-[10px] text-[#b4b4b4] mt-0.5 leading-snug">
-                  <span className="text-[#f59e0b] font-medium">Step 1:</span> click drawings below (or checkboxes)
-                  <br />
-                  <span className="text-[#f59e0b] font-medium">Step 2:</span> press Run Selected, then pick model(s)
+                <p className="text-[11px] font-medium text-[#ccc]">Run selected drawings</p>
+                <p className="text-[10px] text-[#858585] mt-1 leading-snug">
+                  Click files below or use checkboxes, then run analysis on the selection.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={exitSelectMode}
+                onClick={exitBulkMode}
                 className="shrink-0 p-0.5 text-[#858585] hover:text-white rounded transition-colors"
-                title="Exit select mode"
+                title="Cancel"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-medium text-[#f59e0b]">
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] tabular-nums text-[#858585]">
                 {selectedFileIds.size} / {selectableFileIds.length} selected
               </span>
               <button
@@ -526,7 +577,72 @@ export function Sidebar() {
                 disabled={selectedFileIds.size === 0}
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
-                Clear
+                Deselect
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedFileIds.size === 0) return;
+                  openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                  exitBulkMode();
+                }}
+                disabled={selectedFileIds.size === 0}
+                className="px-2 py-0.5 rounded border border-[#2eb886]/40 bg-[#1a3a2a] text-[10px] text-[#2eb886] hover:bg-[#224d36] transition-colors disabled:opacity-40 ml-auto"
+              >
+                Run{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isDeleteSelectMode && !isAnalyzing && (
+          <div className="mt-2 rounded-md border border-[#3b3d46] bg-[#1e1f24] px-3 py-2.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-[#ccc]">Remove selected drawings</p>
+                <p className="text-[10px] text-[#858585] mt-1 leading-snug">
+                  Click files below or use checkboxes, then remove them from the project.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exitBulkMode}
+                className="shrink-0 p-0.5 text-[#858585] hover:text-white rounded transition-colors"
+                title="Cancel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] tabular-nums text-[#858585]">
+                {selectedFileIds.size} / {selectableFileIds.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={selectAllFiles}
+                disabled={selectableFileIds.length === 0}
+                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedFileIds(new Set())}
+                disabled={selectedFileIds.size === 0}
+                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+              >
+                Deselect
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedFileIds.size === 0) return;
+                  setShowDeleteSelectedDialog(true);
+                }}
+                disabled={selectedFileIds.size === 0}
+                className="px-2 py-0.5 rounded border border-[#522b30] bg-[#3d2c2e] text-[10px] text-[#ff7b7b] hover:bg-[#4d3235] transition-colors disabled:opacity-40 ml-auto"
+              >
+                Remove{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}
               </button>
             </div>
           </div>
@@ -534,14 +650,17 @@ export function Sidebar() {
       </div>
 
       {/* Drawings Explorer */}
-      <div className="flex-1 overflow-y-auto flex flex-col pb-4 bg-[#1a1b20]">
+      <div className="flex-1 flex flex-col min-h-0 bg-[#1a1b20]">
+        <div className="flex-1 overflow-y-auto flex flex-col">
         <div className="sticky top-0 bg-[#1a1b20] z-10 border-b border-[#2b2d35]/60">
-          {isSelectMode && !isAnalyzing && (
-            <div className="px-3 py-1.5 bg-[#f59e0b]/10 border-b border-[#f59e0b]/20 flex items-center gap-2">
-              <ListChecks className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
-              <span className="text-[10px] text-[#f59e0b] font-medium">
-                Click a drawing to select · checkboxes on the left
-              </span>
+          {isRunSelectMode && !isAnalyzing && (
+            <div className="px-3 py-1.5 border-b border-[#2b2d35] text-[10px] text-[#858585]">
+              Click drawings to add them to this run
+            </div>
+          )}
+          {isDeleteSelectMode && !isAnalyzing && (
+            <div className="px-3 py-1.5 border-b border-[#2b2d35] text-[10px] text-[#858585]">
+              Click drawings to mark for removal
             </div>
           )}
           <div className="px-3 py-2 flex items-center justify-between gap-2 min-h-[32px]">
@@ -678,19 +797,21 @@ export function Sidebar() {
         ) : hasViewFilter && displayedFiles.length === 0 ? (
           renderFileList([], explorerSearch, 'No drawings match the current view')
         ) : (
-          <>
-            {renderFileList(displayedFiles, explorerSearch, 'No drawings found')}
-            <div className="px-4 py-2 text-[10px] text-[#858585] border-t border-[#2b2d35] mt-1">
-              {hasViewFilter
-                ? `Showing ${displayedFiles.length} of ${state.files.length} file(s)`
-                : `Total: ${state.files.length} file(s)`}
-            </div>
-          </>
+          renderFileList(displayedFiles, explorerSearch, 'No drawings found')
+        )}
+        </div>
+
+        {state.files.length > 0 && !state.isLoadingFiles && (
+          <div className="shrink-0 px-4 py-2 text-[10px] text-[#858585] border-t border-[#2b2d35] bg-[#1a1b20]">
+            {hasViewFilter
+              ? `Showing ${displayedFiles.length} of ${state.files.length} file(s)`
+              : `Total: ${state.files.length} file(s)`}
+          </div>
         )}
       </div>
 
       <ConfirmDialog
-        open={showClearDialog}
+        open={showClearAllDialog}
         title="Clear All Files"
         description={`Delete all ${state.files.length} file(s) from this project? All analysis data will be permanently removed.`}
         confirmLabel="Clear All"
@@ -700,15 +821,138 @@ export function Sidebar() {
         onConfirm={async () => {
           setClearLoading(true);
           setClearProgress(`Deleting ${state.files.length} file(s)...`);
-          await clearSession((current, total, filename) => {
-            setClearProgress(`Deleting "${filename}" (${current}/${total})`);
-          });
-          setClearLoading(false);
-          setClearProgress('');
-          setShowClearDialog(false);
+          try {
+            await clearSession((current, total, filename) => {
+              setClearProgress(`Deleting "${filename}" (${current}/${total})`);
+            });
+            setShowClearAllDialog(false);
+            exitBulkMode();
+          } catch (err) {
+            setClearProgress(err instanceof Error ? err.message : 'Delete failed');
+          } finally {
+            setClearLoading(false);
+          }
         }}
-        onCancel={() => setShowClearDialog(false)}
+        onCancel={() => setShowClearAllDialog(false)}
       />
+
+      <ConfirmDialog
+        open={showDeleteSelectedDialog}
+        title="Remove Selected Files"
+        description={`Delete ${selectedFileIds.size} selected file(s) from this project? Analysis data for these files will be permanently removed.`}
+        confirmLabel="Remove"
+        variant="danger"
+        loading={clearLoading}
+        progressText={clearProgress}
+        onConfirm={async () => {
+          const ids = Array.from(selectedFileIds);
+          setClearLoading(true);
+          setClearProgress(`Deleting ${ids.length} file(s)...`);
+          try {
+            await deleteFiles(ids, (current, total, filename) => {
+              setClearProgress(`Deleting "${filename}" (${current}/${total})`);
+            });
+            setShowDeleteSelectedDialog(false);
+            exitBulkMode();
+          } catch (err) {
+            setClearProgress(err instanceof Error ? err.message : 'Delete failed');
+          } finally {
+            setClearLoading(false);
+          }
+        }}
+        onCancel={() => setShowDeleteSelectedDialog(false)}
+      />
+
+      <ConfirmDialog
+        open={showRemoveOneDialog}
+        title="Remove File"
+        description={`Delete "${state.files.find((f) => f.id === removeOneFileId)?.name ?? 'this file'}" from the project? All analysis data will be permanently removed.`}
+        confirmLabel="Remove"
+        variant="danger"
+        loading={clearLoading}
+        progressText={clearProgress}
+        onConfirm={async () => {
+          if (!removeOneFileId) return;
+          setClearLoading(true);
+          setClearProgress('Deleting file...');
+          try {
+            await deleteFiles([removeOneFileId], (_c, _t, filename) => {
+              setClearProgress(`Deleting "${filename}"...`);
+            });
+            setShowRemoveOneDialog(false);
+            setRemoveOneFileId(null);
+          } catch (err) {
+            setClearProgress(err instanceof Error ? err.message : 'Delete failed');
+          } finally {
+            setClearLoading(false);
+          }
+        }}
+        onCancel={() => {
+          setShowRemoveOneDialog(false);
+          setRemoveOneFileId(null);
+        }}
+      />
+
+      {renameTarget && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !renameLoading && setRenameTarget(null)}>
+          <div
+            className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 pb-4">
+              <h3 className="text-lg font-semibold text-white mb-1">Rename file</h3>
+              <p className="text-sm text-[#858585] mb-4">Enter a new filename for this drawing.</p>
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => { setRenameValue(e.target.value); setRenameError(''); }}
+                autoFocus
+                disabled={renameLoading}
+                className="w-full bg-[#1e1e1e] border border-[#3c3c3c] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-[#10b981]/60 disabled:opacity-50"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && renameValue.trim()) {
+                    e.preventDefault();
+                    (document.getElementById('rename-file-submit') as HTMLButtonElement | null)?.click();
+                  }
+                }}
+              />
+              {renameError && <p className="text-xs text-[#ef4444] mt-2">{renameError}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#3c3c3c] bg-[#1e1e1e]">
+              <button
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                disabled={renameLoading}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                id="rename-file-submit"
+                type="button"
+                disabled={renameLoading || !renameValue.trim()}
+                onClick={async () => {
+                  if (!renameTarget) return;
+                  setRenameLoading(true);
+                  setRenameError('');
+                  try {
+                    await renameFile(renameTarget.id, renameValue.trim());
+                    setRenameTarget(null);
+                  } catch (err) {
+                    setRenameError(err instanceof Error ? err.message : 'Rename failed');
+                  } finally {
+                    setRenameLoading(false);
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-[#10b981] hover:bg-[#059669] text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {renameLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -731,6 +975,10 @@ export function FileItem({
   onArtifactsExpandedChange,
   nameHighlight = '',
   selectMode = false,
+  bulkMode = null,
+  canManage = false,
+  onRename,
+  onRemove,
   isSelected = false,
   onToggleSelect,
 }: {
@@ -752,10 +1000,16 @@ export function FileItem({
   onExpandedChange?: (expanded: boolean) => void;
   onArtifactsExpandedChange?: (expanded: boolean) => void;
   selectMode?: boolean;
+  bulkMode?: 'run' | 'delete' | null;
+  canManage?: boolean;
+  onRename?: (id: string, name: string) => void;
+  onRemove?: (id: string) => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
 }) {
   const { state } = useApp();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
   const [internalExpanded, setInternalExpanded] = React.useState(true);
   const [internalArtifactsExpanded, setInternalArtifactsExpanded] = React.useState(true);
   const expanded = controlledExpanded ?? internalExpanded;
@@ -792,6 +1046,30 @@ export function FileItem({
   const showSheets = expanded && hasSheets;
   const showArtifactsBlock = expanded && hasArtifacts;
   const selectDisabled = file.status === 'ANALYZING' || file.status === 'UPLOADING';
+  const isRunBulk = bulkMode === 'run';
+  const isDeleteBulk = bulkMode === 'delete';
+  const bulkSelectedClass = isSelected && isRunBulk
+    ? 'bg-[#2a2a1a] text-white border-l-2 border-[#f59e0b]'
+    : isSelected && isDeleteBulk
+      ? 'bg-[#3d2c2e] text-white border-l-2 border-[#ef4444]'
+      : null;
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
   const isAnalyzing = file.status === 'ANALYZING';
   const isUploading = file.status === 'UPLOADING';
   const runningRowClass = isAnalyzing
@@ -846,7 +1124,9 @@ export function FileItem({
             selectDisabled && 'opacity-25 cursor-not-allowed',
             !selectDisabled && 'cursor-pointer',
             isSelected
-              ? 'bg-[#f59e0b] border-[#f59e0b] text-[#1a1b20]'
+              ? bulkMode === 'delete'
+                ? 'bg-[#ef4444] border-[#ef4444] text-white'
+                : 'bg-[#f59e0b] border-[#f59e0b] text-[#1a1b20]'
               : 'border-[#666] bg-[#12141a] hover:border-[#f59e0b]',
           )}
         >
@@ -854,7 +1134,7 @@ export function FileItem({
         </button>
       )}
       {index != null && (
-        <span className="text-[9px] text-[#555] font-mono w-4 shrink-0 text-right">{index}</span>
+        <span className="text-[12px] font-bold text-[#a0a5b5] font-mono w-5 shrink-0 text-right tabular-nums">{index}</span>
       )}
       {hasChildren ? (
         <button
@@ -895,6 +1175,52 @@ export function FileItem({
         </span>
       )}
       <span className="shrink-0">{!hideBadge && getBadge()}</span>
+      {canManage && !selectMode && (
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            className="p-0.5 rounded text-[#666] hover:text-white hover:bg-[#333] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
+            aria-label={`Actions for ${file.name}`}
+          >
+            <EllipsisVertical className="w-3.5 h-3.5" />
+          </button>
+          {menuOpen && (
+            <div
+              className="absolute right-0 top-full mt-1 z-[120] min-w-[132px] py-1 bg-[#1e1f24] border border-[#3c3c3c] rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                disabled={selectDisabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onRename?.(file.id, file.name);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#ccc] hover:bg-[#262831] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Pencil className="w-3 h-3 shrink-0" /> Rename
+              </button>
+              <button
+                type="button"
+                disabled={selectDisabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onRemove?.(file.id);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#ef4444]/90 hover:bg-[#ef4444]/10 hover:text-[#ef4444] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-3 h-3 shrink-0" /> Remove
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -911,12 +1237,12 @@ export function FileItem({
         if (hasSheets) setExpanded(!expanded);
       }}
       className={cn(
-        'px-4 py-1.5 flex items-center justify-between transition-colors text-[13px] font-medium relative',
+        'px-4 py-1.5 flex items-center justify-between transition-colors text-[13px] font-medium relative group',
         selectMode && !selectDisabled && 'cursor-pointer',
         selectMode && selectDisabled && 'cursor-not-allowed opacity-50',
         !selectMode && 'cursor-pointer',
-        selectMode && isSelected
-          ? 'bg-[#2a2a1a] text-white border-l-2 border-[#f59e0b]'
+        bulkSelectedClass
+          ? bulkSelectedClass
           : runningRowClass
             ? runningRowClass
             : isActive && !hasSheets && !selectMode
@@ -1016,8 +1342,8 @@ export function FileItem({
             if (hasSheets) setExpanded(!expanded);
           }}
           className={cn(
-            'text-[13px] font-medium',
-            selectMode && isSelected && 'border-l-2 border-[#f59e0b] bg-[#2a2a1a]',
+            'text-[13px] font-medium group',
+            bulkSelectedClass,
             selectMode && selectDisabled && 'opacity-50',
             !selectMode && runningRowClass,
           )}

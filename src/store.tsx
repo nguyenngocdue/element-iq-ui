@@ -157,6 +157,8 @@ interface AppContextType {
   toggleValidation: () => void;
   setConfidenceThreshold: (val: number) => void;
   clearSession: (onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
+  deleteFiles: (ids: string[], onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
+  renameFile: (id: string, newName: string) => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string) => Promise<void>;
   analyzeAll: (orderedIds?: string[]) => Promise<void>;
@@ -1073,27 +1075,101 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
-    // No confirm here — ConfirmDialog in Sidebar handles confirmation
-
-    // Delete all files from backend
-    const filesToDelete = [...state.files];
+  const deleteFiles = useCallback(async (
+    ids: string[],
+    onProgress?: (current: number, total: number, filename: string) => void,
+  ) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const filesToDelete = state.files.filter((f) => idSet.has(f.id));
     const total = filesToDelete.length;
     const { authFetch } = await import('./lib/supabase');
-    
+
+    const deletedIds: string[] = [];
+    const failures: string[] = [];
+
     for (let i = 0; i < filesToDelete.length; i++) {
       const f = filesToDelete[i];
       onProgress?.(i + 1, total, f.name);
       try {
-        await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
-      } catch {
-        // Continue deleting others even if one fails
+        const res = await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const body = await res.json();
+            if (body.detail) {
+              message = typeof body.detail === 'string' ? body.detail : message;
+            }
+          } catch { /* ignore */ }
+          failures.push(`${f.name}: ${message}`);
+          continue;
+        }
+        deletedIds.push(f.id);
+      } catch (err) {
+        failures.push(`${f.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    disposeDocumentFilesInPlace(filesToDelete);
-    setState((prev) => ({ ...prev, files: [], activeFileId: null, openFiles: [], pinnedFiles: [], activeArtifact: null }));
+    if (deletedIds.length > 0) {
+      const removed = filesToDelete.filter((f) => deletedIds.includes(f.id));
+      disposeDocumentFilesInPlace(removed);
+      const removedSet = new Set(deletedIds);
+      setState((prev) => {
+        const files = prev.files.filter((f) => !removedSet.has(f.id));
+        const openFiles = prev.openFiles.filter((fid) => !removedSet.has(fid));
+        const pinnedFiles = prev.pinnedFiles.filter((fid) => !removedSet.has(fid));
+        let activeFileId = prev.activeFileId;
+        if (activeFileId && removedSet.has(activeFileId)) {
+          activeFileId = openFiles.length > 0 ? openFiles[openFiles.length - 1] : null;
+        }
+        const activeArtifact =
+          prev.activeArtifact?.sourceFileId && removedSet.has(prev.activeArtifact.sourceFileId)
+            ? null
+            : prev.activeArtifact;
+        return { ...prev, files, openFiles, pinnedFiles, activeFileId, activePage: 1, activeArtifact };
+      });
+    }
+
+    if (failures.length > 0) {
+      throw new Error(failures.join('\n'));
+    }
   }, [state.files]);
+
+  const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
+    await deleteFiles(state.files.map((f) => f.id), onProgress);
+  }, [state.files, deleteFiles]);
+
+  const renameFile = useCallback(async (id: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) throw new Error('Filename is required');
+
+    const { authFetch } = await import('./lib/supabase');
+    const res = await authFetch(`/api/v1/files/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ original_filename: trimmed }),
+    });
+    if (!res.ok) {
+      let message = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body.detail) message = typeof body.detail === 'string' ? body.detail : message;
+      } catch { /* ignore */ }
+      throw new Error(message);
+    }
+
+    setState((prev) => ({
+      ...prev,
+      files: prev.files.map((f) => {
+        if (f.id !== id) return f;
+        return {
+          ...f,
+          name: trimmed,
+          file: new File([], trimmed, { type: f.file.type || 'application/pdf' }),
+        };
+      }),
+    }));
+  }, []);
 
   const filesRef = React.useRef(state.files);
   filesRef.current = state.files;
@@ -1457,6 +1533,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleValidation,
         setConfidenceThreshold,
         clearSession,
+        deleteFiles,
+        renameFile,
         updateFileStatus,
         analyzeFile,
         analyzeAll,
