@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../store';
 import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
+import { ReportJsonPanel } from './ReportJsonPanel';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -475,10 +476,12 @@ function ArtifactViewer({ artifact, onClose, scale, toolMode, onScaleChange, onI
           <iframe src={`${content}#page=1&view=Fit`} className="w-full h-full border-0" style={{ minHeight: 'calc(100vh - 80px)' }} />
         </div>
       ) : artifact.type === 'REPORT_JSON' && content ? (
-        <div className="flex-1 overflow-auto p-4">
-          <pre className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg p-4 text-[11px] font-mono text-[#a0a5b5] overflow-auto max-h-[80vh] whitespace-pre-wrap">
-            {(() => { try { return JSON.stringify(JSON.parse(content), null, 2); } catch { return content; } })()}
-          </pre>
+        <div className="flex-1 overflow-hidden p-4">
+          <ReportJsonPanel
+            content={content}
+            fileName={artifact.name}
+            className="h-full"
+          />
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-[#858585] gap-2 px-6 text-center">

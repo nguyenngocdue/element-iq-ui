@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { Download, Share2, ChevronRight, Folder, FileText, CheckCircle, AlertTriangle, FileSpreadsheet, Plus, DownloadCloud, Expand, RefreshCw, Layers, Database, ShieldCheck, Box } from 'lucide-react';
+import { Download, Share2, ChevronRight, Plus, DownloadCloud, RefreshCw, Database, ShieldCheck, Box, AlertTriangle, CheckCircle, FileSpreadsheet } from 'lucide-react';
 import {
   averagePassRate,
   countFilesByBucket,
 } from '../lib/analysisStatus';
 import { cn } from '../lib/utils';
 import { useResizable } from '../hooks/useResizable';
+import { useReportJson } from '../hooks/use-report-json';
+import { ReportJsonPanel } from './ReportJsonPanel';
 
 import { FileItem } from './Sidebar';
 
@@ -17,7 +19,6 @@ export function AnalysisView() {
   const [exporting, setExporting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [copied, setCopied] = useState(false);
   const { width, isDragging, handleMouseDown } = useResizable({ initialWidth: 260, minWidth: 200, maxWidth: 600, direction: 'left' });
 
   const handleExport = () => {
@@ -36,34 +37,13 @@ export function AnalysisView() {
     setTimeout(() => setSyncing(false), 2000);
   };
 
-  const handleCopy = () => {
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  
-  // Safe JSON highlight formatting
-  const formattedJson = `[
-  {
-    <span class="text-[#82aaff]">"type"</span>: <span class="text-[#e06c75]">"StructuralColumn"</span>,
-    <span class="text-[#82aaff]">"id"</span>: <span class="text-[#e06c75]">"ext_9921_b"</span>,
-    <span class="text-[#82aaff]">"confidence"</span>: <span class="text-[#d19a66]">0.982</span>,
-    <span class="text-[#82aaff]">"coordinates"</span>: {
-      <span class="text-[#82aaff]">"x"</span>: <span class="text-[#d19a66]">142.55</span>,
-      <span class="text-[#82aaff]">"y"</span>: <span class="text-[#d19a66]">-34.12</span>,
-      <span class="text-[#82aaff]">"z"</span>: <span class="text-[#d19a66]">0.00</span>
-    },
-    <span class="text-[#82aaff]">"parameters"</span>: {
-      <span class="text-[#82aaff]">"material"</span>: <span class="text-[#e06c75]">"Concrete-Cast-in-Place"</span>,
-      <span class="text-[#82aaff]">"load_bearing"</span>: <span class="text-[#c678dd]">true</span>
-    }
-  },
-  {
-    <span class="text-[#82aaff]">"type"</span>: <span class="text-[#e06c75]">"LoadBearingWall"</span>,
-    <span class="text-[#82aaff]">"id"</span>: <span class="text-[#e06c75]">"ext_9922_c"</span>,
-    <span class="text-[#82aaff]">"confidence"</span>: <span class="text-[#d19a66]">0.991</span>,
-    <span class="text-[#82aaff]">"coordinates"</span>: { ... }
-  }
-]`;
+  const { content: reportContent, loading: reportLoading, error: reportError } = useReportJson(file);
+
+  const totalDetections = file?.detections.length ?? 0;
+  const passDetections = file?.detections.filter((d) => d.status === 'PASS').length ?? 0;
+  const failDetections = file?.detections.filter((d) => d.status === 'FAIL').length ?? 0;
+  const issueDetections = file?.detections.filter((d) => d.status === 'FAIL' || d.status === 'WARN') ?? [];
+  const validationRate = totalDetections ? Math.round((passDetections / totalDetections) * 100) : 0;
 
   return (
     <div className="flex-1 flex bg-[#1e1e1e] overflow-hidden text-[#cccccc] font-sans">
@@ -161,8 +141,8 @@ export function AnalysisView() {
               <span className="text-[10px] font-bold text-[#858585] uppercase tracking-wider">Extracted Entities</span>
               <Box className="w-4 h-4 text-[#858585]" />
             </div>
-            <span className="text-4xl font-light text-white mb-1">96</span>
-            <span className="text-[11px] text-[#2eb886] font-medium">+12 from previous version</span>
+            <span className="text-4xl font-light text-white mb-1">{totalDetections}</span>
+            <span className="text-[11px] text-[#858585] font-medium">From latest analysis</span>
           </div>
           
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl p-5 flex flex-col shadow-sm relative overflow-hidden">
@@ -171,8 +151,8 @@ export function AnalysisView() {
               <span className="text-[10px] font-bold text-[#858585] uppercase tracking-wider">Validation Rate</span>
               <CheckCircle className="w-4 h-4 text-[#2eb886]" />
             </div>
-            <span className="text-4xl font-light text-white mb-1">98%</span>
-            <span className="text-[11px] text-[#858585] font-medium">94 entities passed</span>
+            <span className="text-4xl font-light text-white mb-1">{validationRate}%</span>
+            <span className="text-[11px] text-[#858585] font-medium">{passDetections} entities passed</span>
           </div>
 
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl p-5 flex flex-col shadow-sm relative overflow-hidden">
@@ -181,8 +161,10 @@ export function AnalysisView() {
               <span className="text-[10px] font-bold text-[#858585] uppercase tracking-wider">Critical Anomalies</span>
               <AlertTriangle className="w-4 h-4 text-[#ef4444]" />
             </div>
-            <span className="text-4xl font-light text-white mb-1">2</span>
-            <span className="text-[11px] text-[#ef4444] font-medium">Needs immediate review</span>
+            <span className="text-4xl font-light text-white mb-1">{failDetections}</span>
+            <span className="text-[11px] text-[#ef4444] font-medium">
+              {failDetections > 0 ? 'Needs immediate review' : 'No critical issues'}
+            </span>
           </div>
 
           <div 
@@ -258,64 +240,50 @@ export function AnalysisView() {
                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
                    <AlertTriangle className="w-4 h-4 text-[#ef4444]" /> Detected Anomalies
                  </h3>
-                 <span className="bg-[#ef4444] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">2</span>
+                 <span className="bg-[#ef4444] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{issueDetections.length}</span>
               </div>
               <div className="p-2 flex flex-col gap-1 overflow-y-auto">
-                 <div className="p-3 hover:bg-[#2d2d2d] rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[#3c3c3c]">
+                {issueDetections.length === 0 ? (
+                  <div className="p-3 text-xs text-[#858585]">No anomalies detected.</div>
+                ) : issueDetections.map((d) => (
+                  <div key={d.id} className="p-3 hover:bg-[#2d2d2d] rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[#3c3c3c]">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-mono text-[#82aaff] font-bold">ext_9921_b</span>
-                      <span className="text-[10px] text-[#858585]">Collision</span>
+                      <span className="text-xs font-mono text-[#82aaff] font-bold">{d.id}</span>
+                      <span className="text-[10px] text-[#858585]">{d.status === 'FAIL' ? 'Validation Failed' : 'Warning'}</span>
                     </div>
-                    <p className="text-xs text-[#cccccc] leading-snug">Load bearing wall overlaps with structural column at spatial coord (142.55, -34.12).</p>
-                 </div>
-                 <div className="p-3 hover:bg-[#2d2d2d] rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[#3c3c3c]">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-mono text-[#82aaff] font-bold">ext_8810_a</span>
-                      <span className="text-[10px] text-[#858585]">Low Confidence</span>
-                    </div>
-                    <p className="text-xs text-[#cccccc] leading-snug">Confidence score (0.45) below threshold for Foundation material parameter parsing.</p>
-                 </div>
+                    <p className="text-xs text-[#cccccc] leading-snug">
+                      {d.reason || `${d.type} detected at ${(d.confidence * 100).toFixed(0)}% confidence.`}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Right Column: JSON Result (Takes 2 Col) */}
-          <div className="col-span-2 bg-[#252526] border border-[#3c3c3c] rounded-xl flex flex-col overflow-hidden shadow-sm">
-            <div className="p-3 border-b border-[#3c3c3c] flex items-center justify-between bg-[#1e1e1e]">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[#ef4444]/80"></div>
-                  <div className="w-3 h-3 rounded-full bg-[#d4b238]/80"></div>
-                  <div className="w-3 h-3 rounded-full bg-[#2eb886]/80"></div>
-                </div>
-                <div className="h-4 w-px bg-[#3c3c3c] mx-1"></div>
-                <span className="text-[#e5c07b] font-bold text-xs">{`{ }`}</span>
-                <span className="text-xs font-medium text-[#858585] font-mono tracking-wide">extracted_data.json</span>
+          {/* Right Column: Report JSON (Takes 2 Col) */}
+          <div className="col-span-2 flex flex-col min-h-[400px]">
+            {reportLoading ? (
+              <div className="flex-1 flex items-center justify-center bg-[#252526] border border-[#3c3c3c] rounded-xl">
+                <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
               </div>
-              <div className="flex items-center gap-3 text-[#858585]">
-                <button onClick={handleCopy} className={`transition-colors flex items-center gap-1 ${copied ? 'text-[#2eb886]' : 'hover:text-white'}`} title="Copy JSON">
-                  {copied ? <CheckCircle className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                </button>
-                <button className="hover:text-white transition-colors" title="Expand View"><Expand className="w-4 h-4" /></button>
+            ) : reportContent ? (
+              <ReportJsonPanel
+                content={reportContent}
+                fileName={file?.name}
+                fileId={file?.id}
+                className="flex-1 min-h-0"
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center bg-[#252526] border border-[#3c3c3c] rounded-xl text-[#858585] gap-2 px-6 text-center">
+                <span className="text-sm">Report JSON not available</span>
+                {reportError && (
+                  <span className="text-[11px] text-[#ef4444] font-mono">{reportError}</span>
+                )}
+                {!reportError && (
+                  <span className="text-[11px]">Run analysis to generate the report artifact.</span>
+                )}
               </div>
-            </div>
-            
-            <div className="bg-[#1e1e1e] border-b border-[#3c3c3c] p-3 text-[10px] text-[#858585] flex items-center gap-4 font-mono">
-               <div className="flex items-center gap-2"><span className="text-[#82aaff]">engine:</span> ElementIQ-v2.5</div>
-               <div className="flex items-center gap-2"><span className="text-[#82aaff]">document_id:</span> {file?.id || 'doc_883'}</div>
-               <div className="flex items-center gap-2"><span className="text-[#82aaff]">encoding:</span> UTF-8</div>
-            </div>
-
-            <div className="flex-1 p-5 overflow-auto relative bg-[#1e1e1e]">
-              <div className="absolute left-0 top-0 bottom-0 w-12 bg-[#1e1e1e] border-r border-[#3c3c3c] flex flex-col items-center py-5 text-[#555] font-mono text-[11px] select-none">
-                {Array.from({length: 22}).map((_, i) => <div key={i} className="h-6 flex items-center justify-center">{i + 1}</div>)}
-              </div>
-              <div className="pl-14">
-                <pre className="text-[13px] font-mono leading-6 text-[#b4c5ff] m-0">
-                  <code dangerouslySetInnerHTML={{ __html: formattedJson }} />
-                </pre>
-              </div>
-            </div>
+            )}
           </div>
 
         </div>
