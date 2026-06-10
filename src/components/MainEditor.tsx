@@ -6,7 +6,10 @@ import { ReportJsonPanel } from './ReportJsonPanel';
 import { ViewSplitOverlay } from './ViewSplitOverlay';
 import { useViewSplit } from '../hooks/use-view-split';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
+import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2 } from 'lucide-react';
+import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
+import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
@@ -35,7 +38,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
 
     addLog(`Initializing analysis for ${fileName}`, 'info', 100);
     addLog(`Found ${pages} pages.`, 'info', 500);
-    addLog(`Uploading to engine...`, 'debug', 1000);
+    addLog(`Sending to ${ELEMENTIQ_ENGINE}…`, 'debug', 1000);
 
     return () => { isMounted = false; };
   }, [fileName, pages]);
@@ -51,12 +54,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
     });
   }, [stage]);
 
-  const operationLabel =
-    progress < 20 ? 'File Upload' :
-    progress < 50 ? 'YOLO Detection' :
-    progress < 80 ? 'Text Parsing' :
-    progress < 95 ? 'Validation' :
-                    'Saving Artifacts';
+  const operationLabel = analysisOperationFromProgress(progress);
 
   const selectedComps = state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube'];
 
@@ -66,7 +64,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
          <div className="p-5 border-b border-[#3c3c3c] flex items-center justify-between bg-[#1e1e1e]">
            <div className="flex items-center gap-3">
              <div className="text-[#82aaff]"><ScanFace className="w-6 h-6" /></div>
-             <h3 className="text-white font-bold text-lg font-sans leading-tight">ElementIQ Analysis<br/><span className="text-[#82aaff] text-sm font-normal">YOLO Detection Engine</span></h3>
+             <h3 className="text-white font-bold text-lg font-sans leading-tight">ElementIQ Analysis<br/><span className="text-[#82aaff] text-sm font-normal">{ELEMENTIQ_ENGINE}</span></h3>
            </div>
            <div className="bg-[#1e1e1e] border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase text-right leading-none">IN<br/>PROGRESS</div>
          </div>
@@ -80,7 +78,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
              </div>
              <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded px-3 py-2">
                <div className="text-[#a0a5b5] text-[10px] font-bold tracking-widest uppercase mb-1">Engine</div>
-               <div className="text-white font-semibold text-xs truncate">element-iq-core</div>
+               <div className="text-white font-semibold text-xs truncate">{ELEMENTIQ_ENGINE}</div>
              </div>
            </div>
 
@@ -136,7 +134,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
                 </div>
              ))}
              {progress < 100 && (
-               <div className="text-[#a0a5b5] animate-pulse">&gt; {stage ?? 'Waiting for engine...'}_</div>
+               <div className="text-[#a0a5b5] animate-pulse">&gt; {stage ?? `Waiting for ${ELEMENTIQ_ENGINE}…`}_</div>
              )}
            </div>
          </div>
@@ -949,7 +947,9 @@ export function MainEditor() {
                   >
                     📄 Original PDF
                   </button>
-                  {file?.artifacts?.map(a => (
+                  {file?.artifacts?.map(a => {
+                    const { Icon, color } = artifactIconMeta(a.type);
+                    return (
                     <button
                       key={a.id}
                       onClick={async (e) => {
@@ -965,11 +965,13 @@ export function MainEditor() {
                           document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
                         }
                       }}
-                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white"
+                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white flex items-center gap-2"
                     >
-                      {a.type === 'ANNOTATED_PNG' ? '🖼️ Annotated PNG' : a.type === 'ANNOTATED_PDF' ? '📋 Annotated PDF' : '📊 JSON Report'}
+                      <Icon className={cn('w-3.5 h-3.5 shrink-0', color)} />
+                      <span>{artifactDisplayName(a.type)}</span>
                     </button>
-                  ))}
+                    );
+                  })}
                   {(!file?.artifacts || file.artifacts.length === 0) && (
                     <div className="px-3 py-1.5 text-[11px] text-[#858585]">No artifacts — run analysis first</div>
                   )}

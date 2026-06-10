@@ -1,5 +1,6 @@
 import React from 'react';
 import { AnalysisLogLine } from '../types';
+import { ELEMENTIQ_ENGINE } from './engineBranding';
 
 type HighlightSpan = { start: number; end: number; className: string };
 
@@ -23,9 +24,10 @@ const HIGHLIGHT_RULES: { pattern: RegExp; className: string }[] = [
   { pattern: /\bQueue started\b|\bQueue finished\b|\bQueue stopped\b|\bStop requested\b/g, className: HL.keyword },
   {
     pattern:
-      /Connecting to backend…|Downloading PDF from server…|Job queued — polling status…|Uploading PDF\.{3}|Running YOLO detection\.{3}|Parsing text notes\.{3}|Validating results\.{3}|Saving artifacts\.{3}/g,
+      /Connecting to backend…|Downloading PDF from server…|Job queued — polling status…|ElementIQ Engine — [^(\n]+(?:…|\.\.\.)?/g,
     className: HL.stage,
   },
+  { pattern: new RegExp(ELEMENTIQ_ENGINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), className: HL.keyword },
   { pattern: /\[[\d]+\/[\d]+\]/g, className: HL.number },
   { pattern: /\(\d+%\)/g, className: HL.number },
   { pattern: /\bconf \d+%/g, className: HL.number },

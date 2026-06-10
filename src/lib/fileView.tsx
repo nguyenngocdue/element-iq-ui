@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react';
+import { FileJson, FileText, Image } from 'lucide-react';
 import { DocumentFile } from '../types';
 import { filterFilesByQuery } from './fileSearch';
 import { fileMatchesBucket } from './analysisStatus';
@@ -74,8 +76,26 @@ export function formatFileCreatedAt(file: DocumentFile): string {
 export function artifactDisplayName(type: string): string {
   if (type === 'ANNOTATED_PNG') return 'Annotated PNG';
   if (type === 'ANNOTATED_PDF') return 'Annotated PDF';
-  if (type === 'REPORT_JSON') return 'Report JSON';
+  if (type === 'REPORT_JSON') return 'JSON Report';
   return type;
+}
+
+export type ArtifactIconMeta = {
+  Icon: LucideIcon;
+  color: string;
+};
+
+/** Shared artifact icon colors — Explorer, ValidationPanel, MainEditor */
+export const ARTIFACT_ICON_COLORS = {
+  png: 'text-[#10b981]',
+  pdf: 'text-[#3b82f6]',
+  json: 'text-[#f59e0b]',
+} as const;
+
+export function artifactIconMeta(type: string): ArtifactIconMeta {
+  if (type === 'ANNOTATED_PNG') return { Icon: Image, color: ARTIFACT_ICON_COLORS.png };
+  if (type === 'ANNOTATED_PDF') return { Icon: FileText, color: ARTIFACT_ICON_COLORS.pdf };
+  return { Icon: FileJson, color: ARTIFACT_ICON_COLORS.json };
 }
 
 /** Drop artifacts whose stored name/id does not belong to the given drawing filename. */

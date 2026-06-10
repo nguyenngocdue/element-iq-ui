@@ -1,10 +1,10 @@
 import React from 'react';
-import { BarChart2, FileText, Image } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
   artifactDisplayName,
   formatFileSizeBytes,
   formatIsoDateTime,
+  artifactIconMeta,
 } from '../lib/fileView';
 import {
   ExplorerTooltipLocation,
@@ -13,12 +13,6 @@ import {
 } from '../hooks/useExplorerHoverTooltip';
 import { FileArtifact } from '../types';
 import { TreeRow } from './TreeRow';
-
-function artifactIcon(type: string) {
-  if (type === 'ANNOTATED_PNG') return { Icon: Image, color: 'text-[#10b981]' };
-  if (type === 'ANNOTATED_PDF') return { Icon: FileText, color: 'text-[#3b82f6]' };
-  return { Icon: BarChart2, color: 'text-[#f59e0b]' };
-}
 
 function ArtifactTooltipContent({
   artifact,
@@ -73,7 +67,7 @@ export function ExplorerArtifactRow({
 }) {
   const { anchorRef, hoverProps, renderTooltip } = useExplorerHoverTooltip();
   const displayName = artifactDisplayName(artifact.type);
-  const { Icon, color } = artifactIcon(artifact.type);
+  const { Icon, color } = artifactIconMeta(artifact.type);
   const tooltip = renderTooltip(
     <ArtifactTooltipContent artifact={artifact} sourceFileName={sourceFileName} />,
   );

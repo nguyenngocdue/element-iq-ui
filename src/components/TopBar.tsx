@@ -3,6 +3,7 @@ import { Check, HelpCircle, LogOut } from 'lucide-react';
 import { useApp } from '../store';
 import { AboutModal, ReportIssueModal } from './Modals';
 import { useAuth } from '../lib/auth-context';
+import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 
 export function TopBar() {
   const { state, clearSession, setActiveSidebarTab, setCurrentView } = useApp();
@@ -138,7 +139,7 @@ export function TopBar() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#2d2d2d] rounded text-[10px] text-white">
             <div className={`w-2 h-2 rounded-full ${state.isEngineLive ? 'bg-green-500 animate-pulse' : 'bg-[#858585]'}`}></div>
-            <span className="uppercase">{state.isEngineLive ? 'ENGINE: GPU LIVE' : 'ENGINE: OFFLINE'}</span>
+            <span className="uppercase">{state.isEngineLive ? `${ELEMENTIQ_ENGINE}: LIVE` : `${ELEMENTIQ_ENGINE}: OFFLINE`}</span>
           </div>
 
           {/* User avatar + dropdown */}

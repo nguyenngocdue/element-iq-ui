@@ -1,4 +1,4 @@
-import type { DocumentFile } from '../types';
+import type { DocumentFile, ValidationAnnotation } from '../types';
 
 const OVERALL_PRIORITY: Record<string, number> = {
   FAIL: 0,
@@ -151,4 +151,57 @@ export function statusBadgeClass(status: DocumentFile['status']): string {
     default:
       return 'text-[#858585] bg-[#858585]/10 border-[#858585]/30';
   }
+}
+
+/** Validation report statuses shown in Active Annotations (matches backend stamp). */
+export const ACTIVE_ANNOTATION_STATUSES = [
+  'PASS',
+  'FAIL',
+  'MISSING-TAG',
+  'TAG-OCR-SUSPECT',
+  'VISION-GAP',
+  'REINF-COUNT',
+  'VIEW-AMBIGUOUS',
+] as const;
+
+export type ActiveAnnotationStatus = (typeof ACTIVE_ANNOTATION_STATUSES)[number];
+
+export const ACTIVE_ANNOTATION_CHIP: Record<
+  ActiveAnnotationStatus,
+  { label: string; chipClass: string }
+> = {
+  PASS: { label: 'PASS', chipClass: 'bg-[#22c55e]/20 text-[#22c55e]' },
+  FAIL: { label: 'FAIL', chipClass: 'bg-[#ef4444]/20 text-[#ef4444]' },
+  'MISSING-TAG': { label: 'NO-TAG', chipClass: 'bg-[#f97316]/20 text-[#f97316]' },
+  'TAG-OCR-SUSPECT': { label: 'Review', chipClass: 'bg-[#eab308]/20 text-[#eab308]' },
+  'VISION-GAP': { label: 'GAP', chipClass: 'bg-[#ef4444]/20 text-[#f87171]' },
+  'REINF-COUNT': { label: 'REINF', chipClass: 'bg-[#38bdf8]/20 text-[#38bdf8]' },
+  'VIEW-AMBIGUOUS': { label: 'AMBIG', chipClass: 'bg-[#a855f7]/20 text-[#c084fc]' },
+};
+
+export function countValidationAnnotationsByStatus(
+  annotations: ValidationAnnotation[] | undefined,
+): Partial<Record<ActiveAnnotationStatus, number>> {
+  const counts: Partial<Record<ActiveAnnotationStatus, number>> = {};
+  for (const ann of annotations ?? []) {
+    const key = ann.status as ActiveAnnotationStatus;
+    if (ACTIVE_ANNOTATION_STATUSES.includes(key)) {
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+export function validationAnnotationsNeedingReview(
+  annotations: ValidationAnnotation[] | undefined,
+): ValidationAnnotation[] {
+  return (annotations ?? []).filter(
+    (a) =>
+      a.status !== 'PASS'
+      && a.status !== 'REINF-COUNT',
+  );
+}
+
+export function activeAnnotationSummaryLabel(status: ActiveAnnotationStatus): string {
+  return ACTIVE_ANNOTATION_CHIP[status]?.label ?? status;
 }

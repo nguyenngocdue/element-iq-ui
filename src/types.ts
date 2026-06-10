@@ -25,6 +25,24 @@ export interface FileArtifact {
   createdAt?: string;
 }
 
+export interface ValidationAnnotation {
+  id: string;
+  status:
+    | 'PASS'
+    | 'FAIL'
+    | 'MISSING-TAG'
+    | 'TAG-OCR-SUSPECT'
+    | 'VISION-GAP'
+    | 'REINF-COUNT'
+    | 'VIEW-AMBIGUOUS';
+  view?: string;
+  reason?: string;
+  componentId?: string;
+  noteRawText?: string;
+  expectedQuantity?: number | null;
+  detectedQuantity?: number;
+}
+
 export interface DocumentFile {
   id: string;
   name: string;
@@ -34,13 +52,15 @@ export interface DocumentFile {
   pages: number;
   passRate?: number;
   detections: Detection[];
+  validationAnnotations?: ValidationAnnotation[];
+  tubeCount?: number;
   events: AppEvent[];
   analyzedComponents?: string[];
   viewSplit?: ParsedViewSplit | null;
   artifacts?: FileArtifact[];
   // Real progress from backend
   analysisProgress?: number;   // 0–100
-  analysisStage?: string;      // e.g. "Running YOLO detection..."
+  analysisStage?: string;      // e.g. "ElementIQ Engine — scanning elements…"
   // Server metadata
   uploadedAt?: string;         // ISO timestamp from server
   localPath?: string;          // server storage path

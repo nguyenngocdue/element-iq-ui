@@ -8,6 +8,12 @@ import {
   resolveOverallRaw,
   resolvePassRate,
 } from './lib/analysisStatus';
+import {
+  countDetectedTubes,
+  mapObjectDetections,
+  mapValidationAnnotations,
+} from './lib/mapAnalysis';
+import { analysisStageFromProgress, ELEMENTIQ_ENGINE } from './lib/engineBranding';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -32,12 +38,21 @@ function buildModelLogLines(
   });
 }
 
-const DPI_RATIO = 72 / 300;
+function mapAnalysisFields(analysis: any) {
+  const components = analysis?.component_results ?? [];
+  return {
+    detections: mapObjectDetections(components),
+    validationAnnotations: mapValidationAnnotations(components),
+    tubeCount: countDetectedTubes(components),
+  };
+}
 
 function mapApiProjectFiles(files: any[]): DocumentFile[] {
   return files.map((f: any) => {
     let status: DocumentFile['status'] = 'PENDING';
     let detections: DocumentFile['detections'] = [];
+    let validationAnnotations: DocumentFile['validationAnnotations'];
+    let tubeCount: number | undefined;
     let passRate: number | undefined;
     let analyzedComponents: string[] | undefined;
 
@@ -47,34 +62,10 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       status = mapOverallToFileStatus(overallRaw, hasAnalysis);
       passRate = resolvePassRate(f.analysis, overallRaw.toUpperCase());
       analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
-      detections = (f.analysis.component_results ?? []).flatMap((comp: any) =>
-        (comp.objects ?? []).map((obj: any, i: number) => {
-          const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
-          const report = (comp.report ?? []).find((r: any) => {
-            const ids = r.matched_cluster?.object_ids ?? [];
-            return ids.includes(i + 1);
-          });
-          const detStatus =
-            report?.status === 'FAIL'
-              ? 'FAIL'
-              : report?.status === 'MISSING-TAG' || report?.status === 'TAG-OCR-SUSPECT'
-                ? 'WARN'
-                : 'PASS';
-          return {
-            id: `${comp.component_id}-${i}`,
-            page: 1,
-            x: x1 * DPI_RATIO,
-            y: y1 * DPI_RATIO,
-            width: (x2 - x1) * DPI_RATIO,
-            height: (y2 - y1) * DPI_RATIO,
-            type: obj.face ?? 'UNKNOWN',
-            confidence: obj.confidence ?? 0,
-            status: detStatus,
-            reason: report?.reason,
-            componentId: comp.component_id,
-          };
-        }),
-      );
+      const mapped = mapAnalysisFields(f.analysis);
+      detections = mapped.detections;
+      validationAnnotations = mapped.validationAnnotations;
+      tubeCount = mapped.tubeCount;
     }
 
     return {
@@ -84,6 +75,8 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       status,
       pages: f.page_count || 1,
       detections,
+      validationAnnotations,
+      tubeCount,
       passRate,
       analyzedComponents,
       viewSplit: parseViewSplitFromAnalysis(f.analysis),
@@ -863,7 +856,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) throw new Error(await parseApiError(res));
         ({ status_url } = await res.json());
       }
-      updateFileStatus(id, { analysisProgress: 20, analysisStage: 'Running YOLO detection...' });
+      updateFileStatus(id, { analysisProgress: 20, analysisStage: analysisStageFromProgress(20) });
       appendAnalysisLog({ level: 'dim', message: 'Job queued — polling status…', fileId: id });
 
       let lastLoggedStage = '';
@@ -875,12 +868,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const job = await jobRes.json();
 
         if (job.progress) {
-          const stage =
-            job.progress < 25  ? 'Uploading PDF...' :
-            job.progress < 45  ? 'Running YOLO detection...' :
-            job.progress < 70  ? 'Reading tags (OCR)...' :
-            job.progress < 85  ? 'Validating results...' :
-                                 'Saving artifacts...';
+          const stage = analysisStageFromProgress(job.progress ?? 0);
           updateFileStatus(id, { analysisProgress: job.progress, analysisStage: stage });
           if (stage !== lastLoggedStage) {
             lastLoggedStage = stage;
@@ -908,48 +896,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // console.group('[ElementIQ] Analysis Result');
       // console.log('status:', result.status);
       // console.log('result.result:', result.result);
+      // Map backend result → frontend detections + validation annotations
       const components = result.result?.component_results ?? result.result?.components ?? [];
-      // console.log('components:', components.length, 'component(s)');
-      components.forEach((comp: any) => {
-        console.log(`  [${comp.component_id}] objects:`, comp.objects?.length ?? 0, comp.objects?.[0]);
-        console.log(`  [${comp.component_id}] summary:`, comp.summary);
-        console.log(`  [${comp.component_id}] report:`, comp.report?.length ?? 0, 'entries');
-      });
-      console.groupEnd();
-
-      // Map backend result → frontend detections
-      // Backend bbox is in pixels at 300 DPI; PDF.js renders at 72 DPI (72/300 = 0.24 ratio)
-      const DPI_RATIO = 72 / 300;
-
-      const detections = components.flatMap((comp: any) =>
-        (comp.objects ?? []).map((obj: any, i: number) => {
-          const [x1, y1, x2, y2] = obj.bbox ?? [0, 0, 0, 0];
-          // Match object to report entry by cluster proximity
-          const report = (comp.report ?? []).find((r: any) => {
-            const ids = r.matched_cluster?.object_ids ?? [];
-            return ids.includes(i + 1);  // object id is 1-indexed
-          });
-          const detStatus =
-            report?.status === 'FAIL'
-              ? 'FAIL'
-              : report?.status === 'MISSING-TAG' || report?.status === 'TAG-OCR-SUSPECT'
-                ? 'WARN'
-                : 'PASS';
-          return {
-            id: `${comp.component_id}-${i}`,
-            page: 1,
-            x: x1 * DPI_RATIO,
-            y: y1 * DPI_RATIO,
-            width:  (x2 - x1) * DPI_RATIO,
-            height: (y2 - y1) * DPI_RATIO,
-            type: obj.face ?? 'UNKNOWN',
-            confidence: obj.confidence ?? 0,
-            status: detStatus,
-            reason: report?.reason,
-            componentId: comp.component_id,
-          };
-        })
-      );
+      const mapped = mapAnalysisFields({ component_results: components });
+      const detections = mapped.detections;
+      const validationAnnotations = mapped.validationAnnotations;
+      const tubeCount = mapped.tubeCount;
 
       const passRate = resolvePassRate(result.result, resolveOverallRaw(result.result).toUpperCase()) ?? 0;
       const overallRaw = resolveOverallRaw(result.result);
@@ -997,6 +949,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateFileStatus(id, {
         status: fileStatus,
         detections,
+        validationAnnotations,
+        tubeCount,
         artifacts,
         viewSplit,
         analysisProgress: 100,

@@ -35,7 +35,7 @@ export function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white">Element IQ</h1>
-          <p className="text-[#858585] mt-2 text-sm">Vision QA for Engineering Drawings</p>
+          <p className="text-[#858585] mt-2 text-sm">Drawing quality assurance for engineering PDFs</p>
         </div>
 
         {/* Card */}

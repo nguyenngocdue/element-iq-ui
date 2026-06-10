@@ -2,6 +2,7 @@ import React from 'react';
 import { JsonViewWithControls } from './ui/json-view-with-controls';
 import { parseJsonContent } from './ui/json-view';
 import { ViewSplitSummary } from './ViewSplitSummary';
+import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 
 interface ReportJsonPanelProps {
   content: string;
@@ -31,7 +32,7 @@ export function ReportJsonPanel({ content, fileName, fileId, className = '' }: R
 
       <div className="bg-[#1e1e1e] border-b border-[#3c3c3c] p-3 text-[10px] text-[#858585] flex items-center gap-4 font-mono shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-[#82aaff]">engine:</span> ElementIQ
+          <span className="text-[#82aaff]">engine:</span> {ELEMENTIQ_ENGINE}
         </div>
         {fileId ? (
           <div className="flex items-center gap-2">

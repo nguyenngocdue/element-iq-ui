@@ -1,5 +1,6 @@
 import React from "react";
 import { X, Bug } from "lucide-react";
+import { ELEMENTIQ_ENGINE } from "../lib/engineBranding";
 
 export function AboutModal({ onClose }: { onClose: () => void }) {
   return (
@@ -16,7 +17,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
             <strong className="text-white text-base">Element IQ</strong> is a comprehensive platform designed to allow engineers and planners to seamlessly analyze, audit, and extract insights from engineering drawings.
           </p>
           <p>
-            By integrating advanced OCR and spatial analysis, Element IQ provides a holistic environment for rule-based drawing inspection, code compliance checking, and rapid error detection on PDF blueprints.
+            Powered by <strong className="text-white">{ELEMENTIQ_ENGINE}</strong>, Element IQ provides a holistic environment for rule-based drawing inspection, code compliance checking, and rapid error detection on PDF blueprints.
           </p>
           <div className="pt-4 mt-4 border-t border-[#3c3c3c]">
             <p>Element IQ version: 0.0.0</p>
