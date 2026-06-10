@@ -359,7 +359,11 @@ export function Sidebar() {
     );
   }
 
-  const toolbarSegBtn = 'flex flex-1 flex-col items-center justify-center gap-0.5 min-w-0 py-2 px-1 text-[10px] leading-tight text-center transition-colors';
+  const toolbarSegBtn = 'flex flex-1 flex-col items-center justify-center gap-1 min-w-0 py-2.5 px-1 text-[10px] font-medium leading-none text-center whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+  const toolbarRunPrimary = 'bg-[#172821] text-[#2eb886] hover:bg-[#1f3630] shadow-[inset_0_0_0_1px_rgba(46,184,134,0.35)]';
+  const toolbarRemovePrimary = 'bg-[#2a1818] text-[#ef4444] hover:bg-[#361f1f] shadow-[inset_0_0_0_1px_rgba(239,68,68,0.35)]';
+  const toolbarSecondary = 'bg-[#262831] text-[#ccc] hover:bg-[#31333d] hover:text-white';
+  const toolbarSecondaryActive = 'bg-[#31333d] text-white';
 
   const passList = filterFilesByBucket(state.files, 'pass');
   const failList = filterFilesByBucket(state.files, 'fail');
@@ -411,17 +415,17 @@ export function Sidebar() {
           <span className="text-[#2eb886] font-medium">{displayPassRate}% pass</span>
         </div>
         
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
           {isProjectOwner && (
             <button
               onClick={() => openConfigModal('import')}
               title="Import drawings"
               className={cn(
-                'flex w-full flex-col items-center justify-center gap-1 rounded-md border border-[#3b3d46] bg-[#262831] py-2 text-[10px] leading-tight text-[#ccc] transition-colors hover:bg-[#31333d] hover:text-white',
+                'flex w-full items-center justify-center gap-2 rounded-md border border-[#3b3d46] bg-[#262831] py-2 text-[11px] font-medium text-[#ccc] transition-colors hover:bg-[#31333d] hover:text-white',
                 compactToolbar ? 'px-2' : 'px-3',
               )}
             >
-              <CloudUpload className="w-3.5 h-3.5 shrink-0 text-[#858585]" />
+              <CloudUpload className="w-4 h-4 shrink-0 text-[#858585]" />
               {!compactToolbar && 'Import'}
             </button>
           )}
@@ -431,110 +435,123 @@ export function Sidebar() {
               View only — you cannot run analysis or remove files on this project.
             </p>
           ) : (
-            <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24]">
+            <div className={cn('flex gap-2', compactToolbar && 'gap-1.5')}>
               {canRun && (
-                <div className="flex min-w-0 flex-1 divide-x divide-[#3b3d46]">
-                  {isAnalyzing ? (
-                    <button
-                      onClick={stopAnalysis}
-                      title="Stop after current file finishes"
-                      className={cn(toolbarSegBtn, 'text-[#ef4444] hover:bg-[#262831]')}
-                    >
-                      <X className="w-3.5 h-3.5 shrink-0" />
-                      {!compactToolbar && 'Stop'}
-                    </button>
-                  ) : isRunSelectMode ? (
-                    <button
-                      onClick={() => {
-                        if (selectedFileIds.size === 0) return;
-                        openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
-                        exitBulkMode();
-                      }}
-                      disabled={selectedFileIds.size === 0}
-                      title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected`}
-                      className={cn(toolbarSegBtn, 'text-[#2eb886] hover:bg-[#262831] disabled:opacity-40 disabled:cursor-not-allowed')}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                      {!compactToolbar && <>Run{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}</>}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const ids = getRunnableIdsInSortOrder();
-                        if (ids.length === 0) return;
-                        openConfigModal('reanalyze', undefined, ids);
-                      }}
-                      disabled={state.files.length === 0 || isDeleteSelectMode}
-                      title="Run analysis on all drawings"
-                      className={cn(toolbarSegBtn, 'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#2eb886] disabled:opacity-40 disabled:cursor-not-allowed')}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                      {!compactToolbar && 'Run all'}
-                    </button>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  {!compactToolbar && (
+                    <span className="px-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#2eb886]">
+                      Run
+                    </span>
                   )}
-                  <button
-                    onClick={() => {
-                      if (isRunSelectMode) exitBulkMode();
-                      else {
-                        setBulkMode('run');
-                        setSelectedFileIds(new Set());
-                      }
-                    }}
-                    disabled={state.files.length === 0 || isAnalyzing || isDeleteSelectMode}
-                    title={isRunSelectMode ? 'Cancel picking files' : 'Pick specific drawings to run'}
-                    className={cn(
-                      toolbarSegBtn,
-                      'disabled:opacity-40 disabled:cursor-not-allowed',
-                      isRunSelectMode
-                        ? 'bg-[#262831] text-white'
-                        : 'text-[#a0a5b5] hover:bg-[#262831] hover:text-white',
+                  <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24] divide-x divide-[#3b3d46]">
+                    {isAnalyzing ? (
+                      <>
+                        <button
+                          onClick={stopAnalysis}
+                          title="Stop after current file finishes"
+                          className={cn(toolbarSegBtn, toolbarRemovePrimary)}
+                        >
+                          <X className="w-4 h-4 shrink-0" />
+                          {!compactToolbar && 'Stop'}
+                        </button>
+                        <button
+                          disabled
+                          className={cn(toolbarSegBtn, toolbarSecondary, 'opacity-40 cursor-not-allowed')}
+                          aria-hidden
+                        >
+                          <ListChecks className="w-4 h-4 shrink-0" />
+                          {!compactToolbar && 'Select'}
+                        </button>
+                      </>
+                    ) : isRunSelectMode ? (
+                      <button
+                        onClick={() => {
+                          if (selectedFileIds.size === 0) return;
+                          openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                          exitBulkMode();
+                        }}
+                        disabled={selectedFileIds.size === 0}
+                        title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected`}
+                        className={cn(toolbarSegBtn, toolbarRunPrimary)}
+                      >
+                        <RefreshCw className="w-4 h-4 shrink-0" />
+                        {!compactToolbar && (
+                          selectedFileIds.size > 0 ? `Run (${selectedFileIds.size})` : 'Run'
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const ids = getRunnableIdsInSortOrder();
+                          if (ids.length === 0) return;
+                          openConfigModal('reanalyze', undefined, ids);
+                        }}
+                        disabled={state.files.length === 0 || isDeleteSelectMode}
+                        title="Run analysis on all drawings"
+                        className={cn(toolbarSegBtn, toolbarRunPrimary)}
+                      >
+                        <RefreshCw className="w-4 h-4 shrink-0" />
+                        {!compactToolbar && 'Run All'}
+                      </button>
                     )}
-                  >
-                    <ListChecks className="w-3.5 h-3.5 shrink-0" />
-                    {!compactToolbar && (isRunSelectMode ? 'Done' : 'Run selected…')}
-                  </button>
+                    <button
+                      onClick={() => {
+                        if (isRunSelectMode) exitBulkMode();
+                        else {
+                          setBulkMode('run');
+                          setSelectedFileIds(new Set());
+                        }
+                      }}
+                      disabled={state.files.length === 0 || isAnalyzing || isDeleteSelectMode}
+                      title={isRunSelectMode ? 'Cancel picking files' : 'Pick specific drawings to run'}
+                      className={cn(
+                        toolbarSegBtn,
+                        isRunSelectMode ? toolbarSecondaryActive : toolbarSecondary,
+                      )}
+                    >
+                      <ListChecks className="w-4 h-4 shrink-0" />
+                      {!compactToolbar && (isRunSelectMode ? 'Done' : 'Select')}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {canRun && isProjectOwner && (
-                <div className="w-px shrink-0 bg-[#3b3d46]" aria-hidden />
-              )}
-
               {isProjectOwner && (
-                <div className="flex min-w-0 flex-1 divide-x divide-[#3b3d46]">
-                  <button
-                    onClick={() => {
-                      if (isDeleteSelectMode) exitBulkMode();
-                      else {
-                        setBulkMode('delete');
-                        setSelectedFileIds(new Set());
-                      }
-                    }}
-                    disabled={state.files.length === 0 || isAnalyzing || isRunSelectMode}
-                    title={isDeleteSelectMode ? 'Cancel picking files' : 'Pick specific drawings to remove'}
-                    className={cn(
-                      toolbarSegBtn,
-                      'disabled:opacity-40 disabled:cursor-not-allowed',
-                      isDeleteSelectMode
-                        ? 'bg-[#262831] text-white'
-                        : 'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#ff7b7b]',
-                    )}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                    {!compactToolbar && (isDeleteSelectMode ? 'Done' : 'Remove selected…')}
-                  </button>
-                  <button
-                    onClick={() => setShowClearAllDialog(true)}
-                    disabled={state.files.length === 0 || isAnalyzing}
-                    title="Remove every file in this project"
-                    className={cn(
-                      toolbarSegBtn,
-                      'text-[#a0a5b5] hover:bg-[#262831] hover:text-[#ff7b7b] disabled:opacity-40 disabled:cursor-not-allowed',
-                    )}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                    {!compactToolbar ? 'Clear all' : <span className="font-medium">All</span>}
-                  </button>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  {!compactToolbar && (
+                    <span className="px-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#ef4444]">
+                      Remove
+                    </span>
+                  )}
+                  <div className="flex overflow-hidden rounded-md border border-[#3b3d46] bg-[#1e1f24] divide-x divide-[#3b3d46]">
+                    <button
+                      onClick={() => {
+                        if (isDeleteSelectMode) exitBulkMode();
+                        else {
+                          setBulkMode('delete');
+                          setSelectedFileIds(new Set());
+                        }
+                      }}
+                      disabled={state.files.length === 0 || isAnalyzing || isRunSelectMode}
+                      title={isDeleteSelectMode ? 'Cancel picking files' : 'Pick specific drawings to remove'}
+                      className={cn(
+                        toolbarSegBtn,
+                        isDeleteSelectMode ? toolbarSecondaryActive : toolbarRemovePrimary,
+                      )}
+                    >
+                      <Trash2 className="w-4 h-4 shrink-0" />
+                      {!compactToolbar && (isDeleteSelectMode ? 'Done' : 'Clear')}
+                    </button>
+                    <button
+                      onClick={() => setShowClearAllDialog(true)}
+                      disabled={state.files.length === 0 || isAnalyzing || isDeleteSelectMode}
+                      title="Remove every file in this project"
+                      className={cn(toolbarSegBtn, toolbarSecondary)}
+                    >
+                      <Trash2 className="w-4 h-4 shrink-0 opacity-80" />
+                      {!compactToolbar && 'Clear All'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
