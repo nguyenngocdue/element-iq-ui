@@ -19,7 +19,8 @@ import {
   writeExplorerViewPrefs,
 } from '../lib/fileView';
 import { DocumentFile } from '../types';
-import { statusBadgeClass, statusBadgeLabel, filterFilesByBucket, averagePassRate } from '../lib/analysisStatus';
+import { statusBadgeClass, filterFilesByBucket, averagePassRate } from '../lib/analysisStatus';
+import { StatusLabel } from './StatusLabel';
 import { useResizable } from '../hooks/useResizable';
 import {
   ExplorerTooltipLocation,
@@ -1048,11 +1049,10 @@ export function FileItem({
     if (file.status === 'ANALYZING') {
       return <RefreshCw className="w-3.5 h-3.5 text-[#10b981] animate-spin" />;
     }
-    const label = statusBadgeLabel(file.status);
-    const cls = statusBadgeClass(file.status);
+    const cls = statusBadgeClass(file.status, file.overallStatus);
     return (
       <span className={`font-bold text-[9px] px-1.5 py-0.5 rounded border tracking-wider ${cls}`}>
-        {label}
+        <StatusLabel status={file.status} overallStatus={file.overallStatus} />
       </span>
     );
   };
@@ -1113,7 +1113,10 @@ export function FileItem({
       <ExplorerTooltipRow label="File" value={file.name} valueClassName="font-medium" />
       <ExplorerTooltipRow label="Size" value={formatFileSizeBytes(getFileSizeBytes(file))} />
       <ExplorerTooltipRow label="Pages" value={file.pages} />
-      <ExplorerTooltipRow label="Status" value={file.status} valueClassName="font-bold" />
+      <ExplorerTooltipRow
+        label="Status"
+        value={<StatusLabel status={file.status} overallStatus={file.overallStatus} className="font-bold" />}
+      />
       <ExplorerTooltipRow
         label="Uploaded"
         value={file.uploadedAt ? new Date(file.uploadedAt).toLocaleString() : '—'}

@@ -4,6 +4,7 @@ import {
   validationPanelAccentClass,
   validationAnnotationsNeedingReview,
 } from '../lib/analysisStatus';
+import { StatusLabel } from './StatusLabel';
 import {
   describeValidationAnnotation,
   sortValidationAnnotations,
@@ -185,8 +186,10 @@ export function ValidationPanel() {
                  {file.passRate ?? '--'} <span className="text-lg font-mono text-[#858585]">/ 100</span>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(file.status)}`}>
-              {file.status !== 'PENDING' && file.status !== 'ANALYZING' && file.status !== 'UPLOADING' ? file.status : 'WAIT'}
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(file.status, file.overallStatus)}`}>
+              {file.status !== 'PENDING' && file.status !== 'ANALYZING' && file.status !== 'UPLOADING'
+                ? <StatusLabel status={file.status} overallStatus={file.overallStatus} />
+                : 'WAIT'}
             </span>
           </div>
         </div>

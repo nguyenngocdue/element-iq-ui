@@ -118,31 +118,101 @@ export function averagePassRate(files: DocumentFile[]): number {
   return files.reduce((acc, f) => acc + filePassRate(f), 0) / files.length;
 }
 
-export function analysisCompleteMessage(status: DocumentFile['status'] | undefined): string | null {
+export function analysisCompleteMessage(
+  status: DocumentFile['status'] | undefined,
+  overallStatus?: string,
+): string | null {
   if (!status || !isAnalyzedStatus(status)) return null;
-  return `Analysis Complete — ${statusBadgeLabel(status)}`;
+  return `Analysis Complete — ${statusBadgeLabel(status, overallStatus)}`;
 }
 
-export function validationPanelAccentClass(status: DocumentFile['status']): string {
+const WARN_TEXT_CLASS: Record<string, string> = {
+  'MISSING-TAG': 'text-[#f97316]',
+  'TAG-OCR-SUSPECT': 'text-[#eab308]',
+};
+
+const WARN_PANEL_CLASS: Record<string, string> = {
+  'MISSING-TAG': 'bg-[#f97316]/20 text-[#f97316]',
+  'TAG-OCR-SUSPECT': 'bg-[#eab308]/20 text-[#eab308]',
+};
+
+function warnDetailKey(overallStatus?: string): string {
+  return overallStatus?.trim().toUpperCase() ?? '';
+}
+
+export function statusWarnHasDetail(overallStatus?: string): boolean {
+  const detail = warnDetailKey(overallStatus);
+  return Boolean(detail && detail !== 'WARN');
+}
+
+export function statusWarnDetailTextClass(overallStatus?: string): string {
+  return WARN_TEXT_CLASS[warnDetailKey(overallStatus)] ?? 'text-[#f59e0b]';
+}
+
+const WARN_SHELL_CLASS = 'bg-[#f59e0b]/10 border-[#f59e0b]/30';
+const WARN_SHELL_PANEL_CLASS = 'bg-[#f59e0b]/20';
+
+export function statusTextClass(
+  status: DocumentFile['status'],
+  overallStatus?: string,
+): string {
+  switch (status) {
+    case 'PASS':
+      return 'text-[#2eb886]';
+    case 'FAIL':
+      return 'text-[#ef4444]';
+    case 'WARN':
+      return WARN_TEXT_CLASS[warnDetailKey(overallStatus)] ?? 'text-[#f59e0b]';
+    case 'NO-NOTE':
+      return 'text-[#bba438]';
+    case 'NO-TUBE':
+      return 'text-[#fb923c]';
+    case 'ANALYZING':
+      return 'text-[#10b981]';
+    default:
+      return 'text-[#858585]';
+  }
+}
+
+export function validationPanelAccentClass(
+  status: DocumentFile['status'],
+  overallStatus?: string,
+): string {
   if (status === 'PASS') return 'bg-[#22c55e]/20 text-[#22c55e]';
-  if (status === 'WARN') return 'bg-[#f59e0b]/20 text-[#f59e0b]';
+  if (status === 'WARN') {
+    if (statusWarnHasDetail(overallStatus)) return WARN_SHELL_PANEL_CLASS;
+    return WARN_PANEL_CLASS[warnDetailKey(overallStatus)] ?? 'bg-[#f59e0b]/20 text-[#f59e0b]';
+  }
   if (status === 'FAIL') return 'bg-[#ef4444]/20 text-[#ef4444]';
   if (status === 'NO-NOTE' || status === 'NO-TUBE') return 'bg-[#fb923c]/20 text-[#fb923c]';
   return 'bg-[#ef4444]/20 text-[#ef4444]';
 }
 
-export function statusBadgeLabel(status: DocumentFile['status']): string {
+export function statusBadgeLabel(
+  status: DocumentFile['status'],
+  overallStatus?: string,
+): string {
   if (status === 'PENDING') return 'READY';
+  if (status === 'WARN' && overallStatus) {
+    const detail = overallStatus.trim().toUpperCase();
+    if (detail && detail !== 'WARN') {
+      return `WARN-${detail}`;
+    }
+  }
   return status;
 }
 
-export function statusBadgeClass(status: DocumentFile['status']): string {
+export function statusBadgeClass(
+  status: DocumentFile['status'],
+  overallStatus?: string,
+): string {
   switch (status) {
     case 'PASS':
       return 'text-[#2eb886] bg-[#2eb886]/10 border-[#2eb886]/30';
     case 'FAIL':
       return 'text-[#ef4444] bg-[#ef4444]/10 border-[#ef4444]/30';
     case 'WARN':
+      if (statusWarnHasDetail(overallStatus)) return WARN_SHELL_CLASS;
       return 'text-[#f59e0b] bg-[#f59e0b]/10 border-[#f59e0b]/30';
     case 'NO-NOTE':
       return 'text-[#bba438] bg-[#bba438]/10 border-[#bba438]/30';

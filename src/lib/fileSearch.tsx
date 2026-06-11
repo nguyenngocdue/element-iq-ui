@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { DocumentFile } from '../types';
+import { statusBadgeLabel } from './analysisStatus';
 
 export function artifactLabel(type: string): string {
   if (type === 'ANNOTATED_PNG') return 'Annotated PNG';
@@ -14,6 +15,8 @@ export function fileMatchesQuery(file: DocumentFile, query: string): boolean {
 
   if (file.name.toLowerCase().includes(q)) return true;
   if (file.status.toLowerCase().includes(q)) return true;
+  if (file.overallStatus?.toLowerCase().includes(q)) return true;
+  if (statusBadgeLabel(file.status, file.overallStatus).toLowerCase().includes(q)) return true;
   if (file.id.toLowerCase().includes(q)) return true;
 
   if (file.artifacts?.some((a) => {

@@ -49,6 +49,8 @@ export interface DocumentFile {
   name: string;
   file: File;
   status: 'UPLOADING' | 'PENDING' | 'ANALYZING' | 'PASS' | 'FAIL' | 'WARN' | 'NO-NOTE' | 'NO-TUBE';
+  /** Backend overall (e.g. MISSING-TAG) when UI status is WARN */
+  overallStatus?: string;
   uploadProgress?: number;  // 0-100 for upload progress
   pages: number;
   passRate?: number;

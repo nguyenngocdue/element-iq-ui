@@ -66,10 +66,12 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
     let passRate: number | undefined;
     let analyzedComponents: string[] | undefined;
 
+    let overallStatus: string | undefined;
     if (f.analysis) {
       const overallRaw = resolveOverallRaw(f.analysis);
       const hasAnalysis = hasAnalysisPayload(f.analysis);
       status = mapOverallToFileStatus(overallRaw, hasAnalysis);
+      overallStatus = overallRaw ? overallRaw.toUpperCase() : undefined;
       passRate = resolvePassRate(f.analysis, overallRaw.toUpperCase());
       analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
       const mapped = mapAnalysisFields(f.analysis);
@@ -83,6 +85,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       name: f.original_filename,
       file: new File([], f.original_filename, { type: 'application/pdf' }),
       status,
+      overallStatus,
       pages: f.page_count || 1,
       detections,
       validationAnnotations,
@@ -1393,6 +1396,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       updateFileStatus(id, {
         status: fileStatus,
+        overallStatus: overallStatus || undefined,
         detections,
         validationAnnotations,
         tubeCount,

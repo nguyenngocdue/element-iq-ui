@@ -7,6 +7,7 @@ export interface GuestRunSnapshot {
   savedAt: string;
   jobId?: string;
   status: DocumentFile['status'];
+  overallStatus?: string;
   detections: DocumentFile['detections'];
   validationAnnotations?: DocumentFile['validationAnnotations'];
   tubeCount?: number;
@@ -56,6 +57,7 @@ export function applyGuestRunSnapshot(file: DocumentFile, snapshot: GuestRunSnap
   return {
     ...file,
     status: snapshot.status,
+    overallStatus: snapshot.overallStatus,
     detections: snapshot.detections,
     validationAnnotations: snapshot.validationAnnotations,
     tubeCount: snapshot.tubeCount,
@@ -80,6 +82,7 @@ export function buildGuestRunSnapshot(file: DocumentFile, jobId?: string): Guest
     savedAt: new Date().toISOString(),
     jobId,
     status: file.status,
+    overallStatus: file.overallStatus,
     detections: file.detections,
     validationAnnotations: file.validationAnnotations,
     tubeCount: file.tubeCount,

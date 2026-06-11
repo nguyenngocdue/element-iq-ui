@@ -10,6 +10,7 @@ import { useViewSplit } from '../hooks/use-view-split';
 import { useViewTitles } from '../hooks/use-view-titles';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
+import { StatusLabel } from './StatusLabel';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
@@ -1140,7 +1141,7 @@ export function MainEditor() {
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
-          <span className="text-[#10b981]">{file.status}</span>
+          <StatusLabel status={file.status} overallStatus={file.overallStatus} />
         </div>
         )}
 
