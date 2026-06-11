@@ -107,6 +107,13 @@ function resolveDisplayMidTitle(titles: ParsedViewTitle[]): number | null {
   return (plan.center[0] + reinf.center[0]) / 2;
 }
 
+/** Display mid_title from view_labels (swap 90° anchors); works on old reports without re-analyze. */
+export function resolveDisplayMidTitleFromViewLabels(
+  labels: ViewLabelLike[],
+): number | null {
+  return parseViewTitlesFromComponent({ view_labels: labels }).midTitle;
+}
+
 export function parseViewTitlesFromComponent(comp: ComponentResultWithTitles): ParsedViewTitles {
   const titles: ParsedViewTitle[] = [];
   for (const label of resolveViewLabels(comp)) {

@@ -26,11 +26,11 @@ export function ViewSplitOverlay({
   viewerScale,
   unitScale = 1,
 }: ViewSplitOverlayProps) {
-  const { midX, source, viewRegions, objects, hasAmbiguous } = split;
+  const { boundaryX, midX, midTitle, source, viewRegions, objects, hasAmbiguous } = split;
   const toScreen = (x: number) => x * unitScale * viewerScale;
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
-  const lineX = toScreen(midX);
+  const lineX = toScreen(boundaryX);
 
   const planRegion = viewRegions['PLAN AS CAST'];
   const reinfRegion = viewRegions['REINFORCEMENT PLAN'];
@@ -77,6 +77,9 @@ export function ViewSplitOverlay({
 
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full text-[10px] font-mono text-[#cccccc] bg-[#1e1e1e]/95 border border-[#ffc800]/50 shadow-lg flex items-center gap-2 whitespace-nowrap">
         <span className="text-[#ffc800] font-bold">SPLIT</span>
+        {midTitle != null ? (
+          <span className="text-[#d4a5ff]">mid_title = {midTitle.toFixed(0)}px</span>
+        ) : null}
         <span className="text-[#ffc800]">mid_x = {midX.toFixed(0)}px</span>
         <span className="text-[#666]">|</span>
         <span className="text-[#dcdcaa]">{source}</span>
