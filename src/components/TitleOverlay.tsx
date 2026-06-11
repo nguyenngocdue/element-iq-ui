@@ -20,6 +20,8 @@ const AXIS_GUIDE_SCALE = 1.6;
 const MID_TITLE_GUIDE_HEIGHT_RATIO = 0.5;
 /** Axis stub length from origin in analysis px (@300dpi). */
 const ORIGIN_AXIS_ANALYSIS_PX = 100;
+/** Clearance below View Split top chips (PLAN / REINF labels). */
+const ORIGIN_LABEL_TOP_OFFSET_PX = 44;
 
 type TitleOverlayProps = {
   data: ParsedViewTitles;
@@ -196,7 +198,7 @@ function OriginMarker({ toScreen }: { toScreen: (v: number) => number }) {
       />
       <div
         className="absolute px-1.5 py-0.5 rounded text-[9px] font-mono font-bold text-[#ffc800] bg-[#1e1e1e]/95 border border-[#ffc800]/50 whitespace-nowrap shadow-sm"
-        style={{ left: 6, top: 6 }}
+        style={{ left: Math.max(axisLen + 8, 8), top: ORIGIN_LABEL_TOP_OFFSET_PX }}
       >
         (0, 0)
       </div>
