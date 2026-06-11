@@ -14,6 +14,11 @@ const VIEW_COLORS: Record<string, { border: string; line: string; chip: string }
   },
 };
 
+/** Short axis guide length multiplier (relative to display bbox). */
+const AXIS_GUIDE_SCALE = 1.6;
+/** mid_title vertical guide as fraction of sheet height (centered on titles). */
+const MID_TITLE_GUIDE_HEIGHT_RATIO = 0.5;
+
 type TitleOverlayProps = {
   data: ParsedViewTitles;
   viewerWidth: number;
@@ -34,11 +39,26 @@ export function TitleOverlay({
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
 
+  const computedMidTitle = midTitle;
   const plan = titles.find((t) => t.name === 'PLAN AS CAST');
   const reinf = titles.find((t) => t.name === 'REINFORCEMENT PLAN');
-  const computedMidTitle =
-    midTitle ??
-    (plan && reinf ? (plan.center[0] + reinf.center[0]) / 2 : null);
+
+  const midGuide =
+    computedMidTitle != null
+      ? (() => {
+          const anchorY =
+            plan && reinf
+              ? (toScreen(plan.center[1]) + toScreen(reinf.center[1])) / 2
+              : h / 2;
+          const guideH = h * MID_TITLE_GUIDE_HEIGHT_RATIO;
+          const top = Math.max(0, anchorY - guideH / 2);
+          return {
+            top,
+            height: Math.min(guideH, h - top),
+            left: toScreen(computedMidTitle),
+          };
+        })()
+      : null;
 
   return (
     <div
@@ -47,25 +67,27 @@ export function TitleOverlay({
       aria-label="View title boundary overlay"
     >
       {titles.map((title) => (
-        <TitleMarkers
-          key={title.name}
-          title={title}
-          viewerHeight={h}
-          toScreen={toScreen}
-        />
+        <TitleMarkers key={title.name} title={title} toScreen={toScreen} />
       ))}
 
-      {computedMidTitle != null ? (
+      {midGuide ? (
         <>
           <div
-            className="absolute top-0 bottom-0 w-px border-l border-dashed border-[#d4a5ff]/80"
-            style={{ left: toScreen(computedMidTitle) }}
+            className="absolute w-0 border-l-2 border-dashed border-[#d4a5ff]"
+            style={{
+              left: midGuide.left,
+              top: midGuide.top,
+              height: midGuide.height,
+            }}
           />
           <div
-            className="absolute bottom-14 px-2 py-0.5 rounded text-[9px] font-mono text-[#d4a5ff] bg-[#1e1e1e]/90 border border-[#d4a5ff]/40"
-            style={{ left: Math.max(8, toScreen(computedMidTitle) + 6) }}
+            className="absolute px-2 py-0.5 rounded text-[9px] font-mono text-[#d4a5ff] bg-[#1e1e1e]/90 border border-[#d4a5ff]/40 whitespace-nowrap"
+            style={{
+              left: Math.max(8, midGuide.left + 6),
+              top: Math.max(8, midGuide.top + 6),
+            }}
           >
-            mid_title = {computedMidTitle.toFixed(0)}px
+            mid_title = {computedMidTitle!.toFixed(0)}px
           </div>
         </>
       ) : null}
@@ -81,11 +103,9 @@ export function TitleOverlay({
 
 function TitleMarkers({
   title,
-  viewerHeight,
   toScreen,
 }: {
   title: ParsedViewTitle;
-  viewerHeight: number;
   toScreen: (v: number) => number;
 }) {
   const colors = VIEW_COLORS[title.name] ?? VIEW_COLORS['PLAN AS CAST'];
@@ -97,6 +117,8 @@ function TitleMarkers({
   const height = Math.max(2, toScreen(y2) - toScreen(y1));
   const lineX = toScreen(cx);
   const crossY = toScreen(cy);
+  const guideH = Math.max(height * AXIS_GUIDE_SCALE, 48);
+  const guideTop = crossY - guideH / 2;
 
   return (
     <>
@@ -113,10 +135,11 @@ function TitleMarkers({
         aria-label={`${title.name} title boundary`}
       />
       <div
-        className="absolute top-0 w-px border-l border-dashed"
+        className="absolute w-px border-l border-dashed"
         style={{
           left: lineX,
-          height: viewerHeight,
+          top: guideTop,
+          height: guideH,
           borderColor: colors.line,
         }}
       />
