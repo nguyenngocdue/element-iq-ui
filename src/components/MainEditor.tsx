@@ -5,10 +5,12 @@ import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/use
 import { attachPaneWheelZoom } from '../lib/paneWheelZoom';
 import { ReportJsonPanel } from './ReportJsonPanel';
 import { ViewSplitOverlay } from './ViewSplitOverlay';
+import { TitleOverlay, hasViewTitlesData } from './TitleOverlay';
 import { useViewSplit } from '../hooks/use-view-split';
+import { useViewTitles } from '../hooks/use-view-titles';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -161,6 +163,8 @@ function PdfRenderer({
   showAnnotations,
   showViewSplitOverlay,
   viewSplit,
+  showTitleOverlay,
+  viewTitles,
   onDimensionsLoaded,
 }: {
   file: any;
@@ -169,6 +173,8 @@ function PdfRenderer({
   showAnnotations: boolean;
   showViewSplitOverlay?: boolean;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
+  showTitleOverlay?: boolean;
+  viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   onDimensionsLoaded?: (w: number, h: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -316,6 +322,16 @@ function PdfRenderer({
           unitScale={ANALYSIS_TO_PDF_UNIT}
         />
       ) : null}
+
+      {showTitleOverlay && hasViewTitlesData(viewTitles) && baseSize.w > 0 ? (
+        <TitleOverlay
+          data={viewTitles!}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+        />
+      ) : null}
     </div>
   );
 }
@@ -329,6 +345,8 @@ function ArtifactViewer({
   onImageDimensions,
   viewSplit,
   showViewSplitOverlay = true,
+  viewTitles,
+  showTitleOverlay = false,
 }: {
   artifact: { id: string; type: string; downloadUrl: string; name: string };
   onClose: () => void;
@@ -338,6 +356,8 @@ function ArtifactViewer({
   onImageDimensions?: (w: number, h: number) => void;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   showViewSplitOverlay?: boolean;
+  viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
+  showTitleOverlay?: boolean;
 }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -532,6 +552,15 @@ function ArtifactViewer({
                   unitScale={1}
                 />
               ) : null}
+              {showTitleOverlay && hasViewTitlesData(viewTitles) && imgNaturalSize.w > 0 ? (
+                <TitleOverlay
+                  data={viewTitles!}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -580,9 +609,12 @@ export function MainEditor() {
   const { getScale, setScaleForKey } = usePerViewZoom();
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [showViewSplitOverlay, setShowViewSplitOverlay] = useState(true);
+  const [showTitleOverlay, setShowTitleOverlay] = useState(false);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
   const { viewSplit } = useViewSplit(file);
+  const { viewTitles } = useViewTitles(file);
+  const titlesAvailable = hasViewTitlesData(viewTitles);
 
   const primaryZoomKey = state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
@@ -917,6 +949,15 @@ export function MainEditor() {
                   <Columns2 className="w-3 h-3" /> View Split
                 </button>
               ) : null}
+              {titlesAvailable ? (
+                <button
+                  onClick={() => setShowTitleOverlay(!showTitleOverlay)}
+                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTitleOverlay ? 'border-t-[#c586c0] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                  title="Show view title boundaries and center lines"
+                >
+                  <Type className="w-3 h-3" /> Titles
+                </button>
+              ) : null}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
               {!canRun ? null : (
               <>
@@ -994,7 +1035,7 @@ export function MainEditor() {
               )}
             </>
             )}
-            {state.activeArtifact?.type === 'ANNOTATED_PNG' && viewSplit ? (
+            {state.activeArtifact?.type === 'ANNOTATED_PNG' && (viewSplit || titlesAvailable) ? (
               <>
                 <button
                   onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
@@ -1003,6 +1044,15 @@ export function MainEditor() {
                 >
                   <Columns2 className="w-3 h-3" /> View Split
                 </button>
+                {titlesAvailable ? (
+                  <button
+                    onClick={() => setShowTitleOverlay(!showTitleOverlay)}
+                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTitleOverlay ? 'border-t-[#c586c0] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                    title="Show view title boundaries and center lines"
+                  >
+                    <Type className="w-3 h-3" /> Titles
+                  </button>
+                ) : null}
                 <div className="w-[1px] h-4 bg-[#3c3c3c]" />
               </>
             ) : null}
@@ -1048,6 +1098,8 @@ export function MainEditor() {
             onImageDimensions={(w, h) => setPngDimensions({ w, h })}
             viewSplit={viewSplit}
             showViewSplitOverlay={showViewSplitOverlay}
+            viewTitles={viewTitles}
+            showTitleOverlay={showTitleOverlay}
           />
         ) : (
         <div 
@@ -1076,6 +1128,8 @@ export function MainEditor() {
                showAnnotations={showAnnotations}
                showViewSplitOverlay={showViewSplitOverlay}
                viewSplit={viewSplit}
+               showTitleOverlay={showTitleOverlay}
+               viewTitles={viewTitles}
             />
           </div>
         </div>

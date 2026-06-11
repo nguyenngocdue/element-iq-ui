@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
 import { filterArtifactsForFile } from './lib/fileView';
 import { parseViewSplitFromAnalysis, parseViewSplitFromReport } from './lib/viewSplit';
+import { parseViewTitlesFromAnalysis, parseViewTitlesFromReport } from './lib/viewTitles';
 import {
   hasAnalysisPayload,
   mapOverallToFileStatus,
@@ -89,6 +90,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       passRate,
       analyzedComponents,
       viewSplit: parseViewSplitFromAnalysis(f.analysis),
+      viewTitles: parseViewTitlesFromAnalysis(f.analysis),
       uploadedAt: f.uploaded_at,
       localPath: f.local_path,
       fileSizeBytes: f.file_size_bytes,
@@ -1374,12 +1376,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       let viewSplit = parseViewSplitFromAnalysis({ component_results: components });
+      let viewTitles = parseViewTitlesFromAnalysis({ component_results: components });
       const reportArtifact = artifacts.find((a) => a.type === 'REPORT_JSON');
-      if (!viewSplit && reportArtifact?.downloadUrl) {
+      if (reportArtifact?.downloadUrl) {
         try {
           const reportRes = await authFetch(reportArtifact.downloadUrl);
           if (reportRes.ok) {
-            viewSplit = parseViewSplitFromReport(await reportRes.text());
+            const reportText = await reportRes.text();
+            if (!viewSplit) viewSplit = parseViewSplitFromReport(reportText);
+            if (!viewTitles) viewTitles = parseViewTitlesFromReport(reportText);
           }
         } catch {
           // Report JSON optional for overlay; ignore fetch errors
@@ -1393,6 +1398,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         tubeCount,
         artifacts,
         viewSplit,
+        viewTitles,
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [

@@ -1,4 +1,5 @@
 import type { ParsedViewSplit } from './lib/viewSplit';
+import type { ParsedViewTitles } from './lib/viewTitles';
 
 export interface Component {
   id: string;
@@ -57,6 +58,7 @@ export interface DocumentFile {
   events: AppEvent[];
   analyzedComponents?: string[];
   viewSplit?: ParsedViewSplit | null;
+  viewTitles?: ParsedViewTitles | null;
   artifacts?: FileArtifact[];
   // Real progress from backend
   analysisProgress?: number;   // 0–100
