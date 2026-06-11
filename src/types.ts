@@ -1,3 +1,4 @@
+import type { ParsedTagNotes } from './lib/tagNotes';
 import type { ParsedViewSplit } from './lib/viewSplit';
 import type { ParsedViewTitles } from './lib/viewTitles';
 
@@ -61,6 +62,7 @@ export interface DocumentFile {
   analyzedComponents?: string[];
   viewSplit?: ParsedViewSplit | null;
   viewTitles?: ParsedViewTitles | null;
+  tagNotes?: ParsedTagNotes | null;
   artifacts?: FileArtifact[];
   // Real progress from backend
   analysisProgress?: number;   // 0–100

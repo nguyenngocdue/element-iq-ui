@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
 import { filterArtifactsForFile } from './lib/fileView';
 import { parseViewSplitFromAnalysis, parseViewSplitFromReport } from './lib/viewSplit';
+import { parseTagNotesFromAnalysis, parseTagNotesFromReport } from './lib/tagNotes';
 import { parseViewTitlesFromAnalysis, parseViewTitlesFromReport } from './lib/viewTitles';
 import {
   hasAnalysisPayload,
@@ -94,6 +95,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       analyzedComponents,
       viewSplit: parseViewSplitFromAnalysis(f.analysis),
       viewTitles: parseViewTitlesFromAnalysis(f.analysis),
+      tagNotes: parseTagNotesFromAnalysis(f.analysis),
       uploadedAt: f.uploaded_at,
       localPath: f.local_path,
       fileSizeBytes: f.file_size_bytes,
@@ -1380,6 +1382,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       let viewSplit = parseViewSplitFromAnalysis({ component_results: components });
       let viewTitles = parseViewTitlesFromAnalysis({ component_results: components });
+      let tagNotes = parseTagNotesFromAnalysis({ component_results: components });
       const reportArtifact = artifacts.find((a) => a.type === 'REPORT_JSON');
       if (reportArtifact?.downloadUrl) {
         try {
@@ -1388,6 +1391,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const reportText = await reportRes.text();
             if (!viewSplit) viewSplit = parseViewSplitFromReport(reportText);
             if (!viewTitles) viewTitles = parseViewTitlesFromReport(reportText);
+            if (!tagNotes) tagNotes = parseTagNotesFromReport(reportText);
           }
         } catch {
           // Report JSON optional for overlay; ignore fetch errors
@@ -1403,6 +1407,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         artifacts,
         viewSplit,
         viewTitles,
+        tagNotes,
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [

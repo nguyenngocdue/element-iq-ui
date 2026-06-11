@@ -6,12 +6,14 @@ import { attachPaneWheelZoom } from '../lib/paneWheelZoom';
 import { ReportJsonPanel } from './ReportJsonPanel';
 import { ViewSplitOverlay } from './ViewSplitOverlay';
 import { TitleOverlay, hasViewTitlesData } from './TitleOverlay';
+import { TagOverlay, hasTagNotesData } from './TagOverlay';
 import { useViewSplit } from '../hooks/use-view-split';
 import { useViewTitles } from '../hooks/use-view-titles';
+import { useTagNotes } from '../hooks/use-tag-notes';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { StatusLabel } from './StatusLabel';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -166,6 +168,8 @@ function PdfRenderer({
   viewSplit,
   showTitleOverlay,
   viewTitles,
+  showTagOverlay,
+  tagNotes,
   onDimensionsLoaded,
 }: {
   file: any;
@@ -176,6 +180,8 @@ function PdfRenderer({
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   showTitleOverlay?: boolean;
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
+  showTagOverlay?: boolean;
+  tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
   onDimensionsLoaded?: (w: number, h: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -333,6 +339,16 @@ function PdfRenderer({
           unitScale={ANALYSIS_TO_PDF_UNIT}
         />
       ) : null}
+
+      {showTagOverlay && hasTagNotesData(tagNotes) && baseSize.w > 0 ? (
+        <TagOverlay
+          data={tagNotes!}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+        />
+      ) : null}
     </div>
   );
 }
@@ -348,6 +364,8 @@ function ArtifactViewer({
   showViewSplitOverlay = true,
   viewTitles,
   showTitleOverlay = false,
+  tagNotes,
+  showTagOverlay = false,
 }: {
   artifact: { id: string; type: string; downloadUrl: string; name: string };
   onClose: () => void;
@@ -359,6 +377,8 @@ function ArtifactViewer({
   showViewSplitOverlay?: boolean;
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   showTitleOverlay?: boolean;
+  tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
+  showTagOverlay?: boolean;
 }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -562,6 +582,15 @@ function ArtifactViewer({
                   unitScale={1}
                 />
               ) : null}
+              {showTagOverlay && hasTagNotesData(tagNotes) && imgNaturalSize.w > 0 ? (
+                <TagOverlay
+                  data={tagNotes!}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -611,11 +640,14 @@ export function MainEditor() {
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [showViewSplitOverlay, setShowViewSplitOverlay] = useState(true);
   const [showTitleOverlay, setShowTitleOverlay] = useState(false);
+  const [showTagOverlay, setShowTagOverlay] = useState(true);
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
   const { viewSplit } = useViewSplit(file);
   const { viewTitles } = useViewTitles(file);
+  const { tagNotes } = useTagNotes(file);
   const titlesAvailable = hasViewTitlesData(viewTitles);
+  const tagsAvailable = hasTagNotesData(tagNotes);
 
   const primaryZoomKey = state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
@@ -959,6 +991,15 @@ export function MainEditor() {
                   <Type className="w-3 h-3" /> Titles
                 </button>
               ) : null}
+              {tagsAvailable ? (
+                <button
+                  onClick={() => setShowTagOverlay(!showTagOverlay)}
+                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTagOverlay ? 'border-t-[#f97316] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                  title="Show qty tag boundaries (PDF / OCR)"
+                >
+                  <Tag className="w-3 h-3" /> Tags
+                </button>
+              ) : null}
               <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
               {!canRun ? null : (
               <>
@@ -1036,7 +1077,7 @@ export function MainEditor() {
               )}
             </>
             )}
-            {state.activeArtifact?.type === 'ANNOTATED_PNG' && (viewSplit || titlesAvailable) ? (
+            {state.activeArtifact?.type === 'ANNOTATED_PNG' && (viewSplit || titlesAvailable || tagsAvailable) ? (
               <>
                 <button
                   onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
@@ -1052,6 +1093,15 @@ export function MainEditor() {
                     title="Show view title boundaries and center lines"
                   >
                     <Type className="w-3 h-3" /> Titles
+                  </button>
+                ) : null}
+                {tagsAvailable ? (
+                  <button
+                    onClick={() => setShowTagOverlay(!showTagOverlay)}
+                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTagOverlay ? 'border-t-[#f97316] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
+                    title="Show qty tag boundaries (PDF / OCR)"
+                  >
+                    <Tag className="w-3 h-3" /> Tags
                   </button>
                 ) : null}
                 <div className="w-[1px] h-4 bg-[#3c3c3c]" />
@@ -1101,6 +1151,8 @@ export function MainEditor() {
             showViewSplitOverlay={showViewSplitOverlay}
             viewTitles={viewTitles}
             showTitleOverlay={showTitleOverlay}
+            tagNotes={tagNotes}
+            showTagOverlay={showTagOverlay}
           />
         ) : (
         <div 
@@ -1131,6 +1183,8 @@ export function MainEditor() {
                viewSplit={viewSplit}
                showTitleOverlay={showTitleOverlay}
                viewTitles={viewTitles}
+               showTagOverlay={showTagOverlay}
+               tagNotes={tagNotes}
             />
           </div>
         </div>
