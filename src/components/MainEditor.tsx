@@ -159,6 +159,90 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
   );
 }
 
+function OverlayToolsBar({
+  showAnnotations,
+  onToggleAnnotations,
+  viewSplit,
+  showViewSplitOverlay,
+  onToggleViewSplit,
+  titlesAvailable,
+  showTitleOverlay,
+  onToggleTitleOverlay,
+  tagsAvailable,
+  showTagOverlay,
+  onToggleTagOverlay,
+  hideQa = false,
+}: {
+  showAnnotations: boolean;
+  onToggleAnnotations: () => void;
+  viewSplit: import('../lib/viewSplit').ParsedViewSplit | null;
+  showViewSplitOverlay: boolean;
+  onToggleViewSplit: () => void;
+  titlesAvailable: boolean;
+  showTitleOverlay: boolean;
+  onToggleTitleOverlay: () => void;
+  tagsAvailable: boolean;
+  showTagOverlay: boolean;
+  onToggleTagOverlay: () => void;
+  hideQa?: boolean;
+}) {
+  if (hideQa && !viewSplit && !titlesAvailable && !tagsAvailable) return null;
+
+  const btn = (active: boolean) =>
+    cn(
+      'h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors shrink-0',
+      active ? 'bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]',
+    );
+
+  return (
+    <div className="h-[35px] flex items-stretch bg-[#252526] border border-[#3c3c3c] pointer-events-auto">
+      {!hideQa ? (
+        <button
+          type="button"
+          onClick={onToggleAnnotations}
+          className={btn(showAnnotations)}
+          style={{ borderTopColor: showAnnotations ? '#10b981' : undefined }}
+        >
+          <ShieldCheck className="w-3 h-3" /> QA Overlay
+        </button>
+      ) : null}
+      {viewSplit ? (
+        <button
+          type="button"
+          onClick={onToggleViewSplit}
+          className={btn(showViewSplitOverlay)}
+          style={{ borderTopColor: showViewSplitOverlay ? '#ffc800' : undefined }}
+          title="Toggle PLAN / REINFORCEMENT boundary"
+        >
+          <Columns2 className="w-3 h-3" /> View Split
+        </button>
+      ) : null}
+      {titlesAvailable ? (
+        <button
+          type="button"
+          onClick={onToggleTitleOverlay}
+          className={btn(showTitleOverlay)}
+          style={{ borderTopColor: showTitleOverlay ? '#c586c0' : undefined }}
+          title="Show view title boundaries"
+        >
+          <Type className="w-3 h-3" /> Titles
+        </button>
+      ) : null}
+      {tagsAvailable ? (
+        <button
+          type="button"
+          onClick={onToggleTagOverlay}
+          className={btn(showTagOverlay)}
+          style={{ borderTopColor: showTagOverlay ? '#f97316' : undefined }}
+          title="Show qty tag boundaries"
+        >
+          <Tag className="w-3 h-3" /> Tags
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function PdfRenderer({
   file,
   pageNum,
@@ -967,40 +1051,6 @@ export function MainEditor() {
             {/* Editor toolbar items — inline with tab bar */}
             {!state.activeArtifact && (
             <>
-              <button 
-                onClick={() => setShowAnnotations(!showAnnotations)}
-                className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showAnnotations ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-              >
-                <ShieldCheck className="w-3 h-3" /> QA Overlay
-              </button>
-              {viewSplit ? (
-                <button
-                  onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
-                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showViewSplitOverlay ? 'border-t-[#ffc800] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                  title="Toggle PLAN / REINFORCEMENT boundary"
-                >
-                  <Columns2 className="w-3 h-3" /> View Split
-                </button>
-              ) : null}
-              {titlesAvailable ? (
-                <button
-                  onClick={() => setShowTitleOverlay(!showTitleOverlay)}
-                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTitleOverlay ? 'border-t-[#c586c0] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                  title="Show view title boundaries and center lines"
-                >
-                  <Type className="w-3 h-3" /> Titles
-                </button>
-              ) : null}
-              {tagsAvailable ? (
-                <button
-                  onClick={() => setShowTagOverlay(!showTagOverlay)}
-                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTagOverlay ? 'border-t-[#f97316] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                  title="Show qty tag boundaries (PDF / OCR)"
-                >
-                  <Tag className="w-3 h-3" /> Tags
-                </button>
-              ) : null}
-              <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
               {!canRun ? null : (
               <>
               {file.status === 'PENDING' ? (
@@ -1077,36 +1127,6 @@ export function MainEditor() {
               )}
             </>
             )}
-            {state.activeArtifact?.type === 'ANNOTATED_PNG' && (viewSplit || titlesAvailable || tagsAvailable) ? (
-              <>
-                <button
-                  onClick={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
-                  className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showViewSplitOverlay ? 'border-t-[#ffc800] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                  title="Toggle PLAN / REINFORCEMENT boundary overlay"
-                >
-                  <Columns2 className="w-3 h-3" /> View Split
-                </button>
-                {titlesAvailable ? (
-                  <button
-                    onClick={() => setShowTitleOverlay(!showTitleOverlay)}
-                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTitleOverlay ? 'border-t-[#c586c0] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                    title="Show view title boundaries and center lines"
-                  >
-                    <Type className="w-3 h-3" /> Titles
-                  </button>
-                ) : null}
-                {tagsAvailable ? (
-                  <button
-                    onClick={() => setShowTagOverlay(!showTagOverlay)}
-                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] border-t-2 transition-colors ${showTagOverlay ? 'border-t-[#f97316] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585] hover:text-white hover:bg-[#333]'}`}
-                    title="Show qty tag boundaries (PDF / OCR)"
-                  >
-                    <Tag className="w-3 h-3" /> Tags
-                  </button>
-                ) : null}
-                <div className="w-[1px] h-4 bg-[#3c3c3c]" />
-              </>
-            ) : null}
             <button 
               onClick={() => splitEditor('right')}
               className="h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 border-t-transparent text-[#858585] hover:text-white"
@@ -1137,6 +1157,27 @@ export function MainEditor() {
             </button>
           </div>
         </div>
+
+        {/* Overlay tools — row below Re-analyze, floats over canvas (no layout shift) */}
+        {file.status !== 'ANALYZING'
+          && (!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') ? (
+          <div className="absolute top-[43px] right-2 z-50 pointer-events-none">
+            <OverlayToolsBar
+              showAnnotations={showAnnotations}
+              onToggleAnnotations={() => setShowAnnotations(!showAnnotations)}
+              viewSplit={viewSplit}
+              showViewSplitOverlay={showViewSplitOverlay}
+              onToggleViewSplit={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
+              titlesAvailable={titlesAvailable}
+              showTitleOverlay={showTitleOverlay}
+              onToggleTitleOverlay={() => setShowTitleOverlay(!showTitleOverlay)}
+              tagsAvailable={tagsAvailable}
+              showTagOverlay={showTagOverlay}
+              onToggleTagOverlay={() => setShowTagOverlay(!showTagOverlay)}
+              hideQa={Boolean(state.activeArtifact)}
+            />
+          </div>
+        ) : null}
 
         {/* Canvas (Pane 1) */}
         {state.activeArtifact ? (
