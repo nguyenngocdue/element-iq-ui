@@ -18,6 +18,8 @@ const VIEW_COLORS: Record<string, { border: string; line: string; chip: string }
 const AXIS_GUIDE_SCALE = 1.6;
 /** mid_title vertical guide as fraction of sheet height (centered on titles). */
 const MID_TITLE_GUIDE_HEIGHT_RATIO = 0.5;
+/** Axis stub length from origin in analysis px (@300dpi). */
+const ORIGIN_AXIS_ANALYSIS_PX = 100;
 
 type TitleOverlayProps = {
   data: ParsedViewTitles;
@@ -66,6 +68,8 @@ export function TitleOverlay({
       style={{ width: w, height: h }}
       aria-label="View title boundary overlay"
     >
+      <OriginMarker toScreen={toScreen} />
+
       {titles.map((title) => (
         <TitleMarkers key={title.name} title={title} toScreen={toScreen} />
       ))}
@@ -162,9 +166,39 @@ function TitleMarkers({
       </div>
       <div
         className={`absolute px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wide text-white shadow-lg border whitespace-nowrap ${colors.chip}`}
-        style={{ left, top: Math.max(4, top - 22) }}
+        style={{ left, top: top + height + 6 }}
       >
-        {title.name} · cx={cx.toFixed(0)}
+        {title.name} · ({cx.toFixed(0)}, {cy.toFixed(0)})
+      </div>
+    </>
+  );
+}
+
+function OriginMarker({ toScreen }: { toScreen: (v: number) => number }) {
+  const axisLen = toScreen(ORIGIN_AXIS_ANALYSIS_PX);
+
+  return (
+    <>
+      <div
+        className="absolute left-0 top-0 h-0 border-t-2 border-[#ffc800]"
+        style={{ width: axisLen }}
+        aria-hidden
+      />
+      <div
+        className="absolute left-0 top-0 w-0 border-l-2 border-[#ffc800]"
+        style={{ height: axisLen }}
+        aria-hidden
+      />
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#ffc800] border border-[#1e1e1e] shadow-sm"
+        style={{ left: 0, top: 0 }}
+        aria-hidden
+      />
+      <div
+        className="absolute px-1.5 py-0.5 rounded text-[9px] font-mono font-bold text-[#ffc800] bg-[#1e1e1e]/95 border border-[#ffc800]/50 whitespace-nowrap shadow-sm"
+        style={{ left: 6, top: 6 }}
+      >
+        (0, 0)
       </div>
     </>
   );
