@@ -94,12 +94,20 @@ export interface AnalysisLogLine {
   level: 'info' | 'success' | 'warn' | 'error' | 'dim';
   message: string;
   fileId?: string;
+  workerId?: number;
+}
+
+export interface ActiveWorkerState {
+  workerId: number;
+  fileName: string;
 }
 
 export interface AnalysisQueueState {
-  current: number;
   total: number;
-  currentFileName?: string;
+  completed: number;
+  activeCount: number;
+  activeFileNames?: string[];
+  activeWorkers?: ActiveWorkerState[];
 }
 
 export interface AppEvent {

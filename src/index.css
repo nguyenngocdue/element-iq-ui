@@ -28,8 +28,29 @@
   100% { top: calc(100% - 3px); opacity: 0; }
 }
 
-.animate-scan {
-  animation: scan 2.5s ease-in-out infinite;
+@keyframes project-loading-bar {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(420%); }
+}
+
+.project-loading-bar {
+  animation: project-loading-bar 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #2a2a2e 0%,
+    #38383f 45%,
+    #2a2a2e 90%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
 }
 
 @keyframes import-modal-border-spin {

@@ -17,7 +17,35 @@ import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { LoginPage } from './components/LoginPage';
+import {
+  ProjectAccessError,
+  ProjectAccessErrorKind,
+  ProjectReconnecting,
+} from './components/ProjectAccessError';
+import { ProjectLoadingScreen } from './components/ProjectLoadingScreen';
 import { loginPath } from './lib/authRoutes';
+
+const PROJECT_LOAD_MAX_RETRIES = 3;
+const PROJECT_LOAD_RETRY_DELAY_SEC = 5;
+
+function sleep(ms: number, signal?: { cancelled: boolean }): Promise<void> {
+  return new Promise((resolve) => {
+    let check: number | undefined;
+    const id = window.setTimeout(() => {
+      if (check !== undefined) window.clearInterval(check);
+      resolve();
+    }, ms);
+    if (signal) {
+      check = window.setInterval(() => {
+        if (signal.cancelled) {
+          window.clearTimeout(id);
+          if (check !== undefined) window.clearInterval(check);
+          resolve();
+        }
+      }, 50);
+    }
+  });
+}
 
 /** Home: workspace dashboard. Legacy ?project= links redirect to /projects/:id */
 function HomePage() {
@@ -118,49 +146,78 @@ function ProjectEditorPage() {
   const location = useLocation();
   const { user } = useAuth();
   const { state, loadProjectEditor } = useApp();
-  const [accessError, setAccessError] = useState<string | null>(null);
+  const [accessError, setAccessError] = useState<ProjectAccessErrorKind | null>(null);
   const [booting, setBooting] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [retryCountdown, setRetryCountdown] = useState(0);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const prevProjectIdRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
 
   useLayoutEffect(() => {
     if (!projectId) return;
 
-    let cancelled = false;
+    const generation = ++loadGenerationRef.current;
+    const signal = { cancelled: false };
     const isNewProject = prevProjectIdRef.current !== projectId;
     prevProjectIdRef.current = projectId;
 
     if (isNewProject) {
       setBooting(true);
       setAccessError(null);
+      setReconnecting(false);
+      setRetryAttempt(0);
+      setRetryCountdown(0);
     }
 
     void (async () => {
-      const result = await loadProjectEditor(projectId, user?.id ?? null);
-      if (cancelled) return;
+      for (let attempt = 1; attempt <= PROJECT_LOAD_MAX_RETRIES; attempt += 1) {
+        if (signal.cancelled || generation !== loadGenerationRef.current) return;
 
-      if (result === 'unauthorized') {
-        navigate(loginPath(`${location.pathname}${location.search}`), { replace: true });
-        return;
-      }
-      if (result === 'not_found') {
-        setAccessError('Project not found.');
-        setBooting(false);
-        return;
-      }
-      if (result === 'error') {
-        setAccessError('Unable to open this project.');
-        setBooting(false);
-        return;
-      }
+        if (attempt > 1) {
+          setReconnecting(true);
+          setRetryAttempt(attempt);
+          for (let sec = PROJECT_LOAD_RETRY_DELAY_SEC; sec > 0; sec -= 1) {
+            if (signal.cancelled || generation !== loadGenerationRef.current) return;
+            setRetryCountdown(sec);
+            await sleep(1000, signal);
+          }
+          setRetryCountdown(0);
+        }
 
-      setAccessError(null);
-      setBooting(false);
+        const result = await loadProjectEditor(projectId, user?.id ?? null);
+        if (signal.cancelled || generation !== loadGenerationRef.current) return;
+
+        if (result === 'unauthorized') {
+          navigate(loginPath(`${location.pathname}${location.search}`), { replace: true });
+          return;
+        }
+        if (result === 'not_found') {
+          setAccessError('not_found');
+          setBooting(false);
+          setReconnecting(false);
+          return;
+        }
+        if (result === 'error') {
+          if (attempt < PROJECT_LOAD_MAX_RETRIES) continue;
+          setAccessError('error');
+          setBooting(false);
+          setReconnecting(false);
+          return;
+        }
+
+        setAccessError(null);
+        setBooting(false);
+        setReconnecting(false);
+        return;
+      }
     })();
 
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
-  }, [projectId, user?.id, navigate, location.pathname, location.search, loadProjectEditor]);
+  }, [projectId, user?.id, navigate, location.pathname, location.search, loadProjectEditor, loadAttempt]);
 
   if (!projectId) {
     return <Navigate to="/" replace />;
@@ -168,29 +225,38 @@ function ProjectEditorPage() {
 
   if (accessError) {
     return (
-      <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-4 px-6">
-        <p className="text-sm text-[#b0b0b0]">{accessError}</p>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="px-4 py-2 rounded-md bg-[#10b981] hover:bg-[#059669] text-white text-sm font-semibold transition-colors"
-        >
-          Back to dashboard
-        </button>
-      </div>
+      <ProjectAccessError
+        kind={accessError}
+        onRetry={
+          accessError === 'error'
+            ? () => {
+                setAccessError(null);
+                setBooting(true);
+                setReconnecting(false);
+                setRetryAttempt(0);
+                setRetryCountdown(0);
+                setLoadAttempt((n) => n + 1);
+              }
+            : undefined
+        }
+        onBack={() => navigate('/')}
+        retrying={booting}
+      />
+    );
+  }
+
+  if (reconnecting) {
+    return (
+      <ProjectReconnecting
+        attempt={retryAttempt}
+        maxAttempts={PROJECT_LOAD_MAX_RETRIES}
+      />
     );
   }
 
   const projectReady = state.activeProject?.id === projectId;
   if (booting && !projectReady) {
-    return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-[#b0b0b0]">Loading project...</p>
-        </div>
-      </div>
-    );
+    return <ProjectLoadingScreen mode="full" />;
   }
 
   return <EditorLayout />;

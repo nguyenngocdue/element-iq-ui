@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../store';
 import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ExplorerFilesLoading } from './ProjectLoadingScreen';
 import { highlightMatch } from '../lib/fileSearch';
 import {
   applyExplorerView,
@@ -792,16 +793,7 @@ export function Sidebar() {
         </div>
         
         {state.isLoadingFiles ? (
-          <div className="px-4 py-6 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-2.5 animate-pulse">
-                <div className="w-3.5 h-3.5 bg-[#2b2d35] rounded" />
-                <div className="h-3 bg-[#2b2d35] rounded flex-1" />
-                <div className="w-12 h-4 bg-[#2b2d35] rounded" />
-              </div>
-            ))}
-            <p className="text-center text-[#858585] text-[11px] mt-3">Loading files...</p>
-          </div>
+          <ExplorerFilesLoading />
         ) : state.files.length === 0 && state.activeProject ? (
           <div className="px-4 py-8 text-center text-[#858585] text-[12px]">
             <FileIcon className="w-6 h-6 mx-auto mb-2 opacity-30" />

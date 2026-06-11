@@ -16,6 +16,12 @@ import {
   mapValidationAnnotations,
 } from './lib/mapAnalysis';
 import { analysisStageFromProgress, ELEMENTIQ_ENGINE } from './lib/engineBranding';
+import {
+  formatWorkerLogMessage,
+  levelForServerLogLine,
+  parseJobIdFromStatusUrl,
+  resolveQueueConcurrencyFromHealth,
+} from './lib/analysisServerLog';
 import { disposeDocumentFile, disposeDocumentFilesInPlace } from './lib/sessionDispose';
 import {
   applyGuestRunSnapshot,
@@ -167,7 +173,7 @@ interface AppContextType {
   deleteFiles: (ids: string[], onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
   renameFile: (id: string, newName: string) => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
-  analyzeFile: (id: string) => Promise<void>;
+  analyzeFile: (id: string, opts?: { workerId?: number }) => Promise<void>;
   analyzeAll: (orderedIds?: string[]) => Promise<void>;
   analyzeSelected: (ids: string[]) => Promise<void>;
   stopAnalysis: () => void;
@@ -1206,7 +1212,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getFileName = (id: string) =>
     filesRef.current.find((f) => f.id === id)?.name ?? id.slice(0, 8);
 
-  const analyzeFile = useCallback(async (id: string) => {
+  const analyzeFile = useCallback(async (id: string, opts?: { workerId?: number }) => {
+    const workerId = opts?.workerId;
+    const log = (entry: Omit<AnalysisLogLine, 'id' | 'ts'>) => {
+      appendAnalysisLog({
+        ...entry,
+        workerId: entry.workerId ?? workerId,
+        message: formatWorkerLogMessage(entry.message, entry.workerId ?? workerId),
+      });
+    };
+
     const analysisSessionId = projectSessionRef.current;
     const session = stateRef.current;
     const usePublicRun = Boolean(
@@ -1217,7 +1232,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const fileName = getFileName(id);
     stopAnalysisRef.current = false;
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
-    appendAnalysisLog({ level: 'dim', message: `Connecting to backend…`, fileId: id });
+    log({ level: 'dim', message: `Connecting to backend…`, fileId: id });
     let file = filesRef.current.find(f => f.id === id)?.file;
     if (!file) return;
 
@@ -1228,7 +1243,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // ── 0. Ensure file bytes are loaded (only needed for raw multipart upload) ──
       if (!useServerReRun && file.size === 0) {
         updateFileStatus(id, { analysisProgress: 5, analysisStage: 'Downloading PDF from server...' });
-        appendAnalysisLog({ level: 'dim', message: 'Downloading PDF from server…', fileId: id });
+        log({ level: 'dim', message: 'Downloading PDF from server…', fileId: id });
         const dlRes = await authFetch(`/api/v1/files/${id}/download`);
         if (!dlRes.ok) throw new Error('Failed to download file for analysis');
         const blob = await dlRes.blob();
@@ -1261,7 +1276,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         state.componentConfidence,
         state.confidenceThreshold,
       ).forEach((line) => {
-        appendAnalysisLog({ level: 'info', message: `Model: ${line}`, fileId: id });
+        log({ level: 'info', message: `Model: ${line}`, fileId: id });
       });
 
       const parseApiError = async (res: Response) => {
@@ -1277,7 +1292,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Files already on server (UUID) → re-run via JSON (no multipart re-upload)
       if (useServerReRun) {
-        appendAnalysisLog({ level: 'dim', message: 'Submitting re-analysis job…', fileId: id });
+        log({ level: 'dim', message: 'Submitting re-analysis job…', fileId: id });
         const endpoint = usePublicRun ? '/api/v1/analyze/public-run' : '/api/v1/analyze/re-run';
         const res = await authFetch(endpoint, {
           method: 'POST',
@@ -1300,10 +1315,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) throw new Error(await parseApiError(res));
         ({ status_url } = await res.json());
       }
+      const jobId = parseJobIdFromStatusUrl(status_url);
       updateFileStatus(id, { analysisProgress: 20, analysisStage: analysisStageFromProgress(20) });
-      appendAnalysisLog({ level: 'dim', message: 'Job queued — polling status…', fileId: id });
+      log({
+        level: 'dim',
+        message: jobId
+          ? `Job ${jobId.slice(0, 8)}… queued — polling server log`
+          : 'Job queued — polling server log',
+        fileId: id,
+      });
 
-      let lastLoggedStage = '';
+      let lastServerLogLen = 0;
+      let lastFallbackStage = '';
 
       // ── 2. Poll until COMPLETED or FAILED ──────────────────
       const poll = async (): Promise<any> => {
@@ -1314,12 +1337,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!jobRes.ok) throw new Error(`Failed to fetch job status: ${jobRes.status}`);
         const job = await jobRes.json();
 
+        const serverLines: string[] = Array.isArray(job.analysis_log) ? job.analysis_log : [];
+        if (serverLines.length > lastServerLogLen) {
+          for (let si = lastServerLogLen; si < serverLines.length; si++) {
+            log({
+              level: levelForServerLogLine(serverLines[si]),
+              message: serverLines[si],
+              fileId: id,
+            });
+          }
+          lastServerLogLen = serverLines.length;
+        }
+
         if (job.progress) {
-          const stage = analysisStageFromProgress(job.progress ?? 0);
+          const stage = job.stage
+            ? String(job.stage).charAt(0).toUpperCase() + String(job.stage).slice(1)
+            : analysisStageFromProgress(job.progress ?? 0);
           updateFileStatus(id, { analysisProgress: job.progress, analysisStage: stage });
-          if (stage !== lastLoggedStage) {
-            lastLoggedStage = stage;
-            appendAnalysisLog({ level: 'dim', message: `${stage} (${job.progress}%)`, fileId: id });
+          if (serverLines.length === 0 && job.stage && job.stage !== lastFallbackStage) {
+            lastFallbackStage = job.stage;
+            log({ level: 'dim', message: `${stage} (${job.progress}%)`, fileId: id });
           }
         }
 
@@ -1329,7 +1366,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Check if user clicked Stop
         if (stopAnalysisRef.current) {
           updateFileStatus(id, { status: 'PENDING', analysisProgress: 0, analysisStage: 'Stopped by user' });
-          appendAnalysisLog({ level: 'warn', message: `${fileName} — stopped by user`, fileId: id });
+          log({ level: 'warn', message: `${fileName} — stopped by user`, fileId: id });
           throw new Error('Stopped by user');
         }
 
@@ -1424,13 +1461,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           prev.activeArtifact?.sourceFileId === id ? null : prev.activeArtifact,
       }));
 
-      appendAnalysisLog({
+      log({
         level: fileStatus === 'PASS' ? 'success' : fileStatus === 'FAIL' ? 'error' : 'warn',
         message: `${fileName} → ${overallStatus} · ${detections.length} detection(s) · ${Number(passRate).toFixed(1)}% pass`,
         fileId: id,
       });
       if (artifacts.length > 0) {
-        appendAnalysisLog({
+        log({
           level: 'info',
           message: 'Artifacts updated — open Annotated PNG/PDF in sidebar to view latest',
           fileId: id,
@@ -1446,7 +1483,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             guestViewerKey,
             buildGuestRunSnapshot(updated, String(result.job_id ?? '')),
           );
-          appendAnalysisLog({
+          log({
             level: 'info',
             message: 'Your results were saved locally in this browser only',
             fileId: id,
@@ -1457,7 +1494,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'Stopped by user') return;
-      appendAnalysisLog({ level: 'error', message: `${fileName} → ${msg}`, fileId: id });
+      log({ level: 'error', message: `${fileName} → ${msg}`, fileId: id });
       updateFileStatus(id, {
         status: 'FAIL',
         analysisProgress: 0,
@@ -1478,12 +1515,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     if (ids.length === 0) return;
 
+    let queueConcurrency = 2;
+    let slotUser = 2;
+    let slotGpu = 2;
+    try {
+      const { authFetch } = await import('./lib/supabase');
+      const hRes = await authFetch('/api/v1/health');
+      if (hRes.ok) {
+        const health = await hRes.json();
+        const services = health.services as Record<string, string> | undefined;
+        queueConcurrency = resolveQueueConcurrencyFromHealth(services);
+        slotUser = Number.parseInt(services?.max_user_slots ?? '2', 10) || 2;
+        slotGpu = Number.parseInt(services?.max_gpu_slots ?? '2', 10) || 2;
+      }
+    } catch {
+      /* use defaults */
+    }
+    const workerCount = Math.min(queueConcurrency, ids.length);
+
     clearAnalysisLogs();
     setState((prev) => ({
       ...prev,
-      analysisQueue: { current: 0, total: ids.length },
+      analysisQueue: { total: ids.length, completed: 0, activeCount: 0, activeFileNames: [] },
     }));
-    appendAnalysisLog({ level: 'info', message: `Queue started — ${ids.length} file(s) in explorer sort order` });
+    appendAnalysisLog({
+      level: 'info',
+      message: `Queue started — ${ids.length} file(s), ${workerCount} workers (server slots user=${slotUser} gpu=${slotGpu})`,
+    });
     const queueModels = buildModelLogLines(
       state.selectedComponents.length > 0 ? state.selectedComponents : ['grout-tube'],
       state.availableComponents,
@@ -1494,22 +1552,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appendAnalysisLog({ level: 'info', message: `Model: ${line}` });
     });
 
-    for (let i = 0; i < ids.length; i++) {
-      if (stopAnalysisRef.current) {
-        appendAnalysisLog({ level: 'warn', message: 'Queue stopped by user' });
-        break;
-      }
-      const id = ids[i];
-      const name = getFileName(id);
+    let nextIndex = 0;
+    let completed = 0;
+    const activeWorkers = new Map<number, string>();
+
+    const updateQueueProgress = () => {
+      const workerStates = [...activeWorkers.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([workerId, fileName]) => ({ workerId, fileName }));
       setState((prev) => ({
         ...prev,
-        analysisQueue: { current: i + 1, total: ids.length, currentFileName: name },
+        analysisQueue: {
+          total: ids.length,
+          completed,
+          activeCount: activeWorkers.size,
+          activeFileNames: workerStates.map((w) => w.fileName),
+          activeWorkers: workerStates,
+        },
       }));
-      appendAnalysisLog({ level: 'info', message: `[${i + 1}/${ids.length}] ▶ ${name}`, fileId: id });
-      await analyzeFile(id);
-    }
+    };
 
-    if (!stopAnalysisRef.current) {
+    const worker = async (workerId: number) => {
+      while (!stopAnalysisRef.current) {
+        const i = nextIndex++;
+        if (i >= ids.length) break;
+        const id = ids[i];
+        const name = getFileName(id);
+        activeWorkers.set(workerId, name);
+        updateQueueProgress();
+        appendAnalysisLog({
+          level: 'info',
+          message: formatWorkerLogMessage(`[${i + 1}/${ids.length}] ▶ ${name}`, workerId),
+          fileId: id,
+          workerId,
+        });
+        try {
+          await analyzeFile(id, { workerId });
+        } finally {
+          activeWorkers.delete(workerId);
+          completed++;
+          updateQueueProgress();
+        }
+      }
+    };
+
+    const workers = Array.from({ length: workerCount }, (_, idx) => worker(idx + 1));
+    await Promise.all(workers);
+
+    if (stopAnalysisRef.current) {
+      appendAnalysisLog({ level: 'warn', message: 'Queue stopped by user' });
+    } else {
       appendAnalysisLog({ level: 'success', message: 'Queue finished' });
     }
     setState((prev) => ({ ...prev, analysisQueue: null }));
@@ -1528,7 +1620,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const stopAnalysis = useCallback(() => {
     stopAnalysisRef.current = true;
-    appendAnalysisLog({ level: 'warn', message: 'Stop requested — finishing current file…' });
+    appendAnalysisLog({ level: 'warn', message: 'Stop requested — finishing active files…' });
   }, [appendAnalysisLog]);
 
   return (

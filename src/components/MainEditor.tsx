@@ -13,6 +13,7 @@ import { useTagNotes } from '../hooks/use-tag-notes';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { StatusLabel } from './StatusLabel';
+import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
@@ -964,22 +965,7 @@ export function MainEditor() {
   if (!file) {
     // Show skeleton when loading files
     if (state.isLoadingFiles) {
-      return (
-        <div className="flex-1 min-h-0 bg-editor-bg flex items-center justify-center p-8">
-          <div className="w-full max-w-[800px] animate-pulse space-y-4">
-            {/* Toolbar skeleton */}
-            <div className="flex gap-2">
-              <div className="h-7 w-20 bg-[#2b2d35] rounded" />
-              <div className="h-7 w-16 bg-[#2b2d35] rounded" />
-              <div className="h-7 w-16 bg-[#2b2d35] rounded" />
-              <div className="flex-1" />
-              <div className="h-7 w-24 bg-[#2b2d35] rounded" />
-            </div>
-            {/* PDF area skeleton */}
-            <div className="h-[70vh] bg-[#2b2d35] rounded-lg border border-[#3c3c3c]" />
-          </div>
-        </div>
-      );
+      return <ProjectLoadingScreen mode="pane" />;
     }
 
     return (

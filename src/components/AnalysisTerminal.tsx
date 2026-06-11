@@ -114,7 +114,12 @@ export function AnalysisTerminal() {
 
   if (!state.isAnalysisTerminalOpen) return null;
 
-  const progressPct = queue ? Math.round((queue.current / queue.total) * 100) : 0;
+  const progressPct = queue ? Math.round((queue.completed / queue.total) * 100) : 0;
+  const activeLabel = queue?.activeFileNames?.length
+    ? queue.activeFileNames.join(', ')
+    : queue && queue.activeCount > 0
+      ? 'Starting…'
+      : 'Preparing…';
   const showQueuePanel = queue || queueFiles.length > 0;
 
   return (
@@ -157,7 +162,8 @@ export function AnalysisTerminal() {
             </div>
           ) : queue ? (
             <div className="px-3 h-full flex items-center text-[10px] text-[#858585] shrink-0 border-l border-[#3c3c3c]/60">
-              Running {queue.current}/{queue.total}
+              Queue {queue.completed}/{queue.total} done
+              {queue.activeCount > 0 ? ` · ${queue.activeCount} running` : ''}
             </div>
           ) : null}
         </div>
@@ -250,8 +256,8 @@ export function AnalysisTerminal() {
               <div className="text-[10px] uppercase tracking-[0.08em] text-[#858585] font-semibold">Queue</div>
               {queue && (
                 <>
-                  <div className="mt-1.5 text-[11px] text-[#cccccc] truncate" title={queue.currentFileName}>
-                    {queue.currentFileName ?? 'Preparing…'}
+                  <div className="mt-1.5 text-[11px] text-[#cccccc] truncate" title={activeLabel}>
+                    {activeLabel}
                   </div>
                   <div className="mt-2 h-1 rounded-full bg-[#3c3c3c] overflow-hidden">
                     <div
@@ -260,8 +266,22 @@ export function AnalysisTerminal() {
                     />
                   </div>
                   <div className="mt-1 text-[10px] text-[#858585] tabular-nums">
-                    {queue.current} / {queue.total} files
+                    {queue.completed} / {queue.total} files done
+                    {queue.activeCount > 0 ? ` · ${queue.activeCount} active` : ''}
                   </div>
+                  {queue.activeWorkers && queue.activeWorkers.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {queue.activeWorkers.map((w) => (
+                        <div
+                          key={w.workerId}
+                          className="text-[10px] text-[#10b981] font-mono truncate"
+                          title={w.fileName}
+                        >
+                          W{w.workerId} → {w.fileName}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -280,7 +300,8 @@ export function AnalysisTerminal() {
                 </button>
                 {queueFiles.map((item, idx) => {
                   const isSelected = filterFileId === item.id;
-                  const isRunning = !filterFileId && queue?.currentFileName === item.label;
+                  const fileRow = state.files.find((f) => f.id === item.id);
+                  const isRunning = !filterFileId && fileRow?.status === 'ANALYZING';
                   return (
                     <button
                       key={item.id}
@@ -325,7 +346,7 @@ export function AnalysisTerminalToggle() {
       <Terminal className="w-3 h-3" />
       <span>
         {queue
-          ? `Running ${queue.current}/${queue.total}`
+          ? `Running ${queue.completed}/${queue.total}${queue.activeCount > 0 ? ` (${queue.activeCount} active)` : ''}`
           : hasLogs
             ? `Log (${state.analysisLogs.length})`
             : 'Analysis log'}
