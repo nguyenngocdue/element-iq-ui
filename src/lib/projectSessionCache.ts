@@ -1,4 +1,4 @@
-/** Session-scoped project snapshot — survives F5 reload in the same tab. */
+/** Project snapshot cache — IndexedDB (large projects) + tiny sessionStorage pointer for instant F5. */
 
 export interface CachedProjectMeta {
   id: string;
@@ -16,59 +16,84 @@ export interface CachedProjectPayload {
   rawFiles: unknown[];
 }
 
-function cacheKey(projectId: string, userId: string | null): string {
+const DB_NAME = 'elementiq-project-cache-v1';
+const IDB_STORE = 'projects';
+
+function storageKey(projectId: string, userId: string | null): string {
   return `elementiq:project:v1:${userId ?? 'guest'}:${projectId}`;
 }
 
-function parseCachePayload(raw: string): CachedProjectPayload | null {
-  try {
-    const parsed = JSON.parse(raw) as CachedProjectPayload;
-    if (parsed?.v !== 1 || !parsed.meta?.id || !Array.isArray(parsed.rawFiles)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+function pointerKey(projectId: string, userId: string | null): string {
+  return `elementiq:project:ptr:v1:${userId ?? 'guest'}:${projectId}`;
 }
 
-function readCacheByStorageKey(key: string): CachedProjectPayload | null {
-  try {
-    const raw = sessionStorage.getItem(key);
-    if (!raw) return null;
-    return parseCachePayload(raw);
-  } catch {
-    return null;
-  }
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-export function hasProjectSessionCache(
-  projectId: string,
-  userId: string | null,
-): boolean {
-  return readProjectSessionCache(projectId, userId) !== null;
+function idbGet(key: string): Promise<CachedProjectPayload | undefined> {
+  return openDb().then(
+    (db) =>
+      new Promise<CachedProjectPayload | undefined>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = () => {
+          const v = req.result as CachedProjectPayload | undefined;
+          if (v?.v === 1 && v.meta?.id && Array.isArray(v.rawFiles)) resolve(v);
+          else resolve(undefined);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
 }
 
-export function readProjectSessionCache(
-  projectId: string,
-  userId: string | null,
-): CachedProjectPayload | null {
-  try {
-    const primary = readCacheByStorageKey(cacheKey(projectId, userId));
-    if (primary) return primary;
+function idbPut(key: string, entry: CachedProjectPayload): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(entry, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
 
-    // Same tab may have cached under a sibling viewer key (e.g. guest → user after auth).
-    const suffix = `:${projectId}`;
-    for (let i = 0; i < sessionStorage.length; i += 1) {
-      const key = sessionStorage.key(i);
-      if (!key?.startsWith('elementiq:project:v1:') || !key.endsWith(suffix)) continue;
-      const hit = readCacheByStorageKey(key);
-      if (hit) {
-        // Normalize to the current viewer key for the next reload.
-        writeProjectSessionCache(projectId, userId, {
-          meta: hit.meta,
-          rawFiles: hit.rawFiles,
-        });
-        return hit;
-      }
+function idbDelete(key: string): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
+
+async function idbFindByProjectSuffix(projectId: string): Promise<{ key: string; payload: CachedProjectPayload } | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const suffix = `:${projectId}`;
+  try {
+    const db = await openDb();
+    const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    for (const key of keys) {
+      const k = String(key);
+      if (!k.startsWith('elementiq:project:v1:') || !k.endsWith(suffix)) continue;
+      const payload = await idbGet(k);
+      if (payload) return { key: k, payload };
     }
     return null;
   } catch {
@@ -76,31 +101,93 @@ export function readProjectSessionCache(
   }
 }
 
-export function writeProjectSessionCache(
+function writePointer(projectId: string, userId: string | null, fileCount: number, sizeKb: number): void {
+  try {
+    sessionStorage.setItem(
+      pointerKey(projectId, userId),
+      JSON.stringify({ v: 1, cachedAt: new Date().toISOString(), fileCount, sizeKb }),
+    );
+  } catch {
+    /* pointer is tiny — ignore */
+  }
+}
+
+function clearPointer(projectId: string, userId: string | null): void {
+  try {
+    sessionStorage.removeItem(pointerKey(projectId, userId));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Sync check for App boot — reads tiny sessionStorage pointer only. */
+export function hasProjectSessionCache(
+  projectId: string,
+  userId: string | null,
+): boolean {
+  try {
+    return sessionStorage.getItem(pointerKey(projectId, userId)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+export async function readProjectSessionCache(
+  projectId: string,
+  userId: string | null,
+): Promise<CachedProjectPayload | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  try {
+    const primary = await idbGet(storageKey(projectId, userId));
+    if (primary) return primary;
+
+    const fallback = await idbFindByProjectSuffix(projectId);
+    if (fallback) {
+      await writeProjectSessionCache(projectId, userId, {
+        meta: fallback.payload.meta,
+        rawFiles: fallback.payload.rawFiles,
+      });
+      return fallback.payload;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeProjectSessionCache(
   projectId: string,
   userId: string | null,
   payload: Omit<CachedProjectPayload, 'v' | 'cachedAt'>,
-): void {
+): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
   try {
     const entry: CachedProjectPayload = {
       v: 1,
       cachedAt: new Date().toISOString(),
       ...payload,
     };
-    const serialized = JSON.stringify(entry);
-    sessionStorage.setItem(cacheKey(projectId, userId), serialized);
-    const kb = Math.round(serialized.length / 1024);
+    const key = storageKey(projectId, userId);
+    await idbPut(key, entry);
+
+    const sizeKb = Math.round(JSON.stringify(entry).length / 1024);
+    writePointer(projectId, userId, payload.rawFiles.length, sizeKb);
     console.log(
-      `[ElementIQ] Project cache saved · ${payload.rawFiles.length} file(s) · ~${kb} KB · key=${cacheKey(projectId, userId)}`,
+      `[ElementIQ] Project cache saved · ${payload.rawFiles.length} file(s) · ~${sizeKb} KB · IndexedDB/${DB_NAME} · key=${key}`,
     );
   } catch (err) {
-    console.warn('[ElementIQ] project session cache full or unavailable', err);
+    console.warn('[ElementIQ] project cache write failed (IndexedDB)', err);
   }
 }
 
-export function clearProjectSessionCache(projectId: string, userId: string | null): void {
+export async function clearProjectSessionCache(
+  projectId: string,
+  userId: string | null,
+): Promise<void> {
+  clearPointer(projectId, userId);
+  if (typeof indexedDB === 'undefined') return;
   try {
-    sessionStorage.removeItem(cacheKey(projectId, userId));
+    await idbDelete(storageKey(projectId, userId));
   } catch {
     /* ignore */
   }

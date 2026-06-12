@@ -50,10 +50,10 @@ export async function fetchProjectEditorSnapshot(
 }
 
 /** Write-through: persist latest API snapshot for fast F5 reload. */
-export function persistProjectSessionCache(
+export async function persistProjectSessionCache(
   projectId: string,
   viewerKey: string | null,
   snapshot: ProjectEditorSnapshot,
-): void {
-  writeProjectSessionCache(projectId, viewerKey, snapshot);
+): Promise<void> {
+  await writeProjectSessionCache(projectId, viewerKey, snapshot);
 }

@@ -33,6 +33,7 @@ import {
 import { normalizePublicAccessLevel, resolveProjectCapabilities } from './lib/projectAccess';
 import {
   readProjectSessionCache,
+  writeProjectSessionCache,
   projectSnapshotChanged,
   type CachedProjectMeta,
 } from './lib/projectSessionCache';
@@ -828,7 +829,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (project.ownerId) {
-          persistProjectSessionCache(
+          void writeProjectSessionCache(
             project.id,
             stateRef.current.guestViewerKey ?? null,
             {
@@ -886,7 +887,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return 'ok';
     }
 
-    const sessionCache = readProjectSessionCache(projectId, userId ?? null);
+    const sessionCache = await readProjectSessionCache(projectId, userId ?? null);
     if (!sessionCache) {
       console.log(
         `[ElementIQ] Project cache miss · project=${projectId} · viewer=${userId ?? 'guest'}`,
@@ -930,7 +931,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const snapshot = await fetchProjectEditorSnapshot(projectId);
           if (!isSessionCurrent(loadSessionId) || !snapshot) return;
 
-          const cached = readProjectSessionCache(projectId, userId ?? null);
+          const cached = await readProjectSessionCache(projectId, userId ?? null);
           persistProjectSessionCache(projectId, userId ?? null, snapshot);
 
           if (!projectSnapshotChanged(cached, snapshot.meta, snapshot.rawFiles)) {
@@ -987,7 +988,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const rawFiles = await filesRes.json();
       const meta = metaFromProjectApi(data);
 
-      persistProjectSessionCache(projectId, userId ?? null, { meta, rawFiles });
+      await writeProjectSessionCache(projectId, userId ?? null, { meta, rawFiles });
       applyHydratedProject(meta, rawFiles, false);
 
       return 'ok';
