@@ -32,7 +32,7 @@ export interface AdminFileRow {
   project_name: string | null;
   category: string;
   file_size_bytes: number;
-  disk_exists: boolean;
+  disk_exists: boolean | null;
   job_count: number;
   uploaded_at: string | null;
 }
@@ -52,13 +52,32 @@ export interface AdminProjectRow {
 export interface AdminJobRow {
   id: string;
   filename: string;
+  file_id?: string | null;
   owner_username: string;
   status: string;
   stage: string | null;
   progress: number;
   overall_status: string | null;
+  artifact_count?: number;
   created_at: string | null;
+  completed_at?: string | null;
   error_message: string | null;
+}
+
+export interface AdminArtifactRow {
+  id: string;
+  artifact_type: string;
+  original_filename: string | null;
+  file_size_bytes: number;
+  disk_exists: boolean;
+  download_url: string;
+  local_path?: string;
+}
+
+export interface AdminJobDetail extends AdminJobRow {
+  analysis_log?: string[];
+  components?: string[];
+  artifacts?: AdminArtifactRow[];
 }
 
 async function adminGet<T>(path: string): Promise<T> {
@@ -112,9 +131,15 @@ export const adminApi = {
   patchProject: (id: string, body: Record<string, unknown>) => adminPatch(`/projects/${id}`, body),
   jobs: (params: URLSearchParams) => adminGet<Paginated<AdminJobRow>>(`/jobs?${params}`),
   activeJobs: () => adminGet<{ items: AdminJobRow[] }>('/jobs/active'),
-  jobDetail: (id: string) => adminGet<{ analysis_log: string[] } & AdminJobRow>(`/jobs/${id}`),
+  jobDetail: (id: string) => adminGet<AdminJobDetail>(`/jobs/${id}`),
   deleteJob: (id: string) => adminDelete(`/jobs/${id}`),
   systemHealth: () => adminGet<Record<string, unknown>>('/system/health'),
   systemMetrics: () => adminGet<import('../hooks/useSystemMetrics').SystemMetricsSnapshot>('/system/metrics'),
+  pruneArtifacts: (keep?: number) => {
+    const qs = keep != null ? `?keep=${keep}` : '';
+    return adminPost<{ deleted_jobs: number; file_versions_pruned: number; keep_per_file_version: number }>(
+      `/system/prune-artifacts${qs}`,
+    );
+  },
   scanOrphans: () => adminPost<Record<string, unknown>>('/system/scan-orphans'),
 };

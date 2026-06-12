@@ -2,16 +2,16 @@ import { useCallback, useMemo, useState } from 'react';
 import { Archive, Trash2 } from 'lucide-react';
 import { adminApi, type AdminProjectRow } from '../../lib/adminApi';
 import { formatBytes, formatRelativeTime } from '../../lib/adminFormat';
-import { useAdminSearchLoad } from '../../hooks/useAdminSearchLoad';
+import { useAdminPaginatedLoad } from '../../hooks/useAdminPaginatedLoad';
 import { useTableSort } from '../../hooks/useTableSort';
 import { cn } from '../../lib/utils';
-import { AdminConfirmModal, AdminSearchInput, AdminSortHeader, AdminStatusBadge, AdminTableShell } from './AdminShared';
+import { AdminConfirmModal, AdminIndexCell, AdminIndexHeader, AdminPagination, AdminSearchInput, AdminSortHeader, AdminStatusBadge, AdminTableShell, adminRowNumber } from './AdminShared';
+
 export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
-  const fetchProjects = useCallback(async (search: string) => {
-    const params = new URLSearchParams({ page: '1', page_size: '50' });
+  const fetchProjects = useCallback(async (search: string, page: number, pageSize: number) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search.trim()) params.set('search', search.trim());
-    const res = await adminApi.projects(params);
-    return res.items;
+    return adminApi.projects(params);
   }, []);
 
   const {
@@ -19,11 +19,17 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
     setRows,
     searchInput,
     setSearchInput,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    total,
+    pages,
     loading,
     searching,
     error,
     setError,
-  } = useAdminSearchLoad({ fetcher: fetchProjects, refreshKey });
+  } = useAdminPaginatedLoad({ fetcher: fetchProjects, refreshKey, defaultPageSize: 50 });
 
   const [deleteTarget, setDeleteTarget] = useState<AdminProjectRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -71,6 +77,7 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
     <>
       <AdminTableShell
         title="Projects"
+        totalRows={total}
         description="All projects across the workspace"
         toolbar={(
           <AdminSearchInput
@@ -91,6 +98,7 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="bg-[#141414] text-[11px] border-b border-[#262626]">
+                  <AdminIndexHeader />
                   <AdminSortHeader label="Project" sortKey="name" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <AdminSortHeader label="Owner" sortKey="owner_username" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <AdminSortHeader label="Files" sortKey="file_count" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
@@ -101,7 +109,9 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
                   <th className="text-right px-4 py-3 font-medium text-[11px] uppercase text-[#737373]">Actions</th>
                 </tr>              </thead>
               <tbody>
-                {sortedRows.map((row) => (                  <tr key={row.id} className="border-b border-[#1f1f1f] hover:bg-[#141414]/60">
+                {sortedRows.map((row, index) => (
+                  <tr key={row.id} className="border-b border-[#1f1f1f] hover:bg-[#141414]/60">
+                    <AdminIndexCell n={adminRowNumber(page, pageSize, index)} />
                     <td className="px-4 py-3 text-white font-medium">{row.name}</td>
                     <td className="px-4 py-3 text-[#b0b0b0]">{row.owner_username}</td>
                     <td className="px-4 py-3 text-right text-[#b0b0b0] tabular-nums">{row.file_count}</td>
@@ -142,6 +152,16 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && (
+          <AdminPagination
+            page={page}
+            pages={pages}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         )}
       </AdminTableShell>
 

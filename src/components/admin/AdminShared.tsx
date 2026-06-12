@@ -137,11 +137,13 @@ export function AdminConfirmModal({
 export function AdminTableShell({
   title,
   description,
+  totalRows,
   toolbar,
   children,
 }: {
   title: string;
   description?: string;
+  totalRows?: number;
   toolbar?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -149,7 +151,14 @@ export function AdminTableShell({
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 className="text-lg font-semibold text-white flex flex-wrap items-baseline gap-x-2">
+            {title}
+            {totalRows !== undefined && (
+              <span className="text-[13px] font-normal text-[#737373] tabular-nums">
+                {totalRows.toLocaleString()} {totalRows === 1 ? 'row' : 'rows'}
+              </span>
+            )}
+          </h2>
           {description && <p className="text-sm text-[#737373] mt-0.5">{description}</p>}
         </div>
         {toolbar}
@@ -201,6 +210,88 @@ export function profileInitials(fullName: string | null, username: string): stri
   const parts = source.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   return (source.charAt(0) || '?').toUpperCase();
+}
+
+export function adminRowNumber(page: number, pageSize: number, index: number): number {
+  return (page - 1) * pageSize + index + 1;
+}
+
+export function AdminIndexHeader() {
+  return (
+    <th className="w-12 px-3 py-3 text-center font-medium text-[11px] uppercase text-[#737373]">#</th>
+  );
+}
+
+export function AdminIndexCell({ n }: { n: number }) {
+  return (
+    <td className="px-3 py-3 text-center text-[#525252] tabular-nums text-[12px]">{n}</td>
+  );
+}
+
+export function AdminPagination({
+  page,
+  pages,
+  total,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = [50, 100, 200, 500],
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  pageSizeOptions?: readonly number[];
+}) {
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 border-t border-[#262626] bg-[#141414]/40">
+      <p className="text-[12px] text-[#737373] tabular-nums">
+        {total === 0 ? 'No rows' : `${total.toLocaleString()} rows · showing ${start}–${end}`}
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-[12px] text-[#737373]">
+          Rows
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="bg-[#141414] border border-[#262626] rounded px-2 py-1 text-white text-[12px] focus:outline-none focus:border-[#10b981]/40"
+          >
+            {pageSizeOptions.map((n) => (
+              <option key={n} value={n}>
+                {n}/page
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            className="px-2.5 py-1 rounded text-[12px] text-[#b0b0b0] border border-[#262626] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Prev
+          </button>
+          <span className="px-2 text-[12px] text-[#737373] tabular-nums">
+            {page} / {pages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= pages}
+            onClick={() => onPageChange(page + 1)}
+            className="px-2.5 py-1 rounded text-[12px] text-[#b0b0b0] border border-[#262626] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function AdminSortHeader({

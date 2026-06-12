@@ -30,7 +30,7 @@ const HIGHLIGHT_RULES: { pattern: RegExp; className: string }[] = [
   { pattern: new RegExp(ELEMENTIQ_ENGINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), className: HL.keyword },
   { pattern: /\[W\d+\]/g, className: HL.keyword },
   { pattern: /\[[\d]+\/[\d]+\]/g, className: HL.number },
-  { pattern: /\bGPU:|Models:|Engine:/g, className: HL.keyword },
+  { pattern: /\bConfig:|GPU:|Models:|Engine:/g, className: HL.keyword },
   { pattern: /\bPrepare ·|Scan ·|Read tags ·|Validate ·|Save report ·|Complete ·/g, className: HL.stage },
   { pattern: /\bTOTAL\b/g, className: HL.pass },
   { pattern: /\(\d+%\)/g, className: HL.number },

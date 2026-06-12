@@ -2,18 +2,23 @@ import { useCallback, useMemo, useState } from 'react';
 import { Crown } from 'lucide-react';
 import { adminApi, type AdminUserRow } from '../../lib/adminApi';
 import { formatBytes, formatRelativeTime } from '../../lib/adminFormat';
-import { useAdminSearchLoad } from '../../hooks/useAdminSearchLoad';
+import { useAdminPaginatedLoad } from '../../hooks/useAdminPaginatedLoad';
 import { useTableSort } from '../../hooks/useTableSort';
 import { cn } from '../../lib/utils';
 import {
   AdminConfirmModal,
+  AdminIndexCell,
+  AdminIndexHeader,
+  AdminPagination,
   AdminRoleToggle,
   AdminSearchInput,
   AdminSortHeader,
   AdminStatusBadge,
   AdminTableShell,
+  adminRowNumber,
   profileInitials,
 } from './AdminShared';
+
 export function AdminUsersTab({
   refreshKey,
   isSuperAdmin,
@@ -21,11 +26,10 @@ export function AdminUsersTab({
   refreshKey: number;
   isSuperAdmin: boolean;
 }) {
-  const fetchUsers = useCallback(async (search: string) => {
-    const params = new URLSearchParams({ page: '1', page_size: '100' });
+  const fetchUsers = useCallback(async (search: string, page: number, pageSize: number) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search.trim()) params.set('search', search.trim());
-    const res = await adminApi.users(params);
-    return res.items;
+    return adminApi.users(params);
   }, []);
 
   const {
@@ -33,11 +37,17 @@ export function AdminUsersTab({
     setRows,
     searchInput,
     setSearchInput,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    total,
+    pages,
     loading,
     searching,
     error,
     setError,
-  } = useAdminSearchLoad({ fetcher: fetchUsers, refreshKey });
+  } = useAdminPaginatedLoad({ fetcher: fetchUsers, refreshKey, defaultPageSize: 50 });
 
   const [pending, setPending] = useState<AdminUserRow | null>(null);
   const [grantMode, setGrantMode] = useState(true);
@@ -91,6 +101,7 @@ export function AdminUsersTab({
 
       <AdminTableShell
         title="Users"
+        totalRows={total}
         description="All workspace accounts and storage usage"
         toolbar={(
           <AdminSearchInput
@@ -109,6 +120,7 @@ export function AdminUsersTab({
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="bg-[#141414] text-[11px] border-b border-[#262626]">
+                  <AdminIndexHeader />
                   <AdminSortHeader label="User" sortKey="username" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <AdminSortHeader label="Email" sortKey="email" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <AdminSortHeader label="Role" sortKey="role" activeKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -120,9 +132,11 @@ export function AdminUsersTab({
                   {isSuperAdmin && <th className="text-center px-4 py-3 font-medium text-[11px] uppercase text-[#737373]">Admin access</th>}
                 </tr>              </thead>
               <tbody>
-                {sortedRows.map((row) => {                  const isAdminRole = row.role === 'ADMIN';
+                {sortedRows.map((row, index) => {
+                  const isAdminRole = row.role === 'ADMIN';
                   return (
                     <tr key={row.id} className="border-b border-[#1f1f1f] hover:bg-[#141414]/60">
+                      <AdminIndexCell n={adminRowNumber(page, pageSize, index)} />
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-[#262626] flex items-center justify-center text-xs font-semibold text-[#5eead4]">
@@ -169,6 +183,16 @@ export function AdminUsersTab({
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && (
+          <AdminPagination
+            page={page}
+            pages={pages}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         )}
       </AdminTableShell>
 

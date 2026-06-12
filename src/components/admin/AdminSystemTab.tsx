@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScanSearch } from 'lucide-react';
+import { Archive, ScanSearch } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { formatBytes } from '../../lib/adminFormat';
 import { useSystemMetrics } from '../../hooks/useSystemMetrics';
@@ -11,6 +11,8 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
   const [health, setHealth] = useState<Record<string, any> | null>(null);
   const [orphans, setOrphans] = useState<Record<string, any> | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [pruning, setPruning] = useState(false);
+  const [pruneResult, setPruneResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { points: metricPoints, error: metricsError, live: metricsLive } = useSystemMetrics(true);
@@ -30,6 +32,25 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
   useEffect(() => {
     void load();
   }, [load, refreshKey]);
+
+  async function runPrune() {
+    const keep = typeof health?.artifact_retention_jobs === 'number' ? health.artifact_retention_jobs : 2;
+    const prev = keep > 1 ? keep - 1 : 0;
+    if (!window.confirm(`Delete older analysis jobs? Keeps latest ${keep} per file${prev ? ` (${prev} previous backup${prev > 1 ? 's' : ''})` : ''}.`)) return;
+    setPruning(true);
+    setPruneResult(null);
+    try {
+      const r = await adminApi.pruneArtifacts();
+      setPruneResult(
+        `Removed ${r.deleted_jobs} job(s) across ${r.file_versions_pruned} file version(s) (keep ${r.keep_per_file_version}).`,
+      );
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Prune failed');
+    } finally {
+      setPruning(false);
+    }
+  }
 
   async function runScan() {
     setScanning(true);
@@ -103,7 +124,16 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
         </div>
       </AdminTableShell>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void runPrune()}
+          disabled={pruning}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-[#141414] border border-[#262626] text-sm text-white hover:border-[#10b981]/40 transition-colors disabled:opacity-50"
+        >
+          <Archive className="w-4 h-4" />
+          {pruning ? 'Pruning…' : `Prune old artifacts (keep ${typeof health?.artifact_retention_jobs === 'number' ? health.artifact_retention_jobs : '…'})`}
+        </button>
         <button
           type="button"
           onClick={() => void runScan()}
@@ -114,6 +144,7 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
           {scanning ? 'Scanning…' : 'Scan for orphan files'}
         </button>
       </div>
+      {pruneResult && <p className="text-sm text-[#34d399]">{pruneResult}</p>}
 
       {orphans && (
         <div className="grid lg:grid-cols-2 gap-4">
