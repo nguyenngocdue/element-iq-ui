@@ -31,6 +31,22 @@ import {
   saveGuestRunSnapshot,
 } from './lib/guestRunStorage';
 import { normalizePublicAccessLevel, resolveProjectCapabilities } from './lib/projectAccess';
+import {
+  readProjectSessionCache,
+  projectSnapshotChanged,
+  type CachedProjectMeta,
+} from './lib/projectSessionCache';
+import {
+  fetchProjectEditorSnapshot,
+  metaFromProjectApi,
+  persistProjectSessionCache,
+} from './lib/projectCacheSync';
+import {
+  getCachedPdfBlob,
+  pdfVersionKey,
+  putCachedPdfBlob,
+  removeCachedPdfBlob,
+} from './lib/pdfBlobCache';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -145,14 +161,104 @@ function mergeGuestRunResults(
   });
 }
 
-async function fetchProjectFileDocs(projectId: string): Promise<DocumentFile[]> {
-  const { authFetch } = await import('./lib/supabase');
-  const res = await authFetch(`/api/v1/projects/${projectId}/files`);
-  if (!res.ok) {
-    throw new Error(`Failed to load project files: HTTP ${res.status}`);
+function resolveUrlFileSelection(docs: DocumentFile[]) {
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlFileId = urlParams.get('file');
+  const urlPage = urlParams.get('page');
+  const parsedPage = urlPage ? Math.max(1, parseInt(urlPage, 10) || 1) : 1;
+  const initialFileId =
+    urlFileId && docs.some((d) => d.id === urlFileId)
+      ? urlFileId
+      : docs.length > 0
+        ? docs[0].id
+        : null;
+  return { initialFileId, parsedPage, urlFileId };
+}
+
+function editorStateFromProjectApi(
+  data: CachedProjectMeta,
+  rawFiles: unknown[],
+  projectId: string,
+  userId: string | null | undefined,
+) {
+  const isOwner = Boolean(userId && data.owner_id === userId);
+  const publicAccessLevel = normalizePublicAccessLevel(data.public_access_level);
+  const caps = resolveProjectCapabilities(isOwner, Boolean(data.is_public), publicAccessLevel);
+  const viewerKey = getGuestRunViewerKey(userId);
+  const docs = mergeGuestRunResults(
+    projectId,
+    mapApiProjectFiles(rawFiles as any[]),
+    viewerKey,
+    isOwner,
+  );
+  const { initialFileId, parsedPage, urlFileId } = resolveUrlFileSelection(docs);
+
+  return {
+    initialFileId,
+    docs,
+    patch: {
+      activeProject: {
+        id: data.id,
+        name: data.name,
+        role: isOwner ? 'Owner' : 'Viewer',
+        age: '',
+        hasImage: false,
+        description: data.description ?? undefined,
+        ownerId: data.owner_id,
+        isPublic: data.is_public,
+        isReadOnly: caps.isReadOnly,
+        publicAccessLevel,
+      },
+      ...caps,
+      isProjectOwner: isOwner,
+      guestViewerKey: viewerKey,
+      currentView: 'editor' as const,
+      files: docs,
+      isLoadingFiles: false,
+      activeFileId: initialFileId,
+      openFiles: initialFileId ? [initialFileId] : [],
+      activeArtifact: null,
+      activePage: initialFileId === urlFileId ? parsedPage : 1,
+    },
+  };
+}
+
+async function prefetchProjectPdf(
+  doc: DocumentFile,
+  loadSessionId: number,
+  isSessionCurrent: (id: number) => boolean,
+  setState: React.Dispatch<React.SetStateAction<SessionState>>,
+) {
+  const versionKey = pdfVersionKey(doc.uploadedAt, doc.fileSizeBytes);
+
+  const applyBlob = (blob: Blob) => {
+    const realFile = new File([blob], doc.name, { type: 'application/pdf' });
+    setState((prev) => {
+      if (!isSessionCurrent(loadSessionId)) return prev;
+      return {
+        ...prev,
+        files: prev.files.map((f) => (f.id === doc.id ? { ...f, file: realFile } : f)),
+      };
+    });
+  };
+
+  const cached = await getCachedPdfBlob(doc.id, versionKey);
+  if (cached && isSessionCurrent(loadSessionId)) {
+    applyBlob(cached);
+    return;
   }
-  const files = await res.json();
-  return mapApiProjectFiles(files);
+
+  try {
+    const { authFetch } = await import('./lib/supabase');
+    const dlRes = await authFetch(`/api/v1/files/${doc.id}/download`);
+    if (!isSessionCurrent(loadSessionId) || !dlRes.ok) return;
+    const blob = await dlRes.blob();
+    if (!isSessionCurrent(loadSessionId)) return;
+    void putCachedPdfBlob(doc.id, versionKey, blob);
+    applyBlob(blob);
+  } catch {
+    // PDF prefetch is best-effort
+  }
 }
 
 interface AppContextType {
@@ -259,6 +365,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (sessionId: number) => sessionId === projectSessionRef.current,
     [],
   );
+
+  /** Write-through session cache from API — keeps F5 snapshot fresh after mutations. */
+  const syncProjectSessionCache = useCallback(async (
+    projectId: string,
+    opts?: { viewerKey?: string | null },
+  ): Promise<void> => {
+    const viewerKey = opts?.viewerKey ?? stateRef.current.guestViewerKey ?? null;
+    const snapshot = await fetchProjectEditorSnapshot(projectId);
+    if (!snapshot) return;
+    persistProjectSessionCache(projectId, viewerKey, snapshot);
+  }, []);
 
   const disposeProjectSession = useCallback(() => {
     invalidateProjectSession();
@@ -683,22 +800,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        const files = await res.json();
+        const rawFiles = await res.json();
         if (!isSessionCurrent(loadSessionId)) return;
-        console.log(`[ElementIQ] Loaded ${files.length} files for project ${project.id}`);
+        console.log(`[ElementIQ] Loaded ${rawFiles.length} files for project ${project.id}`);
 
-        const docs = mapApiProjectFiles(files);
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlFileId = urlParams.get('file');
-        const urlPage = urlParams.get('page');
-        const parsedPage = urlPage ? Math.max(1, parseInt(urlPage, 10) || 1) : 1;
-        const initialFileId =
-          urlFileId && docs.some((d) => d.id === urlFileId)
-            ? urlFileId
-            : docs.length > 0
-              ? docs[0].id
-              : null;
+        const docs = mapApiProjectFiles(rawFiles);
+        const { initialFileId, parsedPage, urlFileId } = resolveUrlFileSelection(docs);
 
         setState((prev) => {
           if (!isSessionCurrent(loadSessionId)) return prev;
@@ -713,26 +820,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
 
-        // Auto-download the active file so PDF renders immediately
         if (initialFileId) {
           const activeDoc = docs.find((d) => d.id === initialFileId);
-          if (!activeDoc) return;
-          try {
-            const dlRes = await authFetch(`/api/v1/files/${activeDoc.id}/download`);
-            if (!isSessionCurrent(loadSessionId) || !dlRes.ok) return;
-            const blob = await dlRes.blob();
-            if (!isSessionCurrent(loadSessionId)) return;
-            const realFile = new File([blob], activeDoc.name, { type: 'application/pdf' });
-            setState((prev) => {
-              if (!isSessionCurrent(loadSessionId)) return prev;
-              return {
-                ...prev,
-                files: prev.files.map(f => f.id === activeDoc.id ? { ...f, file: realFile } : f),
-              };
-            });
-          } catch {
-            // Non-blocking
+          if (activeDoc) {
+            void prefetchProjectPdf(activeDoc, loadSessionId, isSessionCurrent, setState);
           }
+        }
+
+        if (project.ownerId) {
+          persistProjectSessionCache(
+            project.id,
+            stateRef.current.guestViewerKey ?? null,
+            {
+              meta: {
+                id: project.id,
+                name: project.name,
+                owner_id: project.ownerId,
+                is_public: Boolean(project.isPublic),
+                public_access_level: project.publicAccessLevel ?? null,
+                description: project.description ?? null,
+              },
+              rawFiles,
+            },
+          );
         }
       } catch (err) {
         console.error('Failed to load project files:', err);
@@ -776,10 +886,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return 'ok';
     }
 
+    const sessionCache = readProjectSessionCache(projectId, userId ?? null);
+
     disposeDocumentFilesInPlace(stateRef.current.files);
     projectSessionRef.current += 1;
     stopAnalysisRef.current = true;
     const loadSessionId = projectSessionRef.current;
+
+    const applyHydratedProject = (
+      meta: CachedProjectMeta,
+      rawFiles: unknown[],
+      fromCache: boolean,
+    ) => {
+      const { initialFileId, docs, patch } = editorStateFromProjectApi(
+        meta,
+        rawFiles,
+        projectId,
+        userId,
+      );
+      setState((prev) => {
+        if (!isSessionCurrent(loadSessionId)) return prev;
+        return { ...prev, ...patch, pinnedFiles: prev.pinnedFiles };
+      });
+      if (initialFileId) {
+        const activeDoc = docs.find((d) => d.id === initialFileId);
+        if (activeDoc) {
+          void prefetchProjectPdf(activeDoc, loadSessionId, isSessionCurrent, setState);
+        }
+      }
+      if (fromCache) {
+        console.log(`[ElementIQ] Project ${projectId} restored from session cache`);
+      }
+    };
+
+    const revalidateInBackground = () => {
+      void (async () => {
+        try {
+          const snapshot = await fetchProjectEditorSnapshot(projectId);
+          if (!isSessionCurrent(loadSessionId) || !snapshot) return;
+
+          const cached = readProjectSessionCache(projectId, userId ?? null);
+          persistProjectSessionCache(projectId, userId ?? null, snapshot);
+
+          if (!projectSnapshotChanged(cached, snapshot.meta, snapshot.rawFiles)) {
+            return;
+          }
+
+          applyHydratedProject(snapshot.meta, snapshot.rawFiles, false);
+          console.log(`[ElementIQ] Project ${projectId} updated from server (cache revalidate)`);
+        } catch {
+          // Keep cached snapshot on background sync failure
+        }
+      })();
+    };
+
+    if (sessionCache) {
+      applyHydratedProject(sessionCache.meta, sessionCache.rawFiles, true);
+      revalidateInBackground();
+      return 'ok';
+    }
 
     setState((prev) => ({
       ...prev,
@@ -815,80 +980,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const data = await metaRes.json();
       const rawFiles = await filesRes.json();
-      const isOwner = Boolean(userId && data.owner_id === userId);
-      const publicAccessLevel = normalizePublicAccessLevel(data.public_access_level);
-      const caps = resolveProjectCapabilities(isOwner, Boolean(data.is_public), publicAccessLevel);
-      const viewerKey = getGuestRunViewerKey(userId);
-      const docs = mergeGuestRunResults(
-        projectId,
-        mapApiProjectFiles(rawFiles),
-        viewerKey,
-        isOwner,
-      );
+      const meta = metaFromProjectApi(data);
 
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlFileId = urlParams.get('file');
-      const urlPage = urlParams.get('page');
-      const parsedPage = urlPage ? Math.max(1, parseInt(urlPage, 10) || 1) : 1;
-      const initialFileId =
-        urlFileId && docs.some((d) => d.id === urlFileId)
-          ? urlFileId
-          : docs.length > 0
-            ? docs[0].id
-            : null;
-
-      setState((prev) => {
-        if (!isSessionCurrent(loadSessionId)) return prev;
-        return {
-          ...prev,
-          activeProject: {
-            id: data.id,
-            name: data.name,
-            role: isOwner ? 'Owner' : 'Viewer',
-            age: '',
-            hasImage: false,
-            description: data.description,
-            ownerId: data.owner_id,
-            isPublic: data.is_public,
-            isReadOnly: caps.isReadOnly,
-            publicAccessLevel,
-          },
-          ...caps,
-          isProjectOwner: isOwner,
-          guestViewerKey: viewerKey,
-          files: docs,
-          isLoadingFiles: false,
-          activeFileId: initialFileId,
-          openFiles: initialFileId ? [initialFileId] : [],
-          activeArtifact: null,
-          activePage: initialFileId === urlFileId ? parsedPage : 1,
-        };
-      });
-
-      if (initialFileId) {
-        const activeDoc = docs.find((d) => d.id === initialFileId);
-        if (activeDoc) {
-          void (async () => {
-            try {
-              const { authFetch } = await import('./lib/supabase');
-              const dlRes = await authFetch(`/api/v1/files/${activeDoc.id}/download`);
-              if (!isSessionCurrent(loadSessionId) || !dlRes.ok) return;
-              const blob = await dlRes.blob();
-              if (!isSessionCurrent(loadSessionId)) return;
-              const realFile = new File([blob], activeDoc.name, { type: 'application/pdf' });
-              setState((prev) => {
-                if (!isSessionCurrent(loadSessionId)) return prev;
-                return {
-                  ...prev,
-                  files: prev.files.map((f) => (f.id === activeDoc.id ? { ...f, file: realFile } : f)),
-                };
-              });
-            } catch {
-              // PDF prefetch is best-effort
-            }
-          })();
-        }
-      }
+      persistProjectSessionCache(projectId, userId ?? null, { meta, rawFiles });
+      applyHydratedProject(meta, rawFiles, false);
 
       return 'ok';
     } catch (err) {
@@ -911,7 +1006,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const docs = await fetchProjectFileDocs(projectId);
+      const { authFetch } = await import('./lib/supabase');
+      const res = await authFetch(`/api/v1/projects/${projectId}/files`);
+      if (!res.ok) {
+        throw new Error(`Failed to load project files: HTTP ${res.status}`);
+      }
+      const rawFiles = await res.json();
+      const docs = mapApiProjectFiles(rawFiles);
       if (!isSessionCurrent(refreshSessionId)) return;
 
       const focusIds = (options?.focusFileIds ?? []).filter((id) => docs.some((d) => d.id === id));
@@ -972,27 +1073,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
+      const activeProject = stateRef.current.activeProject;
+      if (activeProject?.ownerId) {
+        persistProjectSessionCache(
+          projectId,
+          stateRef.current.guestViewerKey ?? null,
+          {
+            meta: {
+              id: activeProject.id,
+              name: activeProject.name,
+              owner_id: activeProject.ownerId,
+              is_public: Boolean(activeProject.isPublic),
+              public_access_level: activeProject.publicAccessLevel ?? null,
+              description: activeProject.description ?? null,
+            },
+            rawFiles,
+          },
+        );
+      }
+
       if (focusIds.length > 0) {
         const activeId = focusIds[0];
         const activeDoc = docs.find((d) => d.id === activeId);
         if (activeDoc) {
-          try {
-            const { authFetch } = await import('./lib/supabase');
-            const dlRes = await authFetch(`/api/v1/files/${activeDoc.id}/download`);
-            if (!isSessionCurrent(refreshSessionId) || !dlRes.ok) return;
-            const blob = await dlRes.blob();
-            if (!isSessionCurrent(refreshSessionId)) return;
-            const realFile = new File([blob], activeDoc.name, { type: 'application/pdf' });
-            setState((prev) => {
-              if (!isSessionCurrent(refreshSessionId)) return prev;
-              return {
-                ...prev,
-                files: prev.files.map((f) => (f.id === activeDoc.id ? { ...f, file: realFile } : f)),
-              };
-            });
-          } catch {
-            // Non-blocking
-          }
+          void prefetchProjectPdf(activeDoc, refreshSessionId, isSessionCurrent, setState);
         }
       }
     } catch (err) {
@@ -1030,13 +1134,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const existing = prev.files.find((f) => f.id === id);
         if (existing) {
           if (duplicate) {
+            void removeCachedPdfBlob(id);
             return {
               ...prev,
               files: prev.files.map((f) =>
                 f.id === id
                   ? {
                       ...f,
-                      file: file || f.file,
+                      file: file || new File([], name, { type: 'application/pdf' }),
                       fileSizeBytes: size ?? f.fileSizeBytes,
                       localPath: localPath ?? f.localPath,
                     }
@@ -1127,6 +1232,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const removed = filesToDelete.filter((f) => deletedIds.includes(f.id));
       disposeDocumentFilesInPlace(removed);
       const removedSet = new Set(deletedIds);
+      for (const id of deletedIds) {
+        void removeCachedPdfBlob(id);
+      }
       setState((prev) => {
         const files = prev.files.filter((f) => !removedSet.has(f.id));
         const openFiles = prev.openFiles.filter((fid) => !removedSet.has(fid));
@@ -1141,12 +1249,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : prev.activeArtifact;
         return { ...prev, files, openFiles, pinnedFiles, activeFileId, activePage: 1, activeArtifact };
       });
+      const projectId = stateRef.current.activeProject?.id;
+      if (projectId) {
+        void syncProjectSessionCache(projectId);
+      }
     }
 
     if (failures.length > 0) {
       throw new Error(failures.join('\n'));
     }
-  }, [state.files]);
+  }, [state.files, syncProjectSessionCache]);
 
   const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
     await deleteFiles(state.files.map((f) => f.id), onProgress);
@@ -1182,7 +1294,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }),
     }));
-  }, []);
+
+    const projectId = stateRef.current.activeProject?.id;
+    if (projectId) {
+      void syncProjectSessionCache(projectId);
+    }
+  }, [syncProjectSessionCache]);
 
   const filesRef = React.useRef(state.files);
   filesRef.current = state.files;
@@ -1491,6 +1608,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (projectId && isSessionCurrent(analysisSessionId)) {
+        void syncProjectSessionCache(projectId, { viewerKey: guestViewerKey ?? null });
+      }
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'Stopped by user') return;
@@ -1505,7 +1626,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ],
       });
     }
-  }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.availableComponents, updateFileStatus, appendAnalysisLog]);
+  }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.availableComponents, updateFileStatus, appendAnalysisLog, isSessionCurrent, syncProjectSessionCache]);
 
   const runAnalysisQueue = useCallback(async (orderedIds: string[]) => {
     stopAnalysisRef.current = false;
