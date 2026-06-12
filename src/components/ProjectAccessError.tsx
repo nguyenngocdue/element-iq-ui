@@ -1,5 +1,6 @@
 import React from 'react';
 import { FolderX, RefreshCw, ArrowLeft } from 'lucide-react';
+import { BrandHeader, LoadingScreen } from './LoadingScreen';
 
 export type ProjectAccessErrorKind = 'not_found' | 'error';
 
@@ -29,9 +30,8 @@ export function ProjectAccessError({ kind, onRetry, onBack, retrying = false }: 
   return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-white tracking-tight">Element IQ</h1>
-          <p className="text-[#858585] mt-1.5 text-sm">Drawing quality assurance</p>
+        <div className="mb-8">
+          <BrandHeader size="md" />
         </div>
 
         <div className="bg-[#1e1e1e] border border-[#3c3c3c] rounded-xl p-8 shadow-2xl">
@@ -88,32 +88,12 @@ export function ProjectReconnecting({ attempt, maxAttempts }: ProjectReconnectin
   const progress = Math.min(1, attempt / maxAttempts);
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-6">
-      <div className="w-full max-w-[280px] flex flex-col items-center">
-        <div className="relative w-12 h-12">
-          <div className="absolute inset-0 border-2 border-[#10b981]/20 rounded-full" />
-          <div className="absolute inset-0 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
-        </div>
-
-        <div className="mt-8 w-full text-center">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#5a5a5a]">
-            Connection
-          </p>
-          <h2 className="mt-2 text-[17px] font-semibold text-[#ececec] tracking-[-0.015em] leading-snug">
-            Reconnecting…
-          </h2>
-          <p className="mt-1.5 text-[13px] text-[#6b6b6b] leading-relaxed">
-            Waiting for the server to respond
-          </p>
-        </div>
-
-        <div className="mt-7 w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full bg-[#10b981]/70 transition-[width] duration-700 ease-out"
-            style={{ width: `${progress * 100}%` }}
-          />
-        </div>
-      </div>
-    </div>
+    <LoadingScreen
+      showBrand
+      eyebrow="Connection"
+      title="Reconnecting…"
+      subtitle="Waiting for the server to respond"
+      progress={progress}
+    />
   );
 }

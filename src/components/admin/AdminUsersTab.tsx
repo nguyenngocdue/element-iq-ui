@@ -18,6 +18,7 @@ import {
   adminRowNumber,
   profileInitials,
 } from './AdminShared';
+import { PanelLoading } from '../LoadingScreen';
 
 export function AdminUsersTab({
   refreshKey,
@@ -114,7 +115,7 @@ export function AdminUsersTab({
       >
         {error && <p className="px-4 py-3 text-sm text-[#f87171]">{error}</p>}
         {loading && rows.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-[#737373] animate-pulse">Loading users…</p>
+          <PanelLoading eyebrow="Admin" title="Loading users…" />
         ) : (
           <div className={cn('overflow-x-auto transition-opacity', searching && 'opacity-60')}>
             <table className="w-full text-[13px]">

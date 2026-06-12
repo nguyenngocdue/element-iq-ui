@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
+import { BrandHeader } from './LoadingScreen';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -44,9 +45,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white">Element IQ</h1>
-          <p className="text-[#858585] mt-2 text-sm">Drawing quality assurance for engineering PDFs</p>
+        <div className="mb-8">
+          <BrandHeader tagline="Drawing quality assurance for engineering PDFs" />
         </div>
 
         {/* Card */}

@@ -14,6 +14,7 @@ import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
+import { LoadingContent } from './LoadingScreen';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
@@ -364,10 +365,7 @@ function PdfRenderer({
   if (file.file.size === 0) {
     return (
       <div className="relative shadow-2xl origin-top-left border border-[#444] bg-[#1e1e1e] flex items-center justify-center" style={{ width: 600, height: 400 }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm text-[#858585]">Loading PDF...</p>
-        </div>
+        <LoadingContent title="Loading PDF" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
       </div>
     );
   }
@@ -612,7 +610,7 @@ function ArtifactViewer({
     <div className="flex-1 overflow-hidden bg-[#121212] flex flex-col relative">
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
+          <LoadingContent title="Loading artifact" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
         </div>
       ) : artifact.type === 'ANNOTATED_PNG' && content ? (
         <div 

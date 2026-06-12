@@ -7,6 +7,7 @@ import { useAdminPaginatedLoad } from '../../hooks/useAdminPaginatedLoad';
 import { useTableSort } from '../../hooks/useTableSort';
 import { cn } from '../../lib/utils';
 import { AdminConfirmModal, AdminIndexCell, AdminIndexHeader, AdminPagination, AdminSearchInput, AdminSortHeader, AdminStatusBadge, AdminTableShell, adminRowNumber } from './AdminShared';
+import { PanelLoading } from '../LoadingScreen';
 
 export function AdminFilesTab({ refreshKey }: { refreshKey: number }) {
   const navigate = useNavigate();
@@ -82,7 +83,7 @@ export function AdminFilesTab({ refreshKey }: { refreshKey: number }) {
         {error && <p className="px-4 py-3 text-sm text-[#f87171]">{error}</p>}
         {actionError && <p className="px-4 py-3 text-sm text-[#f87171]">{actionError}</p>}
         {loading && rows.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-[#737373] animate-pulse">Loading files…</p>
+          <PanelLoading eyebrow="Admin" title="Loading files…" />
         ) : sortedRows.length === 0 ? (
           <p className="px-4 py-8 text-sm text-[#737373]">No files found.</p>
         ) : (

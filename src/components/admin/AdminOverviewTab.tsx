@@ -10,6 +10,7 @@ import {
 import { adminApi } from '../../lib/adminApi';
 import { formatBytes } from '../../lib/adminFormat';
 import { AdminKpiCard } from './AdminShared';
+import { PanelLoading } from '../LoadingScreen';
 
 export function AdminOverviewTab({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = useState<Record<string, any> | null>(null);
@@ -33,7 +34,7 @@ export function AdminOverviewTab({ refreshKey }: { refreshKey: number }) {
   }, [load, refreshKey]);
 
   if (loading && !data) {
-    return <div className="text-[#737373] text-sm animate-pulse">Loading overview…</div>;
+    return <PanelLoading eyebrow="Admin" title="Loading overview…" />;
   }
   if (error) {
     return (

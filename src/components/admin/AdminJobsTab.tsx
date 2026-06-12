@@ -7,6 +7,7 @@ import { formatBytes, formatRelativeTime } from '../../lib/adminFormat';
 import { useAdminPaginatedLoad } from '../../hooks/useAdminPaginatedLoad';
 import { useTableSort } from '../../hooks/useTableSort';
 import { AdminIndexCell, AdminIndexHeader, AdminPagination, AdminSearchInput, AdminSortHeader, AdminStatusBadge, AdminTableShell, adminRowNumber } from './AdminShared';
+import { LoadingContent, PanelLoading } from '../LoadingScreen';
 
 const ARTIFACT_LABELS: Record<string, string> = {
   ANNOTATED_PNG: 'Annotated PNG',
@@ -191,7 +192,7 @@ export function AdminJobsTab({ refreshKey }: { refreshKey: number }) {
       >
         {error && <p className="px-4 py-3 text-sm text-[#f87171]">{error}</p>}
         {loading && rows.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-[#737373] animate-pulse">Loading jobs…</p>
+          <PanelLoading eyebrow="Admin" title="Loading jobs…" />
         ) : sortedRows.length === 0 ? (
           <p className="px-4 py-8 text-sm text-[#737373]">No jobs found.</p>
         ) : (
@@ -277,7 +278,9 @@ export function AdminJobsTab({ refreshKey }: { refreshKey: number }) {
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
               {detailLoading ? (
-                <p className="text-sm text-[#737373] animate-pulse">Loading…</p>
+                <div className="py-8">
+                  <LoadingContent title="Loading job detail" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
+                </div>
               ) : detailJob ? (
                 <>
                   <section>

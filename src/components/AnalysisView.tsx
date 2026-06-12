@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 import { useResizable } from '../hooks/useResizable';
 import { useReportJson } from '../hooks/use-report-json';
 import { ReportJsonPanel } from './ReportJsonPanel';
+import { LoadingContent } from './LoadingScreen';
 
 import { FileItem } from './Sidebar';
 
@@ -271,7 +272,7 @@ export function AnalysisView() {
           <div className="col-span-2 flex flex-col min-h-[400px]">
             {reportLoading ? (
               <div className="flex-1 flex items-center justify-center bg-[#252526] border border-[#3c3c3c] rounded-xl">
-                <div className="w-8 h-8 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
+                <LoadingContent title="Loading report" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
               </div>
             ) : reportContent ? (
               <ReportJsonPanel

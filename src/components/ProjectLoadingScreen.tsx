@@ -1,35 +1,9 @@
 import React from 'react';
+import { DotGridOverlay, LoadingContent } from './LoadingScreen';
 
 interface ProjectLoadingScreenProps {
   /** Full editor chrome (App boot) vs content pane only (MainEditor). */
   mode?: 'full' | 'pane';
-}
-
-function LoadingIndicator() {
-  return (
-    <div className="relative flex flex-col items-center">
-      <div className="relative w-10 h-10">
-        <div className="absolute inset-0 border-2 border-[#10b981]/20 rounded-full" />
-        <div className="absolute inset-0 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin" />
-      </div>
-
-      <div className="mt-7 text-center">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#5a5a5a]">
-          Workspace
-        </p>
-        <h2 className="mt-2 text-[16px] font-semibold text-[#ececec] tracking-[-0.015em] leading-snug">
-          Loading project
-        </h2>
-        <p className="mt-1.5 text-[13px] text-[#6b6b6b] leading-relaxed max-w-[240px]">
-          Preparing drawings and analysis workspace
-        </p>
-      </div>
-
-      <div className="mt-6 w-52 h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-        <div className="h-full w-1/3 rounded-full bg-[#10b981]/70 project-loading-bar" />
-      </div>
-    </div>
-  );
 }
 
 function EditorChromeSkeleton({ children }: { children: React.ReactNode }) {
@@ -86,14 +60,15 @@ function EditorChromeSkeleton({ children }: { children: React.ReactNode }) {
 export function ProjectLoadingScreen({ mode = 'full' }: ProjectLoadingScreenProps) {
   const content = (
     <div className="flex-1 min-h-0 bg-editor-bg flex items-center justify-center relative overflow-hidden">
-      <div
-        className="absolute inset-0 opacity-[0.025] pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
-          backgroundSize: '24px 24px',
-        }}
+      <DotGridOverlay />
+      <LoadingContent
+        showBrand={mode === 'full'}
+        eyebrow="Workspace"
+        title="Loading project"
+        subtitle="Preparing drawings and analysis workspace"
+        brandSize="md"
+        textVariant={mode === 'full' ? 'page' : 'panel'}
       />
-      <LoadingIndicator />
     </div>
   );
 
@@ -138,20 +113,15 @@ export function ExplorerFilesLoading() {
         ))}
       </div>
 
-      <div className="mt-4 mx-3 pt-4 border-t border-[#2a2a2a] flex flex-col items-center">
-        <div className="relative w-6 h-6">
-          <div className="absolute inset-0 border-[1.5px] border-[#10b981]/20 rounded-full" />
-          <div className="absolute inset-0 border-[1.5px] border-[#10b981] border-t-transparent rounded-full animate-spin" />
-        </div>
-        <p className="mt-4 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#555555]">
-          Explorer
-        </p>
-        <p className="mt-1.5 text-[12px] font-medium text-[#b0b0b0] tracking-[-0.01em]">
-          Loading files
-        </p>
-        <div className="mt-3 w-28 h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-          <div className="h-full w-1/3 rounded-full bg-[#10b981]/60 project-loading-bar" />
-        </div>
+      <div className="mt-4 mx-3 pt-4 border-t border-[#2a2a2a]">
+        <LoadingContent
+          eyebrow="Explorer"
+          title="Loading files"
+          showProgress
+          spinnerSize="sm"
+          compact
+          textVariant="embed"
+        />
       </div>
     </div>
   );

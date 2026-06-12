@@ -5,6 +5,7 @@ import { formatBytes } from '../../lib/adminFormat';
 import { useSystemMetrics } from '../../hooks/useSystemMetrics';
 import { AdminMetricsCharts } from './AdminMetricsCharts';
 import { AdminKpiCard, AdminTableShell } from './AdminShared';
+import { PanelLoading } from '../LoadingScreen';
 import { Cpu, Database, HardDrive } from 'lucide-react';
 
 export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
@@ -51,7 +52,7 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
   }
 
   if (loading && !health) {
-    return <p className="text-[#737373] text-sm animate-pulse">Loading system…</p>;
+    return <PanelLoading eyebrow="Admin" title="Loading system…" />;
   }
 
   const gpu = health?.gpu ?? {};

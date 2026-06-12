@@ -26,6 +26,7 @@ import {
   ProjectReconnecting,
 } from './components/ProjectAccessError';
 import { ProjectLoadingScreen } from './components/ProjectLoadingScreen';
+import { LoadingScreen } from './components/LoadingScreen';
 import { loginPath } from './lib/authRoutes';
 
 const PROJECT_LOAD_MAX_RETRIES = 3;
@@ -298,9 +299,13 @@ function AppShell() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-        <div className="text-[#10b981] text-lg font-medium animate-pulse">Loading...</div>
-      </div>
+      <LoadingScreen
+        showBrand
+        eyebrow="Element IQ"
+        title="Starting workspace"
+        subtitle="Loading your session"
+        showProgress={false}
+      />
     );
   }
 

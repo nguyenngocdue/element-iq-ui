@@ -6,6 +6,7 @@ import { useAdminPaginatedLoad } from '../../hooks/useAdminPaginatedLoad';
 import { useTableSort } from '../../hooks/useTableSort';
 import { cn } from '../../lib/utils';
 import { AdminConfirmModal, AdminIndexCell, AdminIndexHeader, AdminPagination, AdminSearchInput, AdminSortHeader, AdminStatusBadge, AdminTableShell, adminRowNumber } from './AdminShared';
+import { PanelLoading } from '../LoadingScreen';
 
 export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
   const fetchProjects = useCallback(async (search: string, page: number, pageSize: number) => {
@@ -90,7 +91,7 @@ export function AdminProjectsTab({ refreshKey }: { refreshKey: number }) {
       >
         {error && <p className="px-4 py-3 text-sm text-[#f87171]">{error}</p>}
         {loading && rows.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-[#737373] animate-pulse">Loading projects…</p>
+          <PanelLoading eyebrow="Admin" title="Loading projects…" />
         ) : sortedRows.length === 0 ? (
           <p className="px-4 py-8 text-sm text-[#737373]">No projects found.</p>
         ) : (
