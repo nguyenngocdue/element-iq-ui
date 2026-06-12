@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth-context';
 import { authFetch } from '../lib/supabase';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { UserProfileMenu } from './UserProfileMenu';
+import { useAdminProfile } from '../hooks/useAdminProfile';
 
 interface ProfileData {
   id: string;
@@ -33,6 +34,7 @@ function formatMemberSince(iso: string): string {
 export function AccountSettings() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin } = useAdminProfile();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
@@ -99,9 +101,10 @@ export function AccountSettings() {
     }
   }
 
-  const handleNavigate = (nav: 'dashboard' | 'projects' | 'account') => {
+  const handleNavigate = (nav: 'dashboard' | 'projects' | 'account' | 'admin') => {
     if (nav === 'dashboard') navigate('/');
     else if (nav === 'projects') navigate('/projects');
+    else if (nav === 'admin') navigate('/admin');
     else navigate('/account');
   };
 
@@ -114,6 +117,8 @@ export function AccountSettings() {
         onNavigate={handleNavigate}
         onAiChat={() => {}}
         onHelp={() => {}}
+        onAdmin={() => navigate('/admin')}
+        showAdminLink={isAdmin}
       />
 
       <div className="flex-1 overflow-hidden flex flex-col bg-[#0a0a0a]">
@@ -240,9 +245,15 @@ export function AccountSettings() {
                       <div className="text-[#5eead4] text-sm uppercase tracking-wide">{profile?.role ?? 'USER'}</div>
                     </div>
                     <div>
-                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Member Since</div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Created</div>
                       <div className="text-[#cccccc] text-sm">
                         {profile ? formatMemberSince(profile.created_at) : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#b0b0b0] text-[10px] uppercase tracking-wide mb-0.5">Updated</div>
+                      <div className="text-[#cccccc] text-sm">
+                        {profile ? formatMemberSince(profile.updated_at) : '—'}
                       </div>
                     </div>
                   </div>

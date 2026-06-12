@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, HelpCircle } from 'lucide-react';
+import { Check, HelpCircle, Shield } from 'lucide-react';
 import { useApp } from '../store';
 import { AboutModal, ReportIssueModal } from './Modals';
 import { useAuth } from '../lib/auth-context';
+import { useAdminProfile } from '../hooks/useAdminProfile';
 import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { UserProfileMenu } from './UserProfileMenu';
 import { publicAccessLevelLabel } from '../lib/projectAccess';
@@ -13,6 +14,7 @@ import { HoverTooltip } from './HoverTooltip';
 export function TopBar() {
   const { state, clearSession, setActiveSidebarTab, setCurrentView } = useApp();
   const { user } = useAuth();
+  const { isAdmin } = useAdminProfile();
   const navigate = useNavigate();
   
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
@@ -130,6 +132,21 @@ export function TopBar() {
                 </div>
               )}
             </div>
+
+            {isAdmin && (
+              <Tab
+                active={false}
+                onClick={() => {
+                  setIsViewMenuOpen(false);
+                  setIsHelpMenuOpen(false);
+                  navigate('/admin');
+                }}
+              >
+                <span className="flex items-center gap-1">
+                  Admin <Shield className="w-3 h-3" />
+                </span>
+              </Tab>
+            )}
 
             <div className="h-full flex items-center relative" ref={helpMenuRef}>
               <Tab active={isHelpMenuOpen} onClick={() => { setIsHelpMenuOpen(!isHelpMenuOpen); setIsViewMenuOpen(false); }}>

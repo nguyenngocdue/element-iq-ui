@@ -162,6 +162,29 @@ export function Sidebar() {
   }, [state.activeSidebarTab]);
 
   const isAnalyzing = state.files.some(f => f.status === 'ANALYZING');
+  const analysisQueue = state.analysisQueue;
+  const queueProgressLabel = analysisQueue
+    ? `${analysisQueue.completed}/${analysisQueue.total}`
+    : null;
+  const queueCurrentLabel = (() => {
+    if (analysisQueue) {
+      if (analysisQueue.activeCount > 0) {
+        const from = analysisQueue.completed + 1;
+        const to = analysisQueue.completed + analysisQueue.activeCount;
+        return from === to ? `#${from}` : `#${from}–${to}`;
+      }
+      if (analysisQueue.completed >= analysisQueue.total) return 'Done';
+      return '…';
+    }
+    const analyzingCount = state.files.filter((f) => f.status === 'ANALYZING').length;
+    if (analyzingCount > 0) return '#1';
+    return '…';
+  })();
+  const queueProgressFallback = analysisQueue
+    ? queueProgressLabel
+    : state.files.some((f) => f.status === 'ANALYZING')
+      ? '0/1'
+      : '…';
   const selectableFileIds = state.files
     .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
     .map(f => f.id);
@@ -458,14 +481,28 @@ export function Sidebar() {
                           <X className="w-3.5 h-3.5 shrink-0" />
                           {!compactToolbar && 'Stop'}
                         </button>
-                        <button
-                          disabled
-                          className={cn(toolbarSegBtn, toolbarSecondary, 'opacity-40 cursor-not-allowed')}
-                          aria-hidden
+                        <div
+                          className={cn(toolbarSegBtn, toolbarRunPrimary, 'cursor-default select-none')}
+                          title="Completed / total files in queue"
                         >
-                          <ListChecks className="w-3.5 h-3.5 shrink-0" />
-                          {!compactToolbar && 'Select'}
-                        </button>
+                          <span className="text-[11px] font-semibold tabular-nums tracking-tight">
+                            {queueProgressFallback}
+                          </span>
+                          {!compactToolbar && (
+                            <span className="text-[9px] font-normal text-[#858585]">done</span>
+                          )}
+                        </div>
+                        <div
+                          className={cn(toolbarSegBtn, toolbarSecondary, 'cursor-default select-none')}
+                          title="File index currently running"
+                        >
+                          <span className="text-[11px] font-semibold tabular-nums tracking-tight text-[#2eb886]">
+                            {queueCurrentLabel}
+                          </span>
+                          {!compactToolbar && (
+                            <span className="text-[9px] font-normal text-[#858585]">running</span>
+                          )}
+                        </div>
                       </>
                     ) : isRunSelectMode ? (
                       <button
@@ -496,6 +533,7 @@ export function Sidebar() {
                         {!compactToolbar && 'Run All'}
                       </button>
                     )}
+                    {!isAnalyzing && (
                     <button
                       onClick={() => {
                         if (isRunSelectMode) exitBulkMode();
@@ -504,7 +542,7 @@ export function Sidebar() {
                           setSelectedFileIds(new Set());
                         }
                       }}
-                      disabled={state.files.length === 0 || isAnalyzing || isDeleteSelectMode}
+                      disabled={state.files.length === 0 || isDeleteSelectMode}
                       title={isRunSelectMode ? 'Cancel picking files' : 'Pick specific drawings to run'}
                       className={cn(
                         toolbarSegBtn,
@@ -514,11 +552,12 @@ export function Sidebar() {
                       <ListChecks className="w-3.5 h-3.5 shrink-0" />
                       {!compactToolbar && (isRunSelectMode ? 'Done' : 'Select')}
                     </button>
+                    )}
                   </div>
                 </div>
               )}
 
-              {isProjectOwner && (
+              {isProjectOwner && !state.isLoadingFiles && (
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   {!compactToolbar && (
                     <span className="px-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#ef4444]">

@@ -8,7 +8,7 @@ interface UseResizableParams {
 }
 
 export function useResizable({ initialWidth, minWidth, maxWidth, direction }: UseResizableParams) {
-  const [width, setWidth] = useState(initialWidth);
+  const [width, setWidthState] = useState(initialWidth);
   const [isDragging, setIsDragging] = useState(false);
   const startPos = useRef(0);
   const startWidth = useRef(0);
@@ -36,7 +36,7 @@ export function useResizable({ initialWidth, minWidth, maxWidth, direction }: Us
       if (newWidth < minWidth) newWidth = minWidth;
       if (newWidth > maxWidth) newWidth = maxWidth;
       
-      setWidth(newWidth);
+      setWidthState(newWidth);
     };
 
     const handleMouseUp = () => {
@@ -55,6 +55,11 @@ export function useResizable({ initialWidth, minWidth, maxWidth, direction }: Us
     };
   }, [isDragging, direction, minWidth, maxWidth]);
 
-  return { width, isDragging, handleMouseDown };
+  const setWidth = useCallback((next: number) => {
+    const clamped = Math.min(maxWidth, Math.max(minWidth, next));
+    setWidthState(clamped);
+  }, [minWidth, maxWidth]);
+
+  return { width, setWidth, isDragging, handleMouseDown };
 }
 

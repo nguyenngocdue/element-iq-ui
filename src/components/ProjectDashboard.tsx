@@ -11,6 +11,7 @@ import { UserProfileMenu } from './UserProfileMenu';
 import { ProjectNameTooltip, UserTooltipContent } from './tooltipContent';
 import { HoverTooltip } from './HoverTooltip';
 import { UserAvatarTooltip } from './UserAvatarTooltip';
+import { useAdminProfile } from '../hooks/useAdminProfile';
 
 import type { PublicAccessLevel } from '../types';
 import { publicAccessLevelLabel } from '../lib/projectAccess';
@@ -391,6 +392,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const { isAdmin } = useAdminProfile();
   const [myProjects, setMyProjects] = useState<ProjectItem[]>([]);
   const [communityProjects, setCommunityProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -406,13 +408,21 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     navigate(tab === 'dashboard' ? '/' : '/projects');
   };
 
-  const handleWorkspaceNavigate = (nav: 'dashboard' | 'projects' | 'account') => {
+  const handleWorkspaceNavigate = (nav: 'dashboard' | 'projects' | 'account' | 'admin') => {
     if (nav === 'account') {
       if (!user) {
         navigate(loginPath('/account'));
         return;
       }
       navigate('/account');
+      return;
+    }
+    if (nav === 'admin') {
+      if (!user) {
+        navigate(loginPath('/admin'));
+        return;
+      }
+      navigate('/admin');
       return;
     }
     goToTab(nav);
@@ -1019,6 +1029,8 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
         onNavigate={handleWorkspaceNavigate}
         onAiChat={() => showToast('Feature in development')}
         onHelp={() => showToast('Help Center coming soon')}
+        onAdmin={() => navigate('/admin')}
+        showAdminLink={isAdmin}
       />
 
       {/* Main Content */}

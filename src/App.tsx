@@ -13,6 +13,8 @@ import { AppProvider, useApp } from './store';
 import { AnalysisConfigModal } from './components/ImportModal';
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { AccountSettings } from './components/AccountSettings';
+import { AdminConsole } from './components/AdminConsole';
+import { RequireAdmin } from './components/RequireAdmin';
 import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
@@ -269,6 +271,16 @@ function AppContent() {
       <Route path="/projects" element={<ProjectDashboard activeTab="projects" />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/account" element={<RequireAuth><AccountSettings /></RequireAuth>} />
+      <Route
+        path="/admin"
+        element={
+          <RequireAuth>
+            <RequireAdmin>
+              <AdminConsole />
+            </RequireAdmin>
+          </RequireAuth>
+        }
+      />
       <Route
         path="/projects/:projectId"
         element={<ProjectEditorPage />}

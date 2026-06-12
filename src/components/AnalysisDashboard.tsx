@@ -2,17 +2,32 @@ import React, { useState } from 'react';
 import { useApp } from '../store';
 import { Download, Folder, CheckCircle, AlertTriangle, XCircle, Search, FileText, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { filterFilesByBucket, fileMatchesBucket } from '../lib/analysisStatus';
+import { filterFilesByBucket } from '../lib/analysisStatus';
 import { DocumentFile } from '../types';
+import { ReportStatusBadge } from './StatusLabel';
+
+type ReportFilter = 'ALL' | DocumentFile['status'];
+
+const REPORT_FILTERS: Array<{ id: ReportFilter; label: string; className?: string }> = [
+  { id: 'ALL', label: 'ALL' },
+  { id: 'PASS', label: 'PASS', className: 'text-[#2eb886]' },
+  { id: 'FAIL', label: 'FAIL', className: 'text-[#ef4444]' },
+  { id: 'NO-NOTE', label: 'NO-NOTE', className: 'text-[#bba438]' },
+  { id: 'NO-TUBE', label: 'NO-TUBE', className: 'text-[#fb923c]' },
+  { id: 'WARN', label: 'WARN', className: 'text-[#f59e0b]' },
+  { id: 'PENDING', label: 'READY', className: 'text-[#858585]' },
+];
 
 export function AnalysisDashboard() {
   const { state } = useApp();
-  const [filter, setFilter] = useState<'ALL' | 'PASS' | 'NO-NOTE'>('ALL');
+  const [filter, setFilter] = useState<ReportFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   const passList = filterFilesByBucket(state.files, 'pass');
   const failList = filterFilesByBucket(state.files, 'fail');
-  const noNoteList = filterFilesByBucket(state.files, 'noNote');
+  const noNoteList = state.files.filter((f) => f.status === 'NO-NOTE');
+  const noTubeList = state.files.filter((f) => f.status === 'NO-TUBE');
+  const warnList = state.files.filter((f) => f.status === 'WARN');
   
   const totalPassRate = state.files.length ? Math.round((passList.length / state.files.length) * 100) : 0;
   
@@ -20,8 +35,7 @@ export function AnalysisDashboard() {
   const totalFF = state.files.reduce((acc, f) => acc + f.detections.filter(d => d.type === 'FF').length, 0);
 
   const filteredDocs = state.files.filter(f => {
-    if (filter === 'PASS' && f.status !== 'PASS') return false;
-    if (filter === 'NO-NOTE' && !fileMatchesBucket(f, 'noNote')) return false;
+    if (filter !== 'ALL' && f.status !== filter) return false;
     if (searchQuery && !f.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -35,12 +49,19 @@ export function AnalysisDashboard() {
           <p className="text-[#858585] text-sm">Comprehensive compliance audit and insights for the current workspace.</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex bg-[#252526] rounded-md border border-[#3c3c3c] overflow-hidden text-xs font-semibold">
-            <FilterButton active={filter === 'ALL'} onClick={() => setFilter('ALL')}>ALL</FilterButton>
-            <FilterButton active={filter === 'PASS'} onClick={() => setFilter('PASS')} className="text-[#2eb886]">PASS</FilterButton>
-            <FilterButton active={filter === 'NO-NOTE'} onClick={() => setFilter('NO-NOTE')} className="text-[#d4b238]">NO-NOTE</FilterButton>
+          <div className="flex bg-[#252526] rounded-sm border border-[#3c3c3c] overflow-hidden text-xs font-semibold">
+            {REPORT_FILTERS.map(({ id, label, className }) => (
+              <FilterButton
+                key={id}
+                active={filter === id}
+                onClick={() => setFilter(id)}
+                className={className}
+              >
+                {label}
+              </FilterButton>
+            ))}
           </div>
-          <button className="bg-[#1e5cdc] hover:bg-[#2563eb] text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors">
+          <button className="bg-[#1e5cdc] hover:bg-[#2563eb] text-white px-4 py-2 rounded-sm font-medium text-sm flex items-center gap-2 transition-colors">
             <Download className="w-4 h-4" /> Export Report
           </button>
         </div>
@@ -67,8 +88,8 @@ export function AnalysisDashboard() {
           iconBg="bg-[#d4b238]/10"
           value={noNoteList.length}
           label="NO NF/FF NOTES"
-          badge="REVIEW"
-          badgeColor="text-[#d4b238] bg-[#d4b238]/10"
+          badge="NO-NOTE"
+          badgeColor="text-[#bba438] bg-[#bba438]/10"
         />
         <SummaryCard 
           icon={<XCircle className="w-5 h-5 text-[#ef4444]" />}
@@ -134,18 +155,48 @@ export function AnalysisDashboard() {
                 <span className="text-[#cccccc]">Compliant (PASS)</span>
                 <span className="text-[#2eb886] font-bold">{passList.length} docs</span>
               </div>
-              <div className="h-2 w-full bg-[#16161a] rounded-full overflow-hidden">
+              <div className="h-2 w-full bg-[#16161a] rounded-sm overflow-hidden">
                 <div className="h-full bg-[#2eb886]" style={{ width: `${state.files.length ? (passList.length/state.files.length)*100 : 0}%` }}></div>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2 text-sm">
+                <span className="text-[#cccccc]">Critical (FAIL)</span>
+                <span className="text-[#ef4444] font-bold">{failList.length} docs</span>
+              </div>
+              <div className="h-2 w-full bg-[#16161a] rounded-sm overflow-hidden">
+                <div className="h-full bg-[#ef4444]" style={{ width: `${state.files.length ? (failList.length/state.files.length)*100 : 0}%` }}></div>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2 text-sm">
+                <span className="text-[#cccccc]">No note (NO-NOTE)</span>
+                <span className="text-[#bba438] font-bold">{noNoteList.length} docs</span>
+              </div>
+              <div className="h-2 w-full bg-[#16161a] rounded-sm overflow-hidden">
+                <div className="h-full bg-[#bba438]" style={{ width: `${state.files.length ? (noNoteList.length/state.files.length)*100 : 0}%` }}></div>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2 text-sm">
+                <span className="text-[#cccccc]">No tube (NO-TUBE)</span>
+                <span className="text-[#fb923c] font-bold">{noTubeList.length} docs</span>
+              </div>
+              <div className="h-2 w-full bg-[#16161a] rounded-sm overflow-hidden">
+                <div className="h-full bg-[#fb923c]" style={{ width: `${state.files.length ? (noTubeList.length/state.files.length)*100 : 0}%` }}></div>
               </div>
             </div>
 
             <div className="mb-8">
               <div className="flex justify-between items-center mb-2 text-sm">
-                <span className="text-[#cccccc]">Needs Review (NO-NOTE)</span>
-                <span className="text-[#d4b238] font-bold">{noNoteList.length} docs</span>
+                <span className="text-[#cccccc]">Warnings (WARN)</span>
+                <span className="text-[#f59e0b] font-bold">{warnList.length} docs</span>
               </div>
-              <div className="h-2 w-full bg-[#16161a] rounded-full overflow-hidden">
-                <div className="h-full bg-[#d4b238]" style={{ width: `${state.files.length ? (noNoteList.length/state.files.length)*100 : 0}%` }}></div>
+              <div className="h-2 w-full bg-[#16161a] rounded-sm overflow-hidden">
+                <div className="h-full bg-[#f59e0b]" style={{ width: `${state.files.length ? (warnList.length/state.files.length)*100 : 0}%` }}></div>
               </div>
             </div>
 
@@ -217,16 +268,6 @@ function SummaryCard({ icon, iconBg, value, label, badge, badgeColor }: any) {
 }
 
 function DocumentRow({ doc }: { key?: React.Key, doc: DocumentFile }) {
-  const getBadge = () => {
-    if (doc.status === 'PASS') {
-      return <span className="text-[#2eb886] text-[10px] bg-[#2eb886]/10 px-2 py-1 rounded-full border border-[#2eb886]/30 flex items-center gap-1 w-fit"><CheckCircle className="w-3 h-3"/> PASS</span>;
-    }
-    if (doc.status === 'FAIL') {
-      return <span className="text-[#ef4444] text-[10px] bg-[#ef4444]/10 px-2 py-1 rounded-full border border-[#ef4444]/30 flex items-center gap-1 w-fit"><XCircle className="w-3 h-3"/> FAIL</span>;
-    }
-    return <span className="text-[#d4b238] text-[10px] bg-[#d4b238]/10 px-2 py-1 rounded-full border border-[#d4b238]/30 flex items-center gap-1 w-fit"><AlertTriangle className="w-3 h-3"/> NO-NOTE</span>;
-  };
-
   const nfCount = doc.detections.filter(d => d.type === 'NF').length;
   const ffCount = doc.detections.filter(d => d.type === 'FF').length;
   const coverage = doc.status === 'PENDING' ? 0 : doc.status === 'ANALYZING' ? 50 : 100;
@@ -241,19 +282,19 @@ function DocumentRow({ doc }: { key?: React.Key, doc: DocumentFile }) {
       </td>
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="h-1.5 w-24 bg-[#16161a] rounded-full overflow-hidden">
+          <div className="h-1.5 w-24 bg-[#16161a] rounded-sm overflow-hidden">
              <div className="h-full bg-[#2eb886]" style={{ width: `${coverage}%` }}></div>
           </div>
           <span className="text-xs font-mono text-[#858585]">{coverage}%</span>
         </div>
       </td>
       <td className="px-5 py-4">
-        {getBadge()}
+        <ReportStatusBadge status={doc.status} overallStatus={doc.overallStatus} />
       </td>
       <td className="px-5 py-4">
         <div className="flex items-center justify-end gap-2 font-mono text-[10px]">
-          <span className="border border-[#1e5cdc]/30 text-[#82aaff] px-1.5 py-0.5 rounded bg-[#1e5cdc]/10">NF: {nfCount}</span>
-          <span className="border border-[#d4b238]/30 text-[#d4b238] px-1.5 py-0.5 rounded bg-[#d4b238]/10">FF: {ffCount}</span>
+          <span className="border border-[#1e5cdc]/30 text-[#82aaff] px-1.5 py-0.5 rounded-sm bg-[#1e5cdc]/10">NF: {nfCount}</span>
+          <span className="border border-[#d4b238]/30 text-[#d4b238] px-1.5 py-0.5 rounded-sm bg-[#d4b238]/10">FF: {ffCount}</span>
         </div>
       </td>
     </tr>

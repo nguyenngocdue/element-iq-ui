@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
+import { useAdminProfile } from '../hooks/useAdminProfile';
 import { getUserDisplayFromAuth } from '../lib/userDisplay';
 import { cn } from '../lib/utils';
 import { HoverTooltip } from './HoverTooltip';
@@ -14,7 +16,9 @@ interface UserProfileMenuProps {
 }
 
 export function UserProfileMenu({ variant = 'editor', className }: UserProfileMenuProps) {
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useAdminProfile();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const display = getUserDisplayFromAuth(user);
@@ -84,6 +88,19 @@ export function UserProfileMenu({ variant = 'editor', className }: UserProfileMe
           </div>
 
           <div className="border-t border-[#333] mt-2 pt-1">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  navigate('/admin');
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-4 py-1.5 text-[12px] text-[#5eead4] hover:bg-[#2d2d2d] transition-colors"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                Admin Console
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
