@@ -159,11 +159,11 @@ export function WorkspaceSidebar({
       <div className="relative border-b border-[#1f1f1f]">
         <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/25 to-transparent pointer-events-none" />
         {isCollapsed ? (
-          <div className="px-2 py-3">
-            <WorkspaceSidebarBrand collapsed />
+          <div className="px-1 py-1">
+            <WorkspaceSidebarBrand collapsed displayName={displayName} />
           </div>
         ) : (
-          <WorkspaceSidebarBrand collapsed={false} />
+          <WorkspaceSidebarBrand collapsed={false} displayName={displayName} />
         )}
       </div>
 

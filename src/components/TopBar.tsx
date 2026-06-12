@@ -5,6 +5,7 @@ import { useApp } from '../store';
 import { AboutModal, ReportIssueModal } from './Modals';
 import { useAuth } from '../lib/auth-context';
 import { useAdminProfile } from '../hooks/useAdminProfile';
+import { HPCE_LOGO_NO_TAGLINE_SRC } from '../lib/brandAssets';
 import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { UserProfileMenu } from './UserProfileMenu';
 import { publicAccessLevelLabel } from '../lib/projectAccess';
@@ -58,7 +59,13 @@ export function TopBar() {
             }}
             className="font-semibold text-active flex items-center gap-2 hover:opacity-80 transition-opacity"
           >
-            <div className="w-5 h-5 bg-[#10b981] rounded flex items-center justify-center text-white font-bold text-[10px]">IQ</div>
+            <img
+              src={HPCE_LOGO_NO_TAGLINE_SRC}
+              alt="HPCE"
+              className="h-5 w-auto object-contain object-left shrink-0"
+              draggable={false}
+              decoding="async"
+            />
             <span className="text-[12px] font-semibold text-white">
               Element IQ{' '}
               {state.activeProject && (

@@ -51,17 +51,22 @@ export function BrandHeader({
   size?: 'md' | 'lg';
   className?: string;
 }) {
-  const logoClass = size === 'lg' ? 'h-16 max-w-[280px]' : 'h-12 max-w-[220px]';
+  const logoClass = size === 'lg' ? 'h-[76px] max-w-[320px]' : 'h-14 max-w-[260px]';
 
   return (
-    <div className={cn('flex flex-col items-center text-center', className)}>
+    <div
+      className={cn(
+        'flex flex-col items-center text-center rounded-lg bg-black px-6 py-7 ring-1 ring-inset ring-white/10',
+        className,
+      )}
+    >
       <img
         src={HPCE_LOGO_WHITE_HD_SRC}
         alt="HPCE"
-        className={`${logoClass} w-auto object-contain`}
+        className={cn(logoClass, 'w-auto object-contain')}
         draggable={false}
       />
-      <p className="mt-3 text-[12px] font-normal text-[#5c5c5c] max-w-[260px] leading-relaxed tracking-[0.01em]">
+      <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/90 max-w-[280px] leading-relaxed">
         {tagline}
       </p>
     </div>
