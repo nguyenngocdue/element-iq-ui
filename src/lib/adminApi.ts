@@ -143,6 +143,15 @@ export const adminApi = {
   },
   scanOrphans: () => adminPost<Record<string, unknown>>('/system/scan-orphans'),
   scanGarbage: () => adminPost<AdminGarbageScan>('/system/scan-garbage'),
+  cleanGarbageStatus: () => adminGet<AdminCleanupJobStatus>('/system/clean-garbage/status'),
+  startCleanGarbage: (opts?: { pruneRetention?: boolean; keep?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.pruneRetention === false) params.set('prune_retention', 'false');
+    if (opts?.keep != null) params.set('keep', String(opts.keep));
+    const qs = params.toString() ? `?${params}` : '';
+    return adminPost<AdminCleanupJobStatus>(`/system/clean-garbage/start${qs}`);
+  },
+  stopCleanGarbage: () => adminPost<AdminCleanupJobStatus>('/system/clean-garbage/stop'),
   cleanGarbagePlan: () => adminGet<{ phases: AdminCleanPhasePlan[] }>('/system/clean-garbage/plan'),
   cleanGarbagePhase: (phaseId: string, keep?: number) => {
     const qs = keep != null ? `?keep=${keep}` : '';
@@ -157,6 +166,43 @@ export const adminApi = {
     return adminPost<AdminGarbageCleanResult>(`/system/clean-garbage${qs}`);
   },
 };
+
+export type AdminCleanupJobPhaseStatus =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'error'
+  | 'skipped';
+
+export type AdminCleanupJobStatusKind =
+  | 'idle'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'completed'
+  | 'failed';
+
+export interface AdminCleanupJobPhase {
+  id: string;
+  label: string;
+  count: number;
+  status: AdminCleanupJobPhaseStatus;
+  duration_ms?: number | null;
+  detail?: string | null;
+  error?: string | null;
+  result?: Record<string, number> | null;
+}
+
+export interface AdminCleanupJobStatus {
+  status: AdminCleanupJobStatusKind;
+  started_at: string | null;
+  finished_at: string | null;
+  stop_requested: boolean;
+  before_issues: number | null;
+  after_issues: number | null;
+  error: string | null;
+  phases: AdminCleanupJobPhase[];
+}
 
 export interface AdminCleanPhasePlan {
   id: string;

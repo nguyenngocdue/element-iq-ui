@@ -1,14 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Eraser, Loader2, ScanSearch, Trash2 } from 'lucide-react';
-import { adminApi, type AdminGarbageScan } from '../../lib/adminApi';
+import {
+  adminApi,
+  type AdminCleanupJobStatus,
+  type AdminGarbageScan,
+} from '../../lib/adminApi';
 import { formatBytes, formatRelativeTime } from '../../lib/adminFormat';
 import { AdminKpiCard, AdminStatusBadge, AdminTableShell } from './AdminShared';
 import { GarbageOriginTooltip, ScrollPath, type GarbageOrigin } from './GarbageOriginTooltip';
-import {
-  GarbageCleanProgress,
-  resultSummary,
-  type CleanPhaseState,
-} from './GarbageCleanProgress';
+import { GarbageCleanProgress, type CleanPhaseState } from './GarbageCleanProgress';
+
+function jobPhasesToUi(job: AdminCleanupJobStatus): CleanPhaseState[] {
+  return job.phases.map((p) => ({
+    id: p.id,
+    label: p.label,
+    count: p.count,
+    status: p.status,
+    durationMs: p.duration_ms ?? undefined,
+    detail: p.detail ?? undefined,
+    error: p.error ?? undefined,
+  }));
+}
+
+function isActiveCleanup(status: AdminCleanupJobStatus['status']): boolean {
+  return status === 'running' || status === 'stopping';
+}
+
+function showCleanupOverlay(status: AdminCleanupJobStatus['status']): boolean {
+  return status !== 'idle';
+}
 
 const CATEGORY_LABELS: Record<keyof AdminGarbageScan['categories'], { title: string; description: string }> = {
   jobs_over_retention: {
@@ -121,11 +141,12 @@ function renderItem(cat: keyof AdminGarbageScan['categories'], item: Record<stri
 export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
   const [scan, setScan] = useState<AdminGarbageScan | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
-  const [cleanPhases, setCleanPhases] = useState<CleanPhaseState[] | null>(null);
-  const [cleanStartedAt, setCleanStartedAt] = useState(0);
+  const [cleanupJob, setCleanupJob] = useState<AdminCleanupJobStatus | null>(null);
+  const [overlayDismissed, setOverlayDismissed] = useState(false);
   const [cleanResult, setCleanResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const cleaning = cleanupJob != null && isActiveCleanup(cleanupJob.status);
 
   const runScan = useCallback(async () => {
     setScanning(true);
@@ -136,7 +157,7 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
       const msg = e instanceof Error ? e.message : 'Scan failed';
       setError(
         msg.includes('404') || msg.includes('HTTP 404')
-          ? 'API chưa có endpoint scan-garbage — chạy ./deploy.sh api để cập nhật backend.'
+          ? 'scan-garbage API not found — run ./deploy.sh api to update the backend.'
           : msg,
       );
     } finally {
@@ -144,9 +165,56 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
     }
   }, []);
 
+  const applyCleanupJob = useCallback((job: AdminCleanupJobStatus) => {
+    setCleanupJob(job);
+    if (job.status === 'completed' || job.status === 'stopped') {
+      const before = job.before_issues ?? 0;
+      const after = job.after_issues ?? before;
+      setCleanResult(
+        job.status === 'stopped'
+          ? `Stopped. Issues ${before.toLocaleString()} → ${after.toLocaleString()}.`
+          : `Done. Issues ${before.toLocaleString()} → ${after.toLocaleString()}.`,
+      );
+    }
+    if (job.status === 'failed') {
+      setError(job.error ?? 'Cleanup failed');
+    }
+  }, []);
+
+  const syncCleanupStatus = useCallback(async () => {
+    try {
+      const job = await adminApi.cleanGarbageStatus();
+      applyCleanupJob(job);
+      if (isActiveCleanup(job.status)) {
+        setOverlayDismissed(false);
+      }
+      return job;
+    } catch {
+      return null;
+    }
+  }, [applyCleanupJob]);
+
   useEffect(() => {
     void runScan();
-  }, [runScan, refreshKey]);
+    void syncCleanupStatus();
+  }, [runScan, refreshKey, syncCleanupStatus]);
+
+  useEffect(() => {
+    if (!cleanupJob || !isActiveCleanup(cleanupJob.status)) return;
+
+    const id = window.setInterval(() => {
+      void syncCleanupStatus();
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [cleanupJob?.status, syncCleanupStatus]);
+
+  useEffect(() => {
+    if (!cleanupJob) return;
+    if (cleanupJob.status !== 'completed' && cleanupJob.status !== 'stopped') return;
+
+    void runScan();
+  }, [cleanupJob?.status, cleanupJob?.finished_at, runScan]);
 
   async function runClean(dryRun: boolean) {
     if (!dryRun) {
@@ -157,7 +225,6 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
       if (!window.confirm(msg)) return;
     }
 
-    setCleaning(true);
     setError(null);
     setCleanResult(null);
 
@@ -169,85 +236,31 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
         );
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Dry run failed');
-      } finally {
-        setCleaning(false);
       }
       return;
     }
 
-    const started = Date.now();
-    setCleanStartedAt(started);
-
     try {
-      const { phases: plan } = await adminApi.cleanGarbagePlan();
-      const states: CleanPhaseState[] = plan.map((p) => ({
-        id: p.id,
-        label: p.label,
-        count: p.count,
-        status: 'pending',
-      }));
-      setCleanPhases(states);
-
-      const beforeIssues = scan?.summary.total_issues ?? 0;
-
-      for (let i = 0; i < states.length; i++) {
-        const phase = states[i];
-        setCleanPhases((prev) =>
-          (prev ?? states).map((p, idx) =>
-            idx === i ? { ...p, status: 'running' } : p,
-          ),
-        );
-
-        try {
-          const step = await adminApi.cleanGarbagePhase(phase.id);
-          const detail = resultSummary(step.result);
-          setCleanPhases((prev) =>
-            (prev ?? states).map((p) =>
-              p.id === phase.id
-                ? {
-                    ...p,
-                    status: 'done',
-                    durationMs: step.duration_ms,
-                    detail: detail || 'OK',
-                  }
-                : p,
-            ),
-          );
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : 'Phase failed';
-          setCleanPhases((prev) =>
-            (prev ?? states).map((p) =>
-              p.id === phase.id ? { ...p, status: 'error', error: msg } : p,
-            ),
-          );
-          setError(`Lỗi ở bước "${phase.label}": ${msg}`);
-          break;
-        }
-      }
-
-      setCleanResult('Đang quét lại sau cleanup…');
-      const afterScan = await adminApi.scanGarbage();
-      setScan(afterScan);
-      const afterIssues = afterScan.summary.total_issues;
-      setCleanResult(
-        `Hoàn tất. Issues ${beforeIssues.toLocaleString()} → ${afterIssues.toLocaleString()} (${formatElapsed(Date.now() - started)}).`,
-      );
+      const job = await adminApi.startCleanGarbage();
+      setOverlayDismissed(false);
+      applyCleanupJob(job);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Clean failed');
-      setCleanPhases(null);
-    } finally {
-      setCleaning(false);
     }
   }
 
-  function formatElapsed(ms: number): string {
-    const sec = Math.floor(ms / 1000);
-    if (sec < 60) return `${sec}s`;
-    return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  async function stopClean() {
+    if (!window.confirm('Stop cleanup after the current phase finishes?')) return;
+    try {
+      const job = await adminApi.stopCleanGarbage();
+      applyCleanupJob(job);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Stop failed');
+    }
   }
 
   function dismissCleanProgress() {
-    setCleanPhases(null);
+    setOverlayDismissed(true);
   }
 
   const categories = scan?.categories;
@@ -255,12 +268,15 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
-    {cleanPhases && (
+    {cleanupJob && showCleanupOverlay(cleanupJob.status) && !overlayDismissed && (
       <GarbageCleanProgress
-        title="Đang dọn rác hệ thống"
-        phases={cleanPhases}
-        startedAt={cleanStartedAt}
-        onClose={cleaning ? undefined : dismissCleanProgress}
+        jobStatus={cleanupJob.status}
+        phases={jobPhasesToUi(cleanupJob)}
+        startedAt={
+          cleanupJob.started_at ? Date.parse(cleanupJob.started_at) : Date.now()
+        }
+        onStop={isActiveCleanup(cleanupJob.status) ? () => void stopClean() : undefined}
+        onClose={isActiveCleanup(cleanupJob.status) ? undefined : dismissCleanProgress}
       />
     )}
 
@@ -309,7 +325,7 @@ export function AdminGarbagePanel({ refreshKey }: { refreshKey: number }) {
       {scanning && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-md border border-[#10b981]/30 bg-[#10b981]/5 text-sm text-[#34d399]">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          Đang quét orphan data… (có thể mất vài chục giây với dataset lớn)
+          Scanning orphan data… (may take a while on large datasets)
         </div>
       )}
 
