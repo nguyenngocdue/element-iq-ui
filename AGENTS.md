@@ -1,6 +1,6 @@
 # Agent Guide — element-iq-ui
 
-**Read first:** [../AGENTS.md](../AGENTS.md) — monorepo architecture, §5.1 Titles + view split, §5.2 vertical tag OCR.
+**Read first:** [../AGENTS.md](../AGENTS.md) — monorepo architecture, §5.1 Titles + view split, §5.2 vertical tag OCR, **§13 ops/cache/admin/GPU**.
 
 React + Vite SPA. Presentation only — **no PDF parsing** for analysis; overlays read `report.json` / `component_results` from API.
 
@@ -11,7 +11,21 @@ pnpm dev          # Vite dev server (proxy /api → local API)
 pnpm build        # production bundle → nginx in Docker
 ```
 
-Local stack: UI on Vite + API `uvicorn app.main:app --reload --port 8001` (or Docker :3080).
+Local stack: UI on Vite + API via **venv** `source venv/bin/activate && uvicorn … --port 8001` (or Docker :3080).
+
+## Project F5 cache (2026-06-12)
+
+Stale-while-revalidate — first load API, reload fast same tab:
+
+| Layer | Path | Notes |
+|-------|------|-------|
+| IndexedDB | `lib/projectSessionCache.ts` | DB `elementiq-project-cache-v1` — full `rawFiles` (100+ files) |
+| sessionStorage | pointer `elementiq:project:ptr:v1:…` | Boot skip only; not full data |
+| IndexedDB | `lib/pdfBlobCache.ts` | PDF blob + `uploadedAt:fileSize` version key |
+
+`loadProjectEditor` → cache hit hydrates + background revalidate (fingerprint); write-through on analyze/refresh/delete.
+
+**Debug:** Console `Project cache saved · IndexedDB/…` / `restored from session cache`; DevTools → IndexedDB (not Session Storage for payload).
 
 ## Editor overlays (MainEditor)
 
