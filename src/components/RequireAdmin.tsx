@@ -11,6 +11,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
       <LoadingScreen
         background="admin"
         showBrand
+        spinnerSize="lg"
         eyebrow="Administration"
         title="Loading admin console"
         subtitle="Verifying permissions and preparing dashboard"

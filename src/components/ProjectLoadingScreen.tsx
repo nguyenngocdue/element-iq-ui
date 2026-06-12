@@ -63,6 +63,7 @@ export function ProjectLoadingScreen({ mode = 'full' }: ProjectLoadingScreenProp
       <DotGridOverlay />
       <LoadingContent
         showBrand={mode === 'full'}
+        spinnerSize={mode === 'full' ? 'lg' : 'md'}
         eyebrow="Workspace"
         title="Loading project"
         subtitle="Preparing drawings and analysis workspace"

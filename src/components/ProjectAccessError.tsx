@@ -30,7 +30,7 @@ export function ProjectAccessError({ kind, onRetry, onBack, retrying = false }: 
   return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <div className="mb-8">
+        <div className="mb-10">
           <BrandHeader size="md" />
         </div>
 
@@ -90,6 +90,7 @@ export function ProjectReconnecting({ attempt, maxAttempts }: ProjectReconnectin
   return (
     <LoadingScreen
       showBrand
+      spinnerSize="lg"
       eyebrow="Connection"
       title="Reconnecting…"
       subtitle="Waiting for the server to respond"

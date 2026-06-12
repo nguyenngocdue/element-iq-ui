@@ -12,6 +12,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <LoadingScreen
         showBrand
+        spinnerSize="lg"
         eyebrow="Authentication"
         title="Checking your session"
         subtitle="Verifying sign-in status"

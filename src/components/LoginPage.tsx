@@ -45,8 +45,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="mb-8">
-          <BrandHeader tagline="Drawing quality assurance for engineering PDFs" />
+        <div className="mb-10">
+          <BrandHeader />
         </div>
 
         {/* Card */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HPCE_LOGO_WHITE_HD_SRC } from '../lib/brandAssets';
+import { HPCE_LOGO_BLACK_SRC, HPCE_LOGO_NO_TAGLINE_SRC, HPCE_LOGO_WHITE_HD_SRC } from '../lib/brandAssets';
 import { cn } from '../lib/utils';
 
 export type LoadingTextVariant = 'page' | 'panel' | 'embed';
@@ -43,39 +43,49 @@ const LOADING_TEXT: Record<
 };
 
 export function BrandHeader({
-  tagline = 'Drawing quality assurance',
+  tagline,
   size = 'lg',
+  variant = 'dark',
   className,
 }: {
   tagline?: string;
   size?: 'md' | 'lg';
+  /** dark = white logo on transparent (login); light = black logo on transparent */
+  variant?: 'light' | 'dark';
   className?: string;
 }) {
-  const logoClass = size === 'lg' ? 'h-[76px] max-w-[320px]' : 'h-14 max-w-[260px]';
+  const logoClass =
+    size === 'lg' ? 'h-28 w-full max-w-[360px]' : 'h-20 w-full max-w-[280px]';
 
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center text-center rounded-lg bg-black px-6 py-7 ring-1 ring-inset ring-white/10',
-        className,
-      )}
-    >
+    <div className={cn('flex flex-col items-center', className)}>
       <img
-        src={HPCE_LOGO_WHITE_HD_SRC}
+        src={variant === 'light' ? HPCE_LOGO_BLACK_SRC : HPCE_LOGO_WHITE_HD_SRC}
         alt="HPCE"
-        className={cn(logoClass, 'w-auto object-contain')}
+        className={cn(logoClass, 'object-contain')}
         draggable={false}
+        decoding="async"
       />
-      <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/90 max-w-[280px] leading-relaxed">
-        {tagline}
-      </p>
+      {tagline && (
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#858585] max-w-[280px] text-center leading-relaxed">
+          {tagline}
+        </p>
+      )}
     </div>
   );
 }
 
-export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const box = size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-12 h-12' : 'w-10 h-10';
+export function Spinner({
+  size = 'md',
+  withLogo = false,
+}: {
+  size?: 'sm' | 'md' | 'lg';
+  withLogo?: boolean;
+}) {
+  const box =
+    size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-32 h-32' : 'w-20 h-20';
   const border = size === 'sm' ? 'border-[1.5px]' : 'border-2';
+  const logoInset = size === 'lg' ? 'inset-[8%]' : 'inset-[10%]';
 
   return (
     <div className={`relative ${box}`} role="status" aria-label="Loading">
@@ -83,7 +93,22 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
       <div
         className={`absolute inset-0 ${border} border-[#10b981] border-t-transparent rounded-full animate-spin`}
       />
-      <div className="absolute inset-[35%] rounded-full bg-[#10b981]/20 animate-pulse" />
+      {withLogo ? (
+        <div
+          className={`absolute ${logoInset} flex items-center justify-center pointer-events-none`}
+        >
+          <img
+            src={HPCE_LOGO_NO_TAGLINE_SRC}
+            alt=""
+            aria-hidden
+            className="max-h-full max-w-full object-contain"
+            draggable={false}
+            decoding="async"
+          />
+        </div>
+      ) : (
+        <div className="absolute inset-[35%] rounded-full bg-[#10b981]/20 animate-pulse" />
+      )}
     </div>
   );
 }
@@ -122,16 +147,17 @@ export function LoadingContent({
   textVariant = 'page',
 }: LoadingContentProps) {
   const text = LOADING_TEXT[textVariant];
+  const logoInSpinner = spinnerSize !== 'sm';
 
   return (
     <div className="flex flex-col items-center text-center select-none">
-      {showBrand && (
+      {showBrand && !logoInSpinner && (
         <div className="mb-10">
           <BrandHeader size={brandSize} />
         </div>
       )}
 
-      <Spinner size={spinnerSize} />
+      <Spinner size={spinnerSize} withLogo={logoInSpinner} />
 
       <div className={text.block}>
         {eyebrow && <p className={text.eyebrow}>{eyebrow}</p>}
@@ -231,7 +257,7 @@ export function PanelLoading({
         title={title}
         subtitle={subtitle}
         showProgress={false}
-        spinnerSize="sm"
+        spinnerSize="md"
         compact
         textVariant="panel"
       />

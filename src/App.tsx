@@ -301,6 +301,7 @@ function AppShell() {
     return (
       <LoadingScreen
         showBrand
+        spinnerSize="lg"
         eyebrow="Element IQ"
         title="Starting workspace"
         subtitle="Loading your session"
