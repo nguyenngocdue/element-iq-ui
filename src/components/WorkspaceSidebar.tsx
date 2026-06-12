@@ -3,6 +3,7 @@ import { Plus, LayoutGrid, FolderKanban, MessageSquare, HelpCircle, User, Shield
 import { cn } from '../lib/utils';
 import { useResizable } from '../hooks/useResizable';
 import { HoverTooltip } from './HoverTooltip';
+import { WorkspaceSidebarBrand } from './WorkspaceSidebarBrand';
 
 export type WorkspaceNav = 'dashboard' | 'projects' | 'account' | 'admin';
 
@@ -26,7 +27,7 @@ const MAIN_NAV = [
 
 const STORAGE_KEY = 'elementiq:workspace-sidebar';
 const COLLAPSED_WIDTH = 64;
-const EXPANDED_DEFAULT = 240;
+const EXPANDED_DEFAULT = 260;
 const EXPANDED_MIN = 200;
 const EXPANDED_MAX = 320;
 const COLLAPSE_SNAP = 150;
@@ -155,18 +156,15 @@ export function WorkspaceSidebar({
         )}
       />
 
-      <div className={cn('border-b border-[#1f1f1f]', isCollapsed ? 'px-2 py-4' : 'px-4 py-5')}>
-        <div className={cn('flex items-center', isCollapsed ? 'justify-center' : 'gap-3 mb-1')}>
-          <div className="w-9 h-9 rounded-md bg-[#141414] border border-[#262626] flex items-center justify-center shrink-0">
-            <FolderKanban className="w-4 h-4 text-[#00e676]" />
+      <div className="relative border-b border-[#1f1f1f]">
+        <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/25 to-transparent pointer-events-none" />
+        {isCollapsed ? (
+          <div className="px-2 py-3">
+            <WorkspaceSidebarBrand collapsed />
           </div>
-          {!isCollapsed && (
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-white truncate">Element IQ</p>
-              <p className="text-[11px] text-[#b0b0b0] truncate">{displayName}</p>
-            </div>
-          )}
-        </div>
+        ) : (
+          <WorkspaceSidebarBrand collapsed={false} />
+        )}
       </div>
 
       <div className={cn('pt-4 pb-3', isCollapsed ? 'px-2' : 'px-3')}>
