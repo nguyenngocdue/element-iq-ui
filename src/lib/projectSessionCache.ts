@@ -20,16 +20,57 @@ function cacheKey(projectId: string, userId: string | null): string {
   return `elementiq:project:v1:${userId ?? 'guest'}:${projectId}`;
 }
 
+function parseCachePayload(raw: string): CachedProjectPayload | null {
+  try {
+    const parsed = JSON.parse(raw) as CachedProjectPayload;
+    if (parsed?.v !== 1 || !parsed.meta?.id || !Array.isArray(parsed.rawFiles)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function readCacheByStorageKey(key: string): CachedProjectPayload | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    return parseCachePayload(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function hasProjectSessionCache(
+  projectId: string,
+  userId: string | null,
+): boolean {
+  return readProjectSessionCache(projectId, userId) !== null;
+}
+
 export function readProjectSessionCache(
   projectId: string,
   userId: string | null,
 ): CachedProjectPayload | null {
   try {
-    const raw = sessionStorage.getItem(cacheKey(projectId, userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedProjectPayload;
-    if (parsed?.v !== 1 || !parsed.meta?.id || !Array.isArray(parsed.rawFiles)) return null;
-    return parsed;
+    const primary = readCacheByStorageKey(cacheKey(projectId, userId));
+    if (primary) return primary;
+
+    // Same tab may have cached under a sibling viewer key (e.g. guest → user after auth).
+    const suffix = `:${projectId}`;
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith('elementiq:project:v1:') || !key.endsWith(suffix)) continue;
+      const hit = readCacheByStorageKey(key);
+      if (hit) {
+        // Normalize to the current viewer key for the next reload.
+        writeProjectSessionCache(projectId, userId, {
+          meta: hit.meta,
+          rawFiles: hit.rawFiles,
+        });
+        return hit;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -46,7 +87,12 @@ export function writeProjectSessionCache(
       cachedAt: new Date().toISOString(),
       ...payload,
     };
-    sessionStorage.setItem(cacheKey(projectId, userId), JSON.stringify(entry));
+    const serialized = JSON.stringify(entry);
+    sessionStorage.setItem(cacheKey(projectId, userId), serialized);
+    const kb = Math.round(serialized.length / 1024);
+    console.log(
+      `[ElementIQ] Project cache saved · ${payload.rawFiles.length} file(s) · ~${kb} KB · key=${cacheKey(projectId, userId)}`,
+    );
   } catch (err) {
     console.warn('[ElementIQ] project session cache full or unavailable', err);
   }

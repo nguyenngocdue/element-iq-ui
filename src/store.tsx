@@ -887,6 +887,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const sessionCache = readProjectSessionCache(projectId, userId ?? null);
+    if (!sessionCache) {
+      console.log(
+        `[ElementIQ] Project cache miss · project=${projectId} · viewer=${userId ?? 'guest'}`,
+      );
+    }
 
     disposeDocumentFilesInPlace(stateRef.current.files);
     projectSessionRef.current += 1;

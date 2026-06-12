@@ -18,6 +18,7 @@ import { RequireAdmin } from './components/RequireAdmin';
 import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
+import { hasProjectSessionCache } from './lib/projectSessionCache';
 import { LoginPage } from './components/LoginPage';
 import {
   ProjectAccessError,
@@ -166,7 +167,8 @@ function ProjectEditorPage() {
     prevProjectIdRef.current = projectId;
 
     if (isNewProject) {
-      setBooting(true);
+      const cached = hasProjectSessionCache(projectId, user?.id ?? null);
+      setBooting(!cached);
       setAccessError(null);
       setReconnecting(false);
       setRetryAttempt(0);
