@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Archive, ScanSearch } from 'lucide-react';
+import { Archive } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { formatBytes } from '../../lib/adminFormat';
 import { useSystemMetrics } from '../../hooks/useSystemMetrics';
 import { AdminMetricsCharts } from './AdminMetricsCharts';
-import { AdminKpiCard, AdminStatusBadge, AdminTableShell } from './AdminShared';
+import { AdminKpiCard, AdminTableShell } from './AdminShared';
 import { Cpu, Database, HardDrive } from 'lucide-react';
 
 export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
   const [health, setHealth] = useState<Record<string, any> | null>(null);
-  const [orphans, setOrphans] = useState<Record<string, any> | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [pruneResult, setPruneResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,17 +47,6 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
       setError(e instanceof Error ? e.message : 'Prune failed');
     } finally {
       setPruning(false);
-    }
-  }
-
-  async function runScan() {
-    setScanning(true);
-    try {
-      setOrphans(await adminApi.scanOrphans());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Scan failed');
-    } finally {
-      setScanning(false);
     }
   }
 
@@ -134,50 +121,8 @@ export function AdminSystemTab({ refreshKey }: { refreshKey: number }) {
           <Archive className="w-4 h-4" />
           {pruning ? 'Pruning…' : `Prune old artifacts (keep ${typeof health?.artifact_retention_jobs === 'number' ? health.artifact_retention_jobs : '…'})`}
         </button>
-        <button
-          type="button"
-          onClick={() => void runScan()}
-          disabled={scanning}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-[#141414] border border-[#262626] text-sm text-white hover:border-[#10b981]/40 transition-colors disabled:opacity-50"
-        >
-          <ScanSearch className="w-4 h-4" />
-          {scanning ? 'Scanning…' : 'Scan for orphan files'}
-        </button>
       </div>
       {pruneResult && <p className="text-sm text-[#34d399]">{pruneResult}</p>}
-
-      {orphans && (
-        <div className="grid lg:grid-cols-2 gap-4">
-          <AdminTableShell title="Missing on disk" description="DB records without files">
-            {(orphans.missing_on_disk as any[])?.length ? (
-              <ul className="divide-y divide-[#1f1f1f]">
-                {(orphans.missing_on_disk as any[]).slice(0, 20).map((o) => (
-                  <li key={o.id} className="px-4 py-2 text-sm">
-                    <div className="text-white truncate">{o.filename}</div>
-                    <div className="text-[#737373] text-xs truncate">{o.local_path}</div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="px-4 py-6 text-sm text-[#737373]">No missing files.</p>
-            )}
-          </AdminTableShell>
-          <AdminTableShell title="Orphan on disk" description="Files without DB records">
-            {(orphans.orphan_on_disk as any[])?.length ? (
-              <ul className="divide-y divide-[#1f1f1f]">
-                {(orphans.orphan_on_disk as any[]).slice(0, 20).map((o, i) => (
-                  <li key={i} className="px-4 py-2 text-sm flex justify-between gap-2">
-                    <span className="text-[#b0b0b0] truncate">{o.path}</span>
-                    <AdminStatusBadge status={formatBytes(o.size_bytes)} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="px-4 py-6 text-sm text-[#737373]">No orphan files found.</p>
-            )}
-          </AdminTableShell>
-        </div>
-      )}
     </div>
   );
 }

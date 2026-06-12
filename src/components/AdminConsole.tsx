@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
+  Eraser,
   FileStack,
   FolderKanban,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { AdminFilesTab } from './admin/AdminFilesTab';
 import { AdminProjectsTab } from './admin/AdminProjectsTab';
 import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminJobsTab } from './admin/AdminJobsTab';
+import { AdminCleanupTab } from './admin/AdminCleanupTab';
 import { AdminSystemTab } from './admin/AdminSystemTab';
 
 const TABS: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
@@ -29,6 +31,7 @@ const TABS: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'files', label: 'Files', icon: FileStack },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'jobs', label: 'Jobs', icon: Activity },
+  { id: 'cleanup', label: 'Cleanup', icon: Eraser },
   { id: 'system', label: 'System', icon: Server },
 ];
 
@@ -38,6 +41,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   projects: 'Projects',
   users: 'Users',
   jobs: 'Jobs',
+  cleanup: 'Cleanup',
   system: 'System',
 };
 
@@ -71,6 +75,8 @@ export function AdminConsole() {
         return <AdminUsersTab refreshKey={refreshKey} isSuperAdmin={isSuperAdmin} />;
       case 'jobs':
         return <AdminJobsTab refreshKey={refreshKey} />;
+      case 'cleanup':
+        return <AdminCleanupTab refreshKey={refreshKey} />;
       case 'system':
         return <AdminSystemTab refreshKey={refreshKey} />;
       default:

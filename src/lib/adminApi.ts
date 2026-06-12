@@ -1,6 +1,6 @@
 import { authFetch } from './supabase';
 
-export type AdminTab = 'overview' | 'files' | 'projects' | 'users' | 'jobs' | 'system';
+export type AdminTab = 'overview' | 'files' | 'projects' | 'users' | 'jobs' | 'cleanup' | 'system';
 
 export interface Paginated<T> {
   items: T[];
@@ -142,4 +142,68 @@ export const adminApi = {
     );
   },
   scanOrphans: () => adminPost<Record<string, unknown>>('/system/scan-orphans'),
+  scanGarbage: () => adminPost<AdminGarbageScan>('/system/scan-garbage'),
+  cleanGarbagePlan: () => adminGet<{ phases: AdminCleanPhasePlan[] }>('/system/clean-garbage/plan'),
+  cleanGarbagePhase: (phaseId: string, keep?: number) => {
+    const qs = keep != null ? `?keep=${keep}` : '';
+    return adminPost<AdminCleanPhaseResult>(`/system/clean-garbage/phase/${phaseId}${qs}`);
+  },
+  cleanGarbage: (opts?: { dryRun?: boolean; pruneRetention?: boolean; keep?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.dryRun) params.set('dry_run', 'true');
+    if (opts?.pruneRetention === false) params.set('prune_retention', 'false');
+    if (opts?.keep != null) params.set('keep', String(opts.keep));
+    const qs = params.toString() ? `?${params}` : '';
+    return adminPost<AdminGarbageCleanResult>(`/system/clean-garbage${qs}`);
+  },
 };
+
+export interface AdminCleanPhasePlan {
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface AdminCleanPhaseResult {
+  phase: string;
+  result: Record<string, number>;
+  duration_ms: number;
+}
+
+export interface AdminGarbageCategory {
+  count: number;
+  items: Record<string, unknown>[];
+  truncated: boolean;
+}
+
+export interface AdminGarbageScan {
+  scanned_at: string;
+  data_root?: string;
+  summary: {
+    total_issues: number;
+    reclaimable_bytes: number;
+    jobs_over_retention: number;
+  };
+  retention: Record<string, number>;
+  categories: {
+    missing_on_disk: AdminGarbageCategory;
+    orphan_on_disk: AdminGarbageCategory;
+    orphan_jobs: AdminGarbageCategory;
+    orphan_job_results: AdminGarbageCategory;
+    orphan_artifacts_db: AdminGarbageCategory;
+    orphan_artifact_dirs: AdminGarbageCategory;
+    jobs_over_retention: AdminGarbageCategory;
+    stale_scratch: AdminGarbageCategory;
+    broken_project_refs: AdminGarbageCategory;
+  };
+}
+
+export interface AdminGarbageCleanResult {
+  dry_run: boolean;
+  cleaned_at?: string;
+  before?: AdminGarbageScan['summary'];
+  after?: AdminGarbageScan['summary'];
+  actions?: Record<string, unknown>;
+  would_clean?: AdminGarbageScan['summary'];
+  categories?: AdminGarbageScan['categories'];
+}
