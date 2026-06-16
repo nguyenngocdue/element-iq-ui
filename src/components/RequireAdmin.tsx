@@ -1,9 +1,15 @@
 import type { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
 import { useAdminProfile } from '../hooks/useAdminProfile';
+import { AdminAccessDenied, type AdminArea } from './AdminAccessDenied';
 import { LoadingScreen } from './LoadingScreen';
 
-export function RequireAdmin({ children }: { children: ReactNode }) {
+export function RequireAdmin({
+  children,
+  area = 'admin',
+}: {
+  children: ReactNode;
+  area?: AdminArea;
+}) {
   const { loading, isAdmin } = useAdminProfile();
 
   if (loading) {
@@ -13,15 +19,15 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
         showBrand
         spinnerSize="lg"
         eyebrow="Administration"
-        title="Loading admin console"
-        subtitle="Verifying permissions and preparing dashboard"
+        title="Checking access"
+        subtitle="Verifying your account role"
         showProgress={false}
       />
     );
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <AdminAccessDenied area={area} />;
   }
 
   return <>{children}</>;

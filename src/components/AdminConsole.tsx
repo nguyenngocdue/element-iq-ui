@@ -90,14 +90,17 @@ export function AdminConsole() {
         activeNav="admin"
         displayName={displayName}
         showAdminLink
+        showModelLabLink
         onCreateProject={() => navigate('/projects')}
         onNavigate={(nav) => {
           if (nav === 'dashboard') navigate('/');
           else if (nav === 'projects') navigate('/projects');
           else if (nav === 'account') navigate('/account');
           else if (nav === 'admin') navigate('/admin');
+          else if (nav === 'model-lab') navigate('/model-lab');
         }}
         onAdmin={() => navigate('/admin')}
+        onModelLab={() => navigate('/model-lab')}
         onHelp={() => {}}
       />
 

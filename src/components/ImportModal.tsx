@@ -371,7 +371,7 @@ function DuplicateDialog({
 
 // ── Main Modal ────────────────────────────────────────────────
 export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFileId, targetFileIds }: AnalysisConfigModalProps) {
-  const { state, setSelectedComponents, setComponentConfidence, analyzeFile, analyzeAll, analyzeSelected, refreshProjectFiles } = useApp();
+  const { state, setSelectedComponents, setComponentConfidence, setComponentModel, analyzeFile, analyzeAll, analyzeSelected, refreshProjectFiles } = useApp();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'syncing'>('idle');
@@ -713,6 +713,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                       component={comp}
                       selected={state.selectedComponents.includes(comp.id)}
                       confidence={state.componentConfidence[comp.id] || 0.4}
+                      selectedModel={state.componentModels[comp.id]}
                       onToggle={(id) => {
                         const isSelected = state.selectedComponents.includes(id);
                         const newSelection = isSelected
@@ -721,6 +722,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                         setSelectedComponents(newSelection);
                       }}
                       onConfidenceChange={setComponentConfidence}
+                      onModelChange={setComponentModel}
                     />
                   ))}
                 </div>

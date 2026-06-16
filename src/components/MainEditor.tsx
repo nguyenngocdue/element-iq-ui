@@ -15,7 +15,7 @@ import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBr
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { LoadingContent } from './LoadingScreen';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, PanelRight, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -99,6 +99,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
                {selectedComps.map((compId) => {
                  const meta = state.availableComponents.find((c) => c.id === compId);
                  const conf = ((state.componentConfidence[compId] ?? state.confidenceThreshold) * 100).toFixed(0);
+                 const modelFile = state.componentModels[compId] || meta?.modelFile;
                  return (
                    <div key={compId} className="space-y-0.5 pb-1 last:pb-0 border-b border-[#3c3c3c]/40 last:border-0">
                      <div className="flex justify-between gap-2">
@@ -107,7 +108,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
                      </div>
                      <div className="flex justify-between gap-2">
                        <span className="text-[#858585] shrink-0">Model:</span>
-                       <span className="text-[#82aaff] font-mono truncate" title={meta?.modelFile}>{meta?.modelFile || '—'}</span>
+                       <span className="text-[#82aaff] font-mono truncate" title={modelFile}>{modelFile || '—'}</span>
                      </div>
                      <div className="flex justify-between gap-2">
                        <span className="text-[#858585] shrink-0">Confidence:</span>
@@ -713,7 +714,7 @@ function ArtifactViewer({
 }
 
 export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, toggleValidation, setActiveArtifact, toggleAnalysisTerminal } = useApp();
+  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, setActiveArtifact, toggleAnalysisTerminal } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun ?? !isReadOnly;
   const canDownload = state.canDownload === true;
@@ -991,7 +992,7 @@ export function MainEditor() {
         
         {/* Editor Tabs (Pane 1) */}
         <div className="h-[35px] bg-[#252526] flex items-center justify-between shrink-0 border-b border-[#1e1e1e]">
-          <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar">
+          <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar min-w-0">
             {state.activeArtifact && (
               <>
                 <button
@@ -1131,13 +1132,6 @@ export function MainEditor() {
               title="Toggle Analysis Log"
             >
               <Terminal className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={toggleValidation}
-              className={`h-full px-4 flex items-center justify-center hover:bg-[#333] transition-colors border-t-2 ${state.isValidationOpen ? 'border-t-[#10b981] bg-[#1e1e1e] text-white' : 'border-t-transparent text-[#858585]'}`}
-              title="Toggle Validation Panel"
-            >
-              <PanelRight className="w-4 h-4" />
             </button>
           </div>
         </div>

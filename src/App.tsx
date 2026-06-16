@@ -14,6 +14,7 @@ import { AnalysisConfigModal } from './components/ImportModal';
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { AccountSettings } from './components/AccountSettings';
 import { AdminConsole } from './components/AdminConsole';
+import { ModelLabConsole } from './components/ModelLabConsole';
 import { RequireAdmin } from './components/RequireAdmin';
 import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
@@ -278,8 +279,18 @@ function AppContent() {
         path="/admin"
         element={
           <RequireAuth>
-            <RequireAdmin>
+            <RequireAdmin area="admin">
               <AdminConsole />
+            </RequireAdmin>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/model-lab"
+        element={
+          <RequireAuth>
+            <RequireAdmin area="model-lab">
+              <ModelLabConsole />
             </RequireAdmin>
           </RequireAuth>
         }

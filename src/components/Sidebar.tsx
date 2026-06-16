@@ -131,6 +131,8 @@ export function Sidebar() {
     activeFilterQuery.trim() !== '' ||
     explorerStatus !== DEFAULT_EXPLORER_STATUS ||
     explorerSort !== DEFAULT_EXPLORER_SORT;
+  const hasActiveFilter =
+    activeFilterQuery.trim() !== '' || explorerStatus !== DEFAULT_EXPLORER_STATUS;
 
   // Auto-expand matches while filtering so artifacts/sheets stay visible.
   React.useEffect(() => {
@@ -185,9 +187,10 @@ export function Sidebar() {
     : state.files.some((f) => f.status === 'ANALYZING')
       ? '0/1'
       : '…';
-  const selectableFileIds = state.files
+  const selectableFileIds = displayedFiles
     .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
     .map(f => f.id);
+  const selectedInViewCount = selectableFileIds.filter((id) => selectedFileIds.has(id)).length;
 
   const exitBulkMode = () => {
     setBulkMode(null);
@@ -203,7 +206,7 @@ export function Sidebar() {
   };
   const getRunnableIdsInSortOrder = (ids?: Set<string>) =>
     sortFiles(
-      state.files.filter(
+      displayedFiles.filter(
         (f) =>
           (ids ? ids.has(f.id) : true) &&
           f.status !== 'ANALYZING' &&
@@ -507,16 +510,22 @@ export function Sidebar() {
                     ) : isRunSelectMode ? (
                       <button
                         onClick={() => {
-                          if (selectedFileIds.size === 0) return;
-                          openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                          const ids = getRunnableIdsInSortOrder(new Set(selectedFileIds));
+                          if (ids.length === 0) return;
+                          openConfigModal('reanalyze', undefined, ids);
                           exitBulkMode();
                         }}
-                        disabled={selectedFileIds.size === 0}
-                        title={selectedFileIds.size === 0 ? 'Select files to run' : `Run ${selectedFileIds.size} selected`}
+                        disabled={selectedInViewCount === 0}
+                        title={
+                          selectedInViewCount === 0
+                            ? 'Select files to run'
+                            : `Run ${selectedInViewCount} selected`
+                        }
                         className={cn(toolbarSegBtn, toolbarRunPrimary)}
                       >
                         <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                        {!compactToolbar && (selectedFileIds.size > 0 ? `Run (${selectedFileIds.size})` : 'Run')}
+                        {!compactToolbar &&
+                          (selectedInViewCount > 0 ? `Run (${selectedInViewCount})` : 'Run')}
                       </button>
                     ) : (
                       <button
@@ -525,12 +534,19 @@ export function Sidebar() {
                           if (ids.length === 0) return;
                           openConfigModal('reanalyze', undefined, ids);
                         }}
-                        disabled={state.files.length === 0 || isDeleteSelectMode}
-                        title="Run analysis on all drawings"
+                        disabled={selectableFileIds.length === 0 || isDeleteSelectMode}
+                        title={
+                          hasActiveFilter
+                            ? `Run analysis on ${selectableFileIds.length} filtered drawing(s)`
+                            : 'Run analysis on all drawings'
+                        }
                         className={cn(toolbarSegBtn, toolbarRunPrimary)}
                       >
                         <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                        {!compactToolbar && 'Run All'}
+                        {!compactToolbar &&
+                          (hasActiveFilter && selectableFileIds.length > 0
+                            ? `Run (${selectableFileIds.length})`
+                            : 'Run All')}
                       </button>
                     )}
                     {!isAnalyzing && (
@@ -619,7 +635,8 @@ export function Sidebar() {
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <span className="text-[11px] tabular-nums text-[#858585]">
-                {selectedFileIds.size} / {selectableFileIds.length} selected
+                {selectedInViewCount} / {selectableFileIds.length} selected
+                {hasActiveFilter ? ' (filtered)' : ''}
               </span>
               <button
                 type="button"
@@ -627,12 +644,12 @@ export function Sidebar() {
                 disabled={selectableFileIds.length === 0}
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
-                Select all
+                Select all{hasActiveFilter ? ' shown' : ''}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedFileIds(new Set())}
-                disabled={selectedFileIds.size === 0}
+                disabled={selectedInViewCount === 0}
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
                 Deselect
@@ -640,14 +657,15 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedFileIds.size === 0) return;
-                  openConfigModal('reanalyze', undefined, getRunnableIdsInSortOrder(new Set(selectedFileIds)));
+                  const ids = getRunnableIdsInSortOrder(new Set(selectedFileIds));
+                  if (ids.length === 0) return;
+                  openConfigModal('reanalyze', undefined, ids);
                   exitBulkMode();
                 }}
-                disabled={selectedFileIds.size === 0}
+                disabled={selectedInViewCount === 0}
                 className="px-2 py-0.5 rounded border border-[#2eb886]/40 bg-[#1a3a2a] text-[10px] text-[#2eb886] hover:bg-[#224d36] transition-colors disabled:opacity-40 ml-auto"
               >
-                Run{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}
+                Run{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
             </div>
           </div>
@@ -673,7 +691,8 @@ export function Sidebar() {
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <span className="text-[11px] tabular-nums text-[#858585]">
-                {selectedFileIds.size} / {selectableFileIds.length} selected
+                {selectedInViewCount} / {selectableFileIds.length} selected
+                {hasActiveFilter ? ' (filtered)' : ''}
               </span>
               <button
                 type="button"
@@ -681,12 +700,12 @@ export function Sidebar() {
                 disabled={selectableFileIds.length === 0}
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
-                Select all
+                Select all{hasActiveFilter ? ' shown' : ''}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedFileIds(new Set())}
-                disabled={selectedFileIds.size === 0}
+                disabled={selectedInViewCount === 0}
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
                 Deselect
@@ -694,13 +713,13 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedFileIds.size === 0) return;
+                  if (selectedInViewCount === 0) return;
                   setShowDeleteSelectedDialog(true);
                 }}
-                disabled={selectedFileIds.size === 0}
+                disabled={selectedInViewCount === 0}
                 className="px-2 py-0.5 rounded border border-[#522b30] bg-[#3d2c2e] text-[10px] text-[#ff7b7b] hover:bg-[#4d3235] transition-colors disabled:opacity-40 ml-auto"
               >
-                Remove{selectedFileIds.size > 0 ? ` (${selectedFileIds.size})` : ''}
+                Remove{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
             </div>
           </div>
@@ -888,13 +907,13 @@ export function Sidebar() {
       <ConfirmDialog
         open={showDeleteSelectedDialog}
         title="Remove Selected Files"
-        description={`Delete ${selectedFileIds.size} selected file(s) from this project? Analysis data for these files will be permanently removed.`}
+        description={`Delete ${selectedInViewCount} selected file(s) from this project? Analysis data for these files will be permanently removed.`}
         confirmLabel="Remove"
         variant="danger"
         loading={clearLoading}
         progressText={clearProgress}
         onConfirm={async () => {
-          const ids = Array.from(selectedFileIds);
+          const ids = selectableFileIds.filter((id) => selectedFileIds.has(id));
           setClearLoading(true);
           setClearProgress(`Deleting ${ids.length} file(s)...`);
           try {

@@ -1,11 +1,11 @@
 import React from 'react';
-import { Plus, LayoutGrid, FolderKanban, MessageSquare, HelpCircle, User, Shield } from 'lucide-react';
+import { Plus, LayoutGrid, FolderKanban, MessageSquare, HelpCircle, User, Shield, Beaker } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useResizable } from '../hooks/useResizable';
 import { HoverTooltip } from './HoverTooltip';
 import { WorkspaceSidebarBrand } from './WorkspaceSidebarBrand';
 
-export type WorkspaceNav = 'dashboard' | 'projects' | 'account' | 'admin';
+export type WorkspaceNav = 'dashboard' | 'projects' | 'account' | 'admin' | 'model-lab';
 
 interface WorkspaceSidebarProps {
   activeNav: WorkspaceNav;
@@ -15,8 +15,10 @@ interface WorkspaceSidebarProps {
   onAiChat?: () => void;
   onHelp?: () => void;
   onAdmin?: () => void;
+  onModelLab?: () => void;
   /** Show Admin Manage link (ADMIN role only) */
   showAdminLink?: boolean;
+  showModelLabLink?: boolean;
 }
 
 const MAIN_NAV = [
@@ -105,7 +107,9 @@ export function WorkspaceSidebar({
   onAiChat,
   onHelp,
   onAdmin,
+  onModelLab,
   showAdminLink = false,
+  showModelLabLink = false,
 }: WorkspaceSidebarProps) {
   const { width, setWidth, isDragging, handleMouseDown } = useResizable({
     initialWidth: readSavedWidth(),
@@ -212,6 +216,15 @@ export function WorkspaceSidebar({
             collapsed={isCollapsed}
             active={activeNav === 'admin'}
             onClick={() => (onAdmin ? onAdmin() : onNavigate('admin'))}
+          />
+        )}
+        {showModelLabLink && (
+          <NavButton
+            label="Model Lab"
+            icon={Beaker}
+            collapsed={isCollapsed}
+            active={activeNav === 'model-lab'}
+            onClick={() => (onModelLab ? onModelLab() : onNavigate('model-lab'))}
           />
         )}
         <NavButton

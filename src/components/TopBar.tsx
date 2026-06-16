@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Check, HelpCircle, Shield } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Check, HelpCircle, Shield, Beaker, PanelLeft, PanelRight } from 'lucide-react';
 import { useApp } from '../store';
 import { AboutModal, ReportIssueModal } from './Modals';
 import { useAuth } from '../lib/auth-context';
@@ -11,12 +11,15 @@ import { UserProfileMenu } from './UserProfileMenu';
 import { publicAccessLevelLabel } from '../lib/projectAccess';
 import { ProjectTooltipContent } from './tooltipContent';
 import { HoverTooltip } from './HoverTooltip';
+import { EditorNavigationButtons } from './EditorNavigationButtons';
+import { cn } from '../lib/utils';
 
 export function TopBar() {
-  const { state, clearSession, setActiveSidebarTab, setCurrentView } = useApp();
+  const { state, clearSession, setActiveSidebarTab, setCurrentView, toggleSidebar, toggleValidation, goBackInEditor, goForwardInEditor, editorNavCanBack, editorNavCanForward } = useApp();
   const { user } = useAuth();
   const { isAdmin } = useAdminProfile();
   const navigate = useNavigate();
+  const location = useLocation();
   
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
@@ -47,6 +50,29 @@ export function TopBar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (state.currentView !== 'editor') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBackInEditor();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForwardInEditor();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [state.currentView, goBackInEditor, goForwardInEditor]);
+
+  const showEditorNavChrome =
+    state.currentView === 'editor' &&
+    state.activeSidebarTab !== 'reports' &&
+    state.activeSidebarTab !== 'analysis';
 
   return (
     <>
@@ -141,18 +167,32 @@ export function TopBar() {
             </div>
 
             {isAdmin && (
-              <Tab
-                active={false}
-                onClick={() => {
-                  setIsViewMenuOpen(false);
-                  setIsHelpMenuOpen(false);
-                  navigate('/admin');
-                }}
-              >
-                <span className="flex items-center gap-1">
-                  Admin <Shield className="w-3 h-3" />
-                </span>
-              </Tab>
+              <>
+                <Tab
+                  active={location.pathname.startsWith('/admin')}
+                  onClick={() => {
+                    setIsViewMenuOpen(false);
+                    setIsHelpMenuOpen(false);
+                    navigate('/admin');
+                  }}
+                >
+                  <span className="flex items-center gap-1">
+                    Admin <Shield className="w-3 h-3" />
+                  </span>
+                </Tab>
+                <Tab
+                  active={location.pathname.startsWith('/model-lab')}
+                  onClick={() => {
+                    setIsViewMenuOpen(false);
+                    setIsHelpMenuOpen(false);
+                    navigate('/model-lab');
+                  }}
+                >
+                  <span className="flex items-center gap-1">
+                    Model Lab <Beaker className="w-3 h-3" />
+                  </span>
+                </Tab>
+              </>
             )}
 
             <div className="h-full flex items-center relative" ref={helpMenuRef}>
@@ -177,6 +217,49 @@ export function TopBar() {
                 </div>
               )}
             </div>
+
+            {showEditorNavChrome && (
+              <div className="ml-3 pl-3 border-l border-[#525252]/80 flex items-center gap-2 self-stretch h-full">
+                <EditorNavigationButtons
+                  canGoBack={editorNavCanBack}
+                  canGoForward={editorNavCanForward}
+                  onGoBack={goBackInEditor}
+                  onGoForward={goForwardInEditor}
+                />
+                <div className="flex items-center gap-0 shrink-0">
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    title={state.isSidebarOpen ? 'Hide Side Bar' : 'Show Side Bar'}
+                    aria-label={state.isSidebarOpen ? 'Hide Side Bar' : 'Show Side Bar'}
+                    aria-pressed={state.isSidebarOpen}
+                    className={cn(
+                      'h-7 w-7 flex items-center justify-center rounded-sm transition-colors shrink-0',
+                      state.isSidebarOpen
+                        ? 'text-[#cccccc] hover:bg-[#4a4a4a] hover:text-white'
+                        : 'text-[#858585] hover:bg-[#4a4a4a] hover:text-white',
+                    )}
+                  >
+                    <PanelLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleValidation}
+                    title={state.isValidationOpen ? 'Hide Validation Panel' : 'Show Validation Panel'}
+                    aria-label={state.isValidationOpen ? 'Hide Validation Panel' : 'Show Validation Panel'}
+                    aria-pressed={state.isValidationOpen}
+                    className={cn(
+                      'h-7 w-7 flex items-center justify-center rounded-sm transition-colors shrink-0',
+                      state.isValidationOpen
+                        ? 'text-[#cccccc] hover:bg-[#4a4a4a] hover:text-white'
+                        : 'text-[#858585] hover:bg-[#4a4a4a] hover:text-white',
+                    )}
+                  >
+                    <PanelRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
 
           </div>
         </div>

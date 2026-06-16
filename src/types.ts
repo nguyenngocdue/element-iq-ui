@@ -15,6 +15,16 @@ export interface Component {
   size?: string;
 }
 
+export interface ComponentModelOption {
+  filename: string;
+  sizeMb: number;
+  isDefault: boolean;
+  modifiedAt?: string;
+  verdictLabel?: 'recommended' | 'ok' | 'caution' | 'poor' | null;
+  verdictRank?: number | null;
+  map50_95?: number | null;
+}
+
 export interface FileArtifact {
   id: string;
   type: string;
@@ -148,6 +158,8 @@ export interface SessionState {
   availableComponents: Component[];
   selectedComponents: string[];
   componentConfidence: Record<string, number>;
+  /** Per-component weights basename (.pt) chosen in Analysis Configuration */
+  componentModels: Record<string, string>;
   showConfigModal: boolean;
   configModalMode: 'import' | 'reanalyze';
   configTargetFileId?: string;

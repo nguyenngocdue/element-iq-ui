@@ -48,6 +48,13 @@ import {
   putCachedPdfBlob,
   removeCachedPdfBlob,
 } from './lib/pdfBlobCache';
+import {
+  buildStateFromNavEntry,
+  EditorNavigationHistory,
+  sameNavEntry,
+  snapshotEditorNav,
+  type EditorNavEntry,
+} from './lib/editorNavigationHistory';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -57,11 +64,12 @@ function buildModelLogLines(
   availableComponents: Component[],
   componentConfidence: Record<string, number>,
   confidenceThreshold: number,
+  componentModels: Record<string, string>,
 ): string[] {
   return selectedComps.map((compId) => {
     const meta = availableComponents.find((c) => c.id === compId);
     const conf = ((componentConfidence[compId] ?? confidenceThreshold) * 100).toFixed(0);
-    const modelFile = meta?.modelFile?.trim();
+    const modelFile = (componentModels[compId] || meta?.modelFile || '').trim();
     const label = meta?.name ?? compId;
     const statusTag =
       meta?.status === 'missing' ? ' · MISSING' : meta?.status === 'training' ? ' · TRAINING' : '';
@@ -265,7 +273,11 @@ async function prefetchProjectPdf(
 interface AppContextType {
   state: SessionState;
   addFiles: (files: File[]) => void;
-  setActiveFile: (id: string, page?: number) => void;
+  setActiveFile: (id: string, page?: number, options?: { skipHistory?: boolean }) => void;
+  goBackInEditor: () => void;
+  goForwardInEditor: () => void;
+  editorNavCanBack: boolean;
+  editorNavCanForward: boolean;
   closeFile: (id: string) => void;
   closeOthers: (id: string) => void;
   closeToRight: (id: string) => void;
@@ -289,6 +301,7 @@ interface AppContextType {
   toggleAnalysisTerminal: () => void;
   setSelectedComponents: (ids: string[]) => void;
   setComponentConfidence: (id: string, confidence: number) => void;
+  setComponentModel: (id: string, modelFile: string) => void;
   toggleComponent: (id: string) => void;
   openConfigModal: (mode: 'import' | 'reanalyze', fileId?: string, fileIds?: string[]) => void;
   closeConfigModal: () => void;
@@ -301,7 +314,7 @@ interface AppContextType {
   disposeProjectSession: () => void;
   refreshProjectFiles: (options?: { silent?: boolean; focusFileIds?: string[] }) => Promise<void>;
   toggleBot: () => void;
-  setActiveArtifact: (artifact: SessionState['activeArtifact']) => void;
+  setActiveArtifact: (artifact: SessionState['activeArtifact'], options?: { skipHistory?: boolean }) => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -336,6 +349,7 @@ const initialState: SessionState = {
   availableComponents: [],  // loaded from API
   selectedComponents: savedConfig?.selectedComponents ?? ['grout-tube'],
   componentConfidence: savedConfig?.componentConfidence ?? { 'grout-tube': 0.40 },
+  componentModels: savedConfig?.componentModels ?? {},
   showConfigModal: false,
   configModalMode: 'import',
   currentView: 'projects',
@@ -351,10 +365,24 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SessionState>(initialState);
+  const [editorNavUi, setEditorNavUi] = useState({ canBack: false, canForward: false });
   const projectSessionRef = React.useRef(0);
   const stopAnalysisRef = React.useRef(false);
+  const navHistoryRef = React.useRef(new EditorNavigationHistory());
   const stateRef = React.useRef(state);
   stateRef.current = state;
+
+  const syncEditorNavUi = useCallback(() => {
+    setEditorNavUi({
+      canBack: navHistoryRef.current.canGoBack(),
+      canForward: navHistoryRef.current.canGoForward(),
+    });
+  }, []);
+
+  const resetEditorNavigation = useCallback(() => {
+    navHistoryRef.current.reset();
+    syncEditorNavUi();
+  }, [syncEditorNavUi]);
 
   const invalidateProjectSession = useCallback(() => {
     projectSessionRef.current += 1;
@@ -380,6 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const disposeProjectSession = useCallback(() => {
     invalidateProjectSession();
+    resetEditorNavigation();
     setState((prev) => ({
       ...prev,
       files: [],
@@ -436,10 +465,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const config = {
       selectedComponents: state.selectedComponents,
       componentConfidence: state.componentConfidence,
+      componentModels: state.componentModels,
       confidenceThreshold: state.confidenceThreshold,
     };
     localStorage.setItem('elementiq:analysis-config', JSON.stringify(config));
-  }, [state.selectedComponents, state.componentConfidence, state.confidenceThreshold]);
+  }, [state.selectedComponents, state.componentConfidence, state.componentModels, state.confidenceThreshold]);
 
   // Persist layout preferences
   React.useEffect(() => {
@@ -541,12 +571,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [updateFileStatus, state.activeProject?.id]);
 
-  const setActiveFile = useCallback((id: string, page: number = 1) => {
+  const setActiveFile = useCallback((
+    id: string,
+    page: number = 1,
+    options?: { skipHistory?: boolean },
+  ) => {
     const file = state.files.find(f => f.id === id);
 
     const applyActivation = () => {
       setState((prev) => {
         const openFiles = prev.openFiles.includes(id) ? prev.openFiles : [...prev.openFiles, id];
+        const arriving = snapshotEditorNav({
+          activeFileId: id,
+          activePage: page,
+          activeArtifact: null,
+        });
+        const leaving = snapshotEditorNav(prev);
+        if (!options?.skipHistory && !sameNavEntry(leaving, arriving)) {
+          navHistoryRef.current.pushLeave(leaving);
+        }
         return {
           ...prev,
           activeFileId: id,
@@ -555,6 +598,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activeArtifact: null,
         };
       });
+      syncEditorNavUi();
     };
 
     // If file has no bytes (loaded from server), download first then activate
@@ -577,7 +621,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } else {
       applyActivation();
     }
-  }, [state.files, updateFileStatus, isSessionCurrent]);
+  }, [state.files, updateFileStatus, isSessionCurrent, syncEditorNavUi]);
+
+  const downloadFileIfNeeded = useCallback(async (id: string, sessionId: number) => {
+    const file = stateRef.current.files.find((f) => f.id === id);
+    if (!file || file.file.size > 0) return;
+    try {
+      const { authFetch } = await import('./lib/supabase');
+      const res = await authFetch(`/api/v1/files/${id}/download`);
+      if (!isSessionCurrent(sessionId) || !res.ok) return;
+      const blob = await res.blob();
+      if (!isSessionCurrent(sessionId)) return;
+      const realFile = new File([blob], file.name, { type: 'application/pdf' });
+      updateFileStatus(id, { file: realFile });
+    } catch (err) {
+      console.error('Failed to download file:', err);
+    }
+  }, [isSessionCurrent, updateFileStatus]);
+
+  const applyNavEntry = useCallback((entry: EditorNavEntry) => {
+    const sessionId = projectSessionRef.current;
+    setState((prev) => {
+      if (entry.fileId && !prev.files.some((f) => f.id === entry.fileId)) {
+        return prev;
+      }
+      return buildStateFromNavEntry(prev, entry);
+    });
+    syncEditorNavUi();
+    if (entry.fileId) {
+      void downloadFileIfNeeded(entry.fileId, sessionId);
+    }
+  }, [downloadFileIfNeeded, syncEditorNavUi]);
+
+  const goBackInEditor = useCallback(() => {
+    const current = snapshotEditorNav(stateRef.current);
+    const target = navHistoryRef.current.goBack(current);
+    if (!target) return;
+    applyNavEntry(target);
+  }, [applyNavEntry]);
+
+  const goForwardInEditor = useCallback(() => {
+    const current = snapshotEditorNav(stateRef.current);
+    const target = navHistoryRef.current.goForward(current);
+    if (!target) return;
+    applyNavEntry(target);
+  }, [applyNavEntry]);
 
   const closeFile = useCallback((id: string) => {
     setState((prev) => {
@@ -684,6 +772,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const setComponentModel = useCallback((id: string, modelFile: string) => {
+    setState((prev) => ({
+      ...prev,
+      componentModels: {
+        ...prev.componentModels,
+        [id]: modelFile,
+      },
+      availableComponents: prev.availableComponents.map((c) =>
+        c.id === id ? { ...c, modelFile } : c,
+      ),
+    }));
+  }, []);
+
   const toggleComponent = useCallback((id: string) => {
     setState((prev) => {
       const isSelected = prev.selectedComponents.includes(id);
@@ -779,6 +880,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
+    if (shouldLoadFiles) {
+      resetEditorNavigation();
+    }
+
     if (!shouldLoadFiles) return;
 
     const loadSessionId = projectSessionRef.current;
@@ -852,7 +957,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
     })();
-  }, [isSessionCurrent]);
+  }, [isSessionCurrent, resetEditorNavigation]);
 
   const loadProjectEditor = useCallback(async (
     projectId: string,
@@ -1118,9 +1223,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isBotOpen: !prev.isBotOpen }));
   }, []);
 
-  const setActiveArtifact = useCallback((artifact: SessionState['activeArtifact']) => {
-    setState((prev) => ({ ...prev, activeArtifact: artifact }));
-  }, []);
+  const setActiveArtifact = useCallback((
+    artifact: SessionState['activeArtifact'],
+    options?: { skipHistory?: boolean },
+  ) => {
+    setState((prev) => {
+      const arriving = snapshotEditorNav({
+        ...prev,
+        activeArtifact: artifact,
+      });
+      const leaving = snapshotEditorNav(prev);
+      if (!options?.skipHistory && !sameNavEntry(leaving, arriving)) {
+        navHistoryRef.current.pushLeave(leaving);
+      }
+      return { ...prev, activeArtifact: artifact };
+    });
+    syncEditorNavUi();
+  }, [syncEditorNavUi]);
 
   const refreshProjectFilesRef = React.useRef(refreshProjectFiles);
   refreshProjectFilesRef.current = refreshProjectFiles;
@@ -1180,6 +1299,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           fileId && !prev.openFiles.includes(fileId)
             ? [...prev.openFiles, fileId]
             : prev.openFiles;
+        const arriving = snapshotEditorNav({
+          activeFileId: fileId,
+          activePage: 1,
+          activeArtifact: { id, type, downloadUrl, name, sourceFileId: fileId ?? undefined },
+        });
+        const leaving = snapshotEditorNav(prev);
+        if (!sameNavEntry(leaving, arriving)) {
+          navHistoryRef.current.pushLeave(leaving);
+        }
         return {
           ...prev,
           activeFileId: fileId,
@@ -1188,6 +1316,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activeArtifact: { id, type, downloadUrl, name, sourceFileId: fileId ?? undefined },
         };
       });
+      syncEditorNavUi();
     };
     window.addEventListener('elementiq:reload-files', handleReload);
     window.addEventListener('elementiq:file-uploaded', handleFileUploaded);
@@ -1197,7 +1326,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('elementiq:file-uploaded', handleFileUploaded);
       window.removeEventListener('elementiq:view-artifact', handleViewArtifact);
     };
-  }, []);
+  }, [syncEditorNavUi]);
 
   const deleteFiles = useCallback(async (
     ids: string[],
@@ -1387,17 +1516,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Use per-component confidence (first selected component's confidence as primary)
       const primaryComp = selectedComps[0];
       const confThreshold = state.componentConfidence[primaryComp] ?? state.confidenceThreshold;
-      const analysisConfig = {
+      const analysisConfig: Record<string, unknown> = {
         conf_threshold: confThreshold,
         page_index: 0,
       };
+      const componentWeights: Record<string, string> = {};
+      for (const compId of selectedComps) {
+        const chosen = state.componentModels[compId]?.trim();
+        if (chosen) componentWeights[compId] = chosen;
+      }
+      if (Object.keys(componentWeights).length > 0) {
+        analysisConfig.component_weights = componentWeights;
+      }
 
-      updateFileStatus(id, { analysisProgress: 10, analysisStage: `Queuing: ${selectedComps.join(', ')} @ ${(analysisConfig.conf_threshold * 100).toFixed(0)}% conf` });
+      updateFileStatus(id, { analysisProgress: 10, analysisStage: `Queuing: ${selectedComps.join(', ')} @ ${(confThreshold * 100).toFixed(0)}% conf` });
       buildModelLogLines(
         selectedComps,
         state.availableComponents,
         state.componentConfidence,
         state.confidenceThreshold,
+        state.componentModels,
       ).forEach((line) => {
         log({ level: 'info', message: `Model: ${line}`, fileId: id });
       });
@@ -1632,7 +1770,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ],
       });
     }
-  }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.availableComponents, updateFileStatus, appendAnalysisLog, isSessionCurrent, syncProjectSessionCache]);
+  }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.componentModels, state.availableComponents, updateFileStatus, appendAnalysisLog, isSessionCurrent, syncProjectSessionCache]);
 
   const runAnalysisQueue = useCallback(async (orderedIds: string[]) => {
     stopAnalysisRef.current = false;
@@ -1674,6 +1812,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       state.availableComponents,
       state.componentConfidence,
       state.confidenceThreshold,
+      state.componentModels,
     );
     queueModels.forEach((line) => {
       appendAnalysisLog({ level: 'info', message: `Model: ${line}` });
@@ -1732,7 +1871,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appendAnalysisLog({ level: 'success', message: 'Queue finished' });
     }
     setState((prev) => ({ ...prev, analysisQueue: null }));
-  }, [analyzeFile, appendAnalysisLog, clearAnalysisLogs, state.selectedComponents, state.availableComponents, state.componentConfidence, state.confidenceThreshold]);
+  }, [analyzeFile, appendAnalysisLog, clearAnalysisLogs, state.selectedComponents, state.availableComponents, state.componentConfidence, state.componentModels, state.confidenceThreshold]);
 
   const analyzeAll = useCallback(async (orderedIds?: string[]) => {
     const ids = orderedIds ?? filesRef.current
@@ -1756,6 +1895,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         state,
         addFiles,
         setActiveFile,
+        goBackInEditor,
+        goForwardInEditor,
+        editorNavCanBack: editorNavUi.canBack,
+        editorNavCanForward: editorNavUi.canForward,
         closeFile,
         closeOthers,
         closeToRight,
@@ -1779,6 +1922,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleAnalysisTerminal,
         setSelectedComponents,
         setComponentConfidence,
+        setComponentModel,
         toggleComponent,
         openConfigModal,
         closeConfigModal,
