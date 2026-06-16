@@ -175,6 +175,8 @@ export interface SessionState {
   splitMode?: 'none' | 'up' | 'down' | 'left' | 'right';
   splitFileId?: string | null;
   activeArtifact?: { id: string; type: string; downloadUrl: string; name: string; sourceFileId?: string } | null;
+  /** When activeArtifact is set: 'artifact' keeps report/PNG open while PDF tabs change. */
+  editorView?: 'pdf' | 'artifact';
   isAnalysisTerminalOpen: boolean;
   analysisLogs: AnalysisLogLine[];
   analysisQueue: AnalysisQueueState | null;

@@ -227,6 +227,7 @@ function editorStateFromProjectApi(
       activeFileId: initialFileId,
       openFiles: initialFileId ? [initialFileId] : [],
       activeArtifact: null,
+      editorView: 'pdf' as const,
       activePage: initialFileId === urlFileId ? parsedPage : 1,
     },
   };
@@ -315,6 +316,7 @@ interface AppContextType {
   refreshProjectFiles: (options?: { silent?: boolean; focusFileIds?: string[] }) => Promise<void>;
   toggleBot: () => void;
   setActiveArtifact: (artifact: SessionState['activeArtifact'], options?: { skipHistory?: boolean }) => void;
+  setEditorView: (view: 'pdf' | 'artifact') => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -356,6 +358,7 @@ const initialState: SessionState = {
   isBotOpen: false,
   splitMode: 'none',
   splitFileId: null,
+  editorView: 'pdf',
   isAnalysisTerminalOpen: false,
   analysisLogs: [],
   analysisQueue: null,
@@ -416,6 +419,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       openFiles: [],
       pinnedFiles: [],
       activeArtifact: null,
+      editorView: 'pdf',
       activePage: 1,
       activeProject: undefined,
       isLoadingFiles: false,
@@ -584,7 +588,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const arriving = snapshotEditorNav({
           activeFileId: id,
           activePage: page,
-          activeArtifact: null,
+          activeArtifact: prev.activeArtifact ?? null,
+          editorView: 'pdf',
         });
         const leaving = snapshotEditorNav(prev);
         if (!options?.skipHistory && !sameNavEntry(leaving, arriving)) {
@@ -595,7 +600,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activeFileId: id,
           activePage: page,
           openFiles,
-          activeArtifact: null,
+          editorView: 'pdf',
         };
       });
       syncEditorNavUi();
@@ -678,7 +683,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const files = keepBlob
         ? prev.files
         : prev.files.map((f) => (f.id === id ? disposeDocumentFile(f) : f));
-      return { ...prev, files, openFiles, activeFileId, activePage: 1 };
+      const dropArtifact = prev.activeArtifact?.sourceFileId === id;
+      return {
+        ...prev,
+        files,
+        openFiles,
+        activeFileId,
+        activePage: 1,
+        activeArtifact: dropArtifact ? null : prev.activeArtifact,
+        editorView: dropArtifact ? 'pdf' : prev.editorView,
+      };
     });
   }, []);
 
@@ -826,6 +840,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         openFiles: [],
         pinnedFiles: [],
         activeArtifact: null,
+        editorView: 'pdf',
         analysisQueue: null,
         isLoadingFiles: false,
       }));
@@ -875,6 +890,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         openFiles: [],
         pinnedFiles: [],
         activeArtifact: null,
+        editorView: 'pdf',
         activePage: 1,
         isLoadingFiles: true,
       };
@@ -922,6 +938,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             activeFileId: initialFileId,
             openFiles: initialFileId ? [initialFileId] : [],
             activeArtifact: null,
+            editorView: 'pdf',
             activePage: initialFileId === urlFileId ? parsedPage : 1,
           };
         });
@@ -1073,6 +1090,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       openFiles: [],
       pinnedFiles: [],
       activeArtifact: null,
+      editorView: 'pdf',
       activePage: 1,
     }));
 
@@ -1231,12 +1249,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const arriving = snapshotEditorNav({
         ...prev,
         activeArtifact: artifact,
+        editorView: artifact ? 'artifact' : 'pdf',
       });
       const leaving = snapshotEditorNav(prev);
       if (!options?.skipHistory && !sameNavEntry(leaving, arriving)) {
         navHistoryRef.current.pushLeave(leaving);
       }
-      return { ...prev, activeArtifact: artifact };
+      return {
+        ...prev,
+        activeArtifact: artifact,
+        editorView: artifact ? 'artifact' : 'pdf',
+      };
+    });
+    syncEditorNavUi();
+  }, [syncEditorNavUi]);
+
+  const setEditorView = useCallback((view: 'pdf' | 'artifact') => {
+    setState((prev) => {
+      if (view === 'artifact' && !prev.activeArtifact) return prev;
+      const arriving = snapshotEditorNav({ ...prev, editorView: view });
+      const leaving = snapshotEditorNav(prev);
+      if (!sameNavEntry(leaving, arriving)) {
+        navHistoryRef.current.pushLeave(leaving);
+      }
+      return { ...prev, editorView: view };
     });
     syncEditorNavUi();
   }, [syncEditorNavUi]);
@@ -1303,6 +1339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activeFileId: fileId,
           activePage: 1,
           activeArtifact: { id, type, downloadUrl, name, sourceFileId: fileId ?? undefined },
+          editorView: 'artifact',
         });
         const leaving = snapshotEditorNav(prev);
         if (!sameNavEntry(leaving, arriving)) {
@@ -1314,6 +1351,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           activePage: 1,
           openFiles,
           activeArtifact: { id, type, downloadUrl, name, sourceFileId: fileId ?? undefined },
+          editorView: 'artifact',
         };
       });
       syncEditorNavUi();
@@ -1378,11 +1416,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (activeFileId && removedSet.has(activeFileId)) {
           activeFileId = openFiles.length > 0 ? openFiles[openFiles.length - 1] : null;
         }
-        const activeArtifact =
-          prev.activeArtifact?.sourceFileId && removedSet.has(prev.activeArtifact.sourceFileId)
-            ? null
-            : prev.activeArtifact;
-        return { ...prev, files, openFiles, pinnedFiles, activeFileId, activePage: 1, activeArtifact };
+        const dropArtifact =
+          prev.activeArtifact?.sourceFileId && removedSet.has(prev.activeArtifact.sourceFileId);
+        const activeArtifact = dropArtifact ? null : prev.activeArtifact;
+        return {
+          ...prev,
+          files,
+          openFiles,
+          pinnedFiles,
+          activeFileId,
+          activePage: 1,
+          activeArtifact,
+          editorView: dropArtifact ? 'pdf' : prev.editorView,
+        };
       });
       const projectId = stateRef.current.activeProject?.id;
       if (projectId) {
@@ -1720,6 +1766,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         activeArtifact:
           prev.activeArtifact?.sourceFileId === id ? null : prev.activeArtifact,
+        editorView:
+          prev.activeArtifact?.sourceFileId === id ? 'pdf' : prev.editorView,
       }));
 
       log({
@@ -1933,6 +1981,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         refreshProjectFiles,
         toggleBot,
         setActiveArtifact,
+        setEditorView,
       }}
     >
       {children}

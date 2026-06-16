@@ -4,22 +4,29 @@ export type EditorNavEntry = {
   fileId: string | null;
   page: number;
   artifact: SessionState['activeArtifact'];
+  editorView: 'pdf' | 'artifact';
 };
 
 export function snapshotEditorNav(
-  state: Pick<SessionState, 'activeFileId' | 'activePage' | 'activeArtifact'>,
+  state: Pick<SessionState, 'activeFileId' | 'activePage' | 'activeArtifact' | 'editorView'>,
 ): EditorNavEntry {
   return {
     fileId: state.activeFileId,
     page: state.activePage,
     artifact: state.activeArtifact ?? null,
+    editorView: state.activeArtifact && state.editorView === 'artifact' ? 'artifact' : 'pdf',
   };
 }
 
 export function sameNavEntry(a: EditorNavEntry, b: EditorNavEntry): boolean {
   const artifactA = a.artifact?.id ?? null;
   const artifactB = b.artifact?.id ?? null;
-  return a.fileId === b.fileId && a.page === b.page && artifactA === artifactB;
+  return (
+    a.fileId === b.fileId
+    && a.page === b.page
+    && artifactA === artifactB
+    && a.editorView === b.editorView
+  );
 }
 
 export class EditorNavigationHistory {
@@ -84,5 +91,6 @@ export function buildStateFromNavEntry(
     activePage: entry.page,
     openFiles,
     activeArtifact: entry.artifact,
+    editorView: entry.editorView,
   };
 }

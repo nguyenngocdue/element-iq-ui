@@ -2,11 +2,10 @@ import type { LucideIcon } from 'lucide-react';
 import { FileJson, FileText, Image } from 'lucide-react';
 import { DocumentFile } from '../types';
 import { filterFilesByQuery } from './fileSearch';
-import { fileMatchesBucket } from './analysisStatus';
 
 export type ExplorerSortKey = 'name-asc' | 'name-desc' | 'date-desc' | 'size-desc';
 
-export type ExplorerStatusFilter = 'all' | 'PASS' | 'FAIL' | 'NO-NOTE';
+export type ExplorerStatusFilter = 'all' | 'PASS' | 'FAIL' | 'WARN' | 'NO-NOTE';
 
 export const DEFAULT_EXPLORER_SORT: ExplorerSortKey = 'name-asc';
 export const DEFAULT_EXPLORER_STATUS: ExplorerStatusFilter = 'all';
@@ -129,7 +128,8 @@ export function filterFilesByStatus(
   if (status === 'all') return files;
   if (status === 'PASS') return files.filter((f) => f.status === 'PASS');
   if (status === 'FAIL') return files.filter((f) => f.status === 'FAIL');
-  return files.filter((f) => fileMatchesBucket(f, 'noNote'));
+  if (status === 'WARN') return files.filter((f) => f.status === 'WARN');
+  return files.filter((f) => f.status === 'NO-NOTE');
 }
 
 export function sortFiles(files: DocumentFile[], sortKey: ExplorerSortKey): DocumentFile[] {
@@ -172,12 +172,14 @@ export function statusFilterLabel(status: ExplorerStatusFilter): string | null {
   if (status === 'all') return null;
   if (status === 'PASS') return 'Pass';
   if (status === 'FAIL') return 'Fail';
+  if (status === 'WARN') return 'Warn';
   return 'No note';
 }
 
 export function statusFilterColorClass(status: ExplorerStatusFilter): string {
   if (status === 'PASS') return 'text-[#2eb886]';
   if (status === 'FAIL') return 'text-[#ef4444]';
+  if (status === 'WARN') return 'text-[#f59e0b]';
   if (status === 'NO-NOTE') return 'text-[#bba438]';
   return 'text-[#858585]';
 }

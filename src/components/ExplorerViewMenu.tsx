@@ -21,6 +21,7 @@ const STATUS_OPTIONS: { id: ExplorerStatusFilter; label: string; color?: string 
   { id: 'all', label: 'All' },
   { id: 'PASS', label: 'Pass', color: 'text-[#2eb886]' },
   { id: 'FAIL', label: 'Fail', color: 'text-[#ef4444]' },
+  { id: 'WARN', label: 'Warn', color: 'text-[#f59e0b]' },
   { id: 'NO-NOTE', label: 'No note', color: 'text-[#bba438]' },
 ];
 

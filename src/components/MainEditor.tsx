@@ -366,7 +366,7 @@ function PdfRenderer({
   if (file.file.size === 0) {
     return (
       <div className="relative shadow-2xl origin-top-left border border-[#444] bg-[#1e1e1e] flex items-center justify-center" style={{ width: 600, height: 400 }}>
-        <LoadingContent title="Loading PDF" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
+        <LoadingContent title="Loading PDF" showProgress={false} spinnerSize="md" compact textVariant="embed" />
       </div>
     );
   }
@@ -611,7 +611,7 @@ function ArtifactViewer({
     <div className="flex-1 overflow-hidden bg-[#121212] flex flex-col relative">
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <LoadingContent title="Loading artifact" showProgress={false} spinnerSize="sm" compact textVariant="embed" />
+          <LoadingContent title="Loading artifact" showProgress={false} spinnerSize="md" compact textVariant="embed" />
         </div>
       ) : artifact.type === 'ANNOTATED_PNG' && content ? (
         <div 
@@ -714,12 +714,13 @@ function ArtifactViewer({
 }
 
 export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, setActiveArtifact, toggleAnalysisTerminal } = useApp();
+  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, setActiveArtifact, setEditorView, toggleAnalysisTerminal } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun ?? !isReadOnly;
   const canDownload = state.canDownload === true;
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
+  const showingArtifact = Boolean(state.activeArtifact && state.editorView === 'artifact');
   const { getScale, setScaleForKey } = usePerViewZoom();
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [showViewSplitOverlay, setShowViewSplitOverlay] = useState(true);
@@ -733,7 +734,7 @@ export function MainEditor() {
   const titlesAvailable = hasViewTitlesData(viewTitles);
   const tagsAvailable = hasTagNotesData(tagNotes);
 
-  const primaryZoomKey = state.activeArtifact
+  const primaryZoomKey = showingArtifact && state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
     : file
       ? zoomKeyForFile(file.id)
@@ -765,7 +766,7 @@ export function MainEditor() {
 
   const fitScreen = () => {
     // For PNG artifact — use pngDimensions
-    if (state.activeArtifact && state.activeArtifact.type === 'ANNOTATED_PNG' && pngDimensions) {
+    if (showingArtifact && state.activeArtifact && state.activeArtifact.type === 'ANNOTATED_PNG' && pngDimensions) {
       // Approximate available space (full pane minus padding)
       const pane = document.querySelector('[data-artifact-container]') as HTMLElement;
       if (pane) {
@@ -797,14 +798,14 @@ export function MainEditor() {
     if (!primaryZoomKey || autoFitDoneRef.current === primaryZoomKey) return;
 
     const readyForPng =
-      state.activeArtifact?.type === 'ANNOTATED_PNG' && pngDimensions != null;
-    const readyForPdf = !state.activeArtifact && pdfDimensions != null;
+      showingArtifact && state.activeArtifact?.type === 'ANNOTATED_PNG' && pngDimensions != null;
+    const readyForPdf = !showingArtifact && pdfDimensions != null;
 
     if (readyForPng || readyForPdf) {
       autoFitDoneRef.current = primaryZoomKey;
       fitScreen();
     }
-  }, [primaryZoomKey, state.activeArtifact, pngDimensions, pdfDimensions]);
+  }, [primaryZoomKey, showingArtifact, state.activeArtifact, pngDimensions, pdfDimensions]);
 
   useEffect(() => {
     setPdfDimensions(null);
@@ -920,11 +921,11 @@ export function MainEditor() {
 
   // Native wheel listener to prevent browser zoom and handle PDF zoom (pane 1)
   useEffect(() => {
-    if (state.activeArtifact) return;
+    if (showingArtifact) return;
     const pane = pane1Ref.current;
     if (!pane || !primaryZoomKey) return;
     return attachWheelZoomForKey(pane, primaryZoomKey);
-  }, [attachWheelZoomForKey, primaryZoomKey, state.activeArtifact]);
+  }, [attachWheelZoomForKey, primaryZoomKey, showingArtifact]);
 
   // Wheel zoom for split pane (pane 2)
   useEffect(() => {
@@ -936,7 +937,7 @@ export function MainEditor() {
 
   // Block browser zoom for artifact types without a custom wheel handler
   useEffect(() => {
-    if (!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') return;
+    if (!showingArtifact || !state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') return;
     
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -946,14 +947,7 @@ export function MainEditor() {
     
     document.addEventListener('wheel', onWheel, { passive: false });
     return () => document.removeEventListener('wheel', onWheel);
-  }, [state.activeArtifact]);
-
-  useEffect(() => {
-    if (!state.activeArtifact?.sourceFileId || !state.activeFileId) return;
-    if (state.activeArtifact.sourceFileId !== state.activeFileId) {
-      setActiveArtifact(null);
-    }
-  }, [state.activeFileId, state.activeArtifact?.sourceFileId, setActiveArtifact]);
+  }, [showingArtifact, state.activeArtifact]);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -961,7 +955,7 @@ export function MainEditor() {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
-  if (!file) {
+  if (!file && !showingArtifact) {
     // Show skeleton when loading files
     if (state.isLoadingFiles) {
       return <ProjectLoadingScreen mode="pane" />;
@@ -994,22 +988,36 @@ export function MainEditor() {
         <div className="h-[35px] bg-[#252526] flex items-center justify-between shrink-0 border-b border-[#1e1e1e]">
           <div className="flex items-center h-full flex-1 overflow-x-auto no-scrollbar min-w-0">
             {state.activeArtifact && (
-              <>
+              <div
+                role="tab"
+                aria-selected={showingArtifact}
+                onClick={() => setEditorView('artifact')}
+                className={`px-3 h-full flex items-center border-r border-[#252526] text-[12px] gap-2 cursor-pointer shrink-0 max-w-[220px] select-none ${
+                  showingArtifact
+                    ? 'bg-[#1e1e1e] text-white font-semibold border-t-2 border-t-[#10b981]'
+                    : 'bg-[#2d2d2d] text-[#969696] hover:bg-[#252526] hover:text-white border-t-2 border-t-transparent'
+                }`}
+              >
+                <span className="truncate">{state.activeArtifact.name}</span>
                 <button
-                  onClick={() => setActiveArtifact(null)}
-                  className="px-3 h-full flex items-center text-[11px] text-[#10b981] hover:bg-[#333] font-medium shrink-0"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveArtifact(null);
+                  }}
+                  className={`flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-sm hover:bg-white/10 ${
+                    showingArtifact ? 'text-white' : 'text-transparent hover:text-[#969696]'
+                  }`}
+                  title="Close artifact"
                 >
-                  ← Back to PDF
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                <div className="px-3 h-full flex items-center text-[12px] text-white font-semibold border-t-2 border-t-[#10b981] bg-[#1e1e1e] shrink-0">
-                  {state.activeArtifact.name}
-                </div>
-              </>
+              </div>
             )}
             {state.openFiles.map(fid => {
               const f = state.files.find(f => f.id === fid);
               if (!f) return null;
-              const isActive = fid === state.activeFileId;
+              const isActive = fid === state.activeFileId && !showingArtifact;
               return (
                 <div 
                   key={fid}
@@ -1034,7 +1042,7 @@ export function MainEditor() {
           </div>
           <div className="flex items-center h-full">
             {/* Editor toolbar items — inline with tab bar */}
-            {!state.activeArtifact && (
+            {!showingArtifact && file && (
             <>
               {!canRun ? null : (
               <>
@@ -1137,8 +1145,8 @@ export function MainEditor() {
         </div>
 
         {/* Overlay tools — row below Re-analyze, floats over canvas (no layout shift) */}
-        {file.status !== 'ANALYZING'
-          && (!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') ? (
+        {file && file.status !== 'ANALYZING'
+          && (!showingArtifact || state.activeArtifact?.type === 'ANNOTATED_PNG') ? (
           <div className="absolute top-[43px] right-2 z-50 pointer-events-none">
             <OverlayToolsBar
               showAnnotations={showAnnotations}
@@ -1152,13 +1160,13 @@ export function MainEditor() {
               tagsAvailable={tagsAvailable}
               showTagOverlay={showTagOverlay}
               onToggleTagOverlay={() => setShowTagOverlay(!showTagOverlay)}
-              hideQa={Boolean(state.activeArtifact)}
+              hideQa={showingArtifact}
             />
           </div>
         ) : null}
 
         {/* Canvas (Pane 1) */}
-        {state.activeArtifact ? (
+        {showingArtifact && state.activeArtifact ? (
           <ArtifactViewer
             artifact={state.activeArtifact}
             onClose={() => setActiveArtifact(null)}
@@ -1173,7 +1181,7 @@ export function MainEditor() {
             tagNotes={tagNotes}
             showTagOverlay={showTagOverlay}
           />
-        ) : (
+        ) : file ? (
         <div 
           ref={pane1Ref}
           onWheel={handleWheel}
@@ -1207,10 +1215,10 @@ export function MainEditor() {
             />
           </div>
         </div>
-        )}
+        ) : null}
 
         {/* Footer (Pane 1) — hidden when viewing artifact or analyzing */}
-        {!state.activeArtifact && file.status !== 'ANALYZING' && (
+        {!showingArtifact && file && file.status !== 'ANALYZING' && (
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
@@ -1224,7 +1232,7 @@ export function MainEditor() {
         )}
 
         {/* Floating Toolbar (Pane 1) — hidden while analyzing */}
-        {(!state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') && file.status !== 'ANALYZING' && (
+        {(!showingArtifact || state.activeArtifact?.type === 'ANNOTATED_PNG') && file && file.status !== 'ANALYZING' && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
           <button 
             onClick={() => setToolMode('select')}
