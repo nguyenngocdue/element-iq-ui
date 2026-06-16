@@ -36,7 +36,18 @@ import { ExplorerViewMenu } from './ExplorerViewMenu';
 import { TreeRow } from './TreeRow';
 
 export function Sidebar() {
-  const { state, setActiveFile, clearSession, deleteFiles, renameFile, openConfigModal, analyzeAll, stopAnalysis } = useApp();
+  const {
+    state,
+    setActiveFile,
+    clearSession,
+    deleteFiles,
+    renameFile,
+    openConfigModal,
+    analyzeAll,
+    stopAnalysis,
+    setExplorerSort,
+    setExplorerStatus,
+  } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun === true;
   const isProjectOwner = state.isProjectOwner ?? !isReadOnly;
@@ -56,17 +67,12 @@ export function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [explorerSearch, setExplorerSearch] = useState('');
   const [explorerPrefs] = useState(() => readExplorerViewPrefs());
-  const [explorerSort, setExplorerSortState] = useState<ExplorerSortKey>(explorerPrefs.sort);
+  const explorerSort = state.explorerSort;
+  const explorerStatus = state.explorerStatus;
   const [allCollapsedPref, setAllCollapsedPref] = useState(explorerPrefs.allCollapsed);
-  const [explorerStatus, setExplorerStatus] = useState<ExplorerStatusFilter>(DEFAULT_EXPLORER_STATUS);
   const explorerSearchRef = React.useRef<HTMLInputElement>(null);
   const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
   const [artifactsExpandedFileIds, setArtifactsExpandedFileIds] = useState<Set<string>>(new Set());
-
-  const setExplorerSort = React.useCallback((sort: ExplorerSortKey) => {
-    setExplorerSortState(sort);
-    writeExplorerViewPrefs({ sort });
-  }, []);
 
   // Bulk select: run analysis or delete files
   type BulkMode = 'run' | 'delete';

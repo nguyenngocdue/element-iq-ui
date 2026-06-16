@@ -55,6 +55,15 @@ import {
   snapshotEditorNav,
   type EditorNavEntry,
 } from './lib/editorNavigationHistory';
+import { parseEditorUrlParams } from './lib/editorUrlState';
+import {
+  DEFAULT_EXPLORER_SORT,
+  DEFAULT_EXPLORER_STATUS,
+  readExplorerViewPrefs,
+  type ExplorerSortKey,
+  type ExplorerStatusFilter,
+  writeExplorerViewPrefs,
+} from './lib/fileView';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
@@ -170,17 +179,59 @@ function mergeGuestRunResults(
   });
 }
 
-function resolveUrlFileSelection(docs: DocumentFile[]) {
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlFileId = urlParams.get('file');
-  const urlPage = urlParams.get('page');
-  const parsedPage = urlPage ? Math.max(1, parseInt(urlPage, 10) || 1) : 1;
+function resolveUrlEditorFields(docs: DocumentFile[], search?: string) {
+  const parsed = parseEditorUrlParams(new URLSearchParams(search ?? window.location.search));
   const initialFileId =
-    urlFileId && docs.some((d) => d.id === urlFileId)
-      ? urlFileId
+    parsed.fileId && docs.some((d) => d.id === parsed.fileId)
+      ? parsed.fileId
       : docs.length > 0
         ? docs[0].id
         : null;
+
+  let activeArtifact: SessionState['activeArtifact'] = null;
+  let editorView: SessionState['editorView'] = 'pdf';
+  if (parsed.editorView === 'artifact' && parsed.artifactId && initialFileId) {
+    const file = docs.find((d) => d.id === initialFileId);
+    const artifact = file?.artifacts?.find((a) => a.id === parsed.artifactId);
+    if (artifact) {
+      activeArtifact = {
+        id: artifact.id,
+        type: artifact.type,
+        downloadUrl: artifact.downloadUrl,
+        name: artifact.originalFilename ?? artifact.type,
+        sourceFileId: initialFileId,
+      };
+      editorView = 'artifact';
+    }
+  }
+
+  const activePage = initialFileId === parsed.fileId ? parsed.page : 1;
+
+  return {
+    initialFileId,
+    urlFileId: parsed.fileId,
+    parsedPage: activePage,
+    patchFromUrl: {
+      activeFileId: initialFileId,
+      openFiles: initialFileId ? [initialFileId] : [],
+      activePage,
+      activeSidebarTab: parsed.tab,
+      isSidebarOpen: parsed.sidebarOpen,
+      isValidationOpen: parsed.validationOpen,
+      activeArtifact,
+      editorView,
+      explorerSort: parsed.explorerSort,
+      explorerStatus: parsed.explorerStatus,
+      overlayQa: parsed.overlayQa,
+      overlaySplit: parsed.overlaySplit,
+      overlayTitles: parsed.overlayTitles,
+      overlayTags: parsed.overlayTags,
+    } satisfies Partial<SessionState>,
+  };
+}
+
+function resolveUrlFileSelection(docs: DocumentFile[]) {
+  const { initialFileId, parsedPage, urlFileId } = resolveUrlEditorFields(docs);
   return { initialFileId, parsedPage, urlFileId };
 }
 
@@ -200,7 +251,7 @@ function editorStateFromProjectApi(
     viewerKey,
     isOwner,
   );
-  const { initialFileId, parsedPage, urlFileId } = resolveUrlFileSelection(docs);
+  const { initialFileId, patchFromUrl } = resolveUrlEditorFields(docs);
 
   return {
     initialFileId,
@@ -224,11 +275,7 @@ function editorStateFromProjectApi(
       currentView: 'editor' as const,
       files: docs,
       isLoadingFiles: false,
-      activeFileId: initialFileId,
-      openFiles: initialFileId ? [initialFileId] : [],
-      activeArtifact: null,
-      editorView: 'pdf' as const,
-      activePage: initialFileId === urlFileId ? parsedPage : 1,
+      ...patchFromUrl,
     },
   };
 }
@@ -317,6 +364,10 @@ interface AppContextType {
   toggleBot: () => void;
   setActiveArtifact: (artifact: SessionState['activeArtifact'], options?: { skipHistory?: boolean }) => void;
   setEditorView: (view: 'pdf' | 'artifact') => void;
+  setExplorerSort: (sort: ExplorerSortKey) => void;
+  setExplorerStatus: (status: ExplorerStatusFilter) => void;
+  setViewerOverlay: (key: 'qa' | 'split' | 'titles' | 'tags', value: boolean) => void;
+  applyEditorUrlFromSearch: (search: string) => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -333,6 +384,23 @@ const savedLayout = (() => {
     const raw = localStorage.getItem('elementiq:layout');
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
+})();
+
+const bootUrlPrefs = (() => {
+  try {
+    if (typeof window === 'undefined') return null;
+    return parseEditorUrlParams(new URLSearchParams(window.location.search));
+  } catch {
+    return null;
+  }
+})();
+
+const savedExplorerSort = (() => {
+  try {
+    return readExplorerViewPrefs().sort;
+  } catch {
+    return DEFAULT_EXPLORER_SORT;
+  }
 })();
 
 const initialState: SessionState = {
@@ -362,6 +430,12 @@ const initialState: SessionState = {
   isAnalysisTerminalOpen: false,
   analysisLogs: [],
   analysisQueue: null,
+  explorerSort: bootUrlPrefs?.explorerSort ?? savedExplorerSort,
+  explorerStatus: bootUrlPrefs?.explorerStatus ?? DEFAULT_EXPLORER_STATUS,
+  overlayQa: bootUrlPrefs?.overlayQa ?? true,
+  overlaySplit: bootUrlPrefs?.overlaySplit ?? true,
+  overlayTitles: bootUrlPrefs?.overlayTitles ?? false,
+  overlayTags: bootUrlPrefs?.overlayTags ?? true,
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -927,7 +1001,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         console.log(`[ElementIQ] Loaded ${rawFiles.length} files for project ${project.id}`);
 
         const docs = mapApiProjectFiles(rawFiles);
-        const { initialFileId, parsedPage, urlFileId } = resolveUrlFileSelection(docs);
+        const { initialFileId, patchFromUrl } = resolveUrlEditorFields(docs);
 
         setState((prev) => {
           if (!isSessionCurrent(loadSessionId)) return prev;
@@ -935,11 +1009,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             files: docs,
             isLoadingFiles: false,
-            activeFileId: initialFileId,
-            openFiles: initialFileId ? [initialFileId] : [],
-            activeArtifact: null,
-            editorView: 'pdf',
-            activePage: initialFileId === urlFileId ? parsedPage : 1,
+            ...patchFromUrl,
           };
         });
 
@@ -1276,6 +1346,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     syncEditorNavUi();
   }, [syncEditorNavUi]);
+
+  const setExplorerSort = useCallback((sort: ExplorerSortKey) => {
+    setState((prev) => ({ ...prev, explorerSort: sort }));
+    writeExplorerViewPrefs({ sort });
+  }, []);
+
+  const setExplorerStatus = useCallback((status: ExplorerStatusFilter) => {
+    setState((prev) => ({ ...prev, explorerStatus: status }));
+  }, []);
+
+  const setViewerOverlay = useCallback((
+    key: 'qa' | 'split' | 'titles' | 'tags',
+    value: boolean,
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      ...(key === 'qa'
+        ? { overlayQa: value }
+        : key === 'split'
+          ? { overlaySplit: value }
+          : key === 'titles'
+            ? { overlayTitles: value }
+            : { overlayTags: value }),
+    }));
+  }, []);
+
+  const applyEditorUrlFromSearch = useCallback((search: string) => {
+    const docs = stateRef.current.files;
+    const { patchFromUrl, initialFileId } = resolveUrlEditorFields(docs, search);
+    setState((prev) => {
+      if (prev.currentView !== 'editor') return prev;
+      return { ...prev, ...patchFromUrl };
+    });
+    if (initialFileId) {
+      void downloadFileIfNeeded(initialFileId, projectSessionRef.current);
+    }
+    syncEditorNavUi();
+  }, [downloadFileIfNeeded, syncEditorNavUi]);
 
   const refreshProjectFilesRef = React.useRef(refreshProjectFiles);
   refreshProjectFilesRef.current = refreshProjectFiles;
@@ -1982,6 +2090,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleBot,
         setActiveArtifact,
         setEditorView,
+        setExplorerSort,
+        setExplorerStatus,
+        setViewerOverlay,
+        applyEditorUrlFromSearch,
       }}
     >
       {children}

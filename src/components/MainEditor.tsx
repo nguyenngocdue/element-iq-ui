@@ -714,7 +714,23 @@ function ArtifactViewer({
 }
 
 export function MainEditor() {
-  const { state, analyzeFile, setActiveFile, closeFile, closeOthers, closeToRight, closeAll, togglePin, splitEditor, openConfigModal, toggleBot, setActiveArtifact, setEditorView, toggleAnalysisTerminal } = useApp();
+  const {
+    state,
+    analyzeFile,
+    setActiveFile,
+    closeFile,
+    closeOthers,
+    closeToRight,
+    closeAll,
+    togglePin,
+    splitEditor,
+    openConfigModal,
+    toggleBot,
+    setActiveArtifact,
+    setEditorView,
+    toggleAnalysisTerminal,
+    setViewerOverlay,
+  } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun ?? !isReadOnly;
   const canDownload = state.canDownload === true;
@@ -722,10 +738,10 @@ export function MainEditor() {
   const splitFile = state.files.find(f => f.id === state.splitFileId);
   const showingArtifact = Boolean(state.activeArtifact && state.editorView === 'artifact');
   const { getScale, setScaleForKey } = usePerViewZoom();
-  const [showAnnotations, setShowAnnotations] = useState(true);
-  const [showViewSplitOverlay, setShowViewSplitOverlay] = useState(true);
-  const [showTitleOverlay, setShowTitleOverlay] = useState(false);
-  const [showTagOverlay, setShowTagOverlay] = useState(true);
+  const showAnnotations = state.overlayQa;
+  const showViewSplitOverlay = state.overlaySplit;
+  const showTitleOverlay = state.overlayTitles;
+  const showTagOverlay = state.overlayTags;
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
   const { viewSplit } = useViewSplit(file);
@@ -1150,16 +1166,16 @@ export function MainEditor() {
           <div className="absolute top-[43px] right-2 z-50 pointer-events-none">
             <OverlayToolsBar
               showAnnotations={showAnnotations}
-              onToggleAnnotations={() => setShowAnnotations(!showAnnotations)}
+              onToggleAnnotations={() => setViewerOverlay('qa', !showAnnotations)}
               viewSplit={viewSplit}
               showViewSplitOverlay={showViewSplitOverlay}
-              onToggleViewSplit={() => setShowViewSplitOverlay(!showViewSplitOverlay)}
+              onToggleViewSplit={() => setViewerOverlay('split', !showViewSplitOverlay)}
               titlesAvailable={titlesAvailable}
               showTitleOverlay={showTitleOverlay}
-              onToggleTitleOverlay={() => setShowTitleOverlay(!showTitleOverlay)}
+              onToggleTitleOverlay={() => setViewerOverlay('titles', !showTitleOverlay)}
               tagsAvailable={tagsAvailable}
               showTagOverlay={showTagOverlay}
-              onToggleTagOverlay={() => setShowTagOverlay(!showTagOverlay)}
+              onToggleTagOverlay={() => setViewerOverlay('tags', !showTagOverlay)}
               hideQa={showingArtifact}
             />
           </div>

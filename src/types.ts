@@ -1,6 +1,7 @@
 import type { ParsedTagNotes } from './lib/tagNotes';
 import type { ParsedViewSplit } from './lib/viewSplit';
 import type { ParsedViewTitles } from './lib/viewTitles';
+import type { ExplorerSortKey, ExplorerStatusFilter } from './lib/fileView';
 
 export interface Component {
   id: string;
@@ -180,4 +181,10 @@ export interface SessionState {
   isAnalysisTerminalOpen: boolean;
   analysisLogs: AnalysisLogLine[];
   analysisQueue: AnalysisQueueState | null;
+  explorerSort: ExplorerSortKey;
+  explorerStatus: ExplorerStatusFilter;
+  overlayQa: boolean;
+  overlaySplit: boolean;
+  overlayTitles: boolean;
+  overlayTags: boolean;
 }

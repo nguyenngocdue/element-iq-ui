@@ -29,6 +29,11 @@ import {
 import { ProjectLoadingScreen } from './components/ProjectLoadingScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { loginPath } from './lib/authRoutes';
+import {
+  buildEditorSearchParams,
+  editorStateMatchesUrl,
+  normalizeEditorSearch,
+} from './lib/editorUrlState';
 
 const PROJECT_LOAD_MAX_RETRIES = 3;
 const PROJECT_LOAD_RETRY_DELAY_SEC = 5;
@@ -57,11 +62,8 @@ function HomePage() {
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('project');
   if (projectId) {
-    const next = new URLSearchParams();
-    const file = searchParams.get('file');
-    const page = searchParams.get('page');
-    if (file) next.set('file', file);
-    if (page) next.set('page', page);
+    const next = new URLSearchParams(searchParams);
+    next.delete('project');
     const qs = next.toString();
     return <Navigate to={`/projects/${projectId}${qs ? `?${qs}` : ''}`} replace />;
   }
@@ -69,27 +71,61 @@ function HomePage() {
 }
 
 /**
- * Keeps editor URLs in sync: /projects/{id}?file=&page=
+ * Keeps editor URLs in sync with session state (shareable query params).
  */
 function UrlSync() {
-  const { state } = useApp();
+  const { state, applyEditorUrlFromSearch } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
+  const applyingUrlRef = useRef(false);
+  const lastSearchRef = useRef(location.search);
 
   useEffect(() => {
     if (state.currentView !== 'editor' || !state.activeProject) return;
+    if (lastSearchRef.current === location.search) return;
+    lastSearchRef.current = location.search;
 
-    const params = new URLSearchParams();
-    if (state.activeFileId) params.set('file', state.activeFileId);
-    if (state.activePage && state.activePage > 1) params.set('page', String(state.activePage));
-    const search = params.toString();
+    const currentSearch = normalizeEditorSearch(location.search);
+    if (editorStateMatchesUrl(state, currentSearch)) return;
+
+    applyingUrlRef.current = true;
+    applyEditorUrlFromSearch(location.search);
+    queueMicrotask(() => {
+      applyingUrlRef.current = false;
+    });
+  }, [location.search, state.currentView, state.activeProject?.id, applyEditorUrlFromSearch, state]);
+
+  useEffect(() => {
+    if (applyingUrlRef.current) return;
+    if (state.currentView !== 'editor' || !state.activeProject || state.isLoadingFiles) return;
+
+    const built = buildEditorSearchParams(state);
+    const currentSearch = normalizeEditorSearch(location.search);
+    if (built === currentSearch) return;
+
     const nextPath = `/projects/${state.activeProject.id}`;
-    const nextUrl = `${nextPath}${search ? `?${search}` : ''}`;
-    const current = `${location.pathname}${location.search}`;
-    if (current !== nextUrl) {
-      navigate(nextUrl, { replace: true });
-    }
-  }, [state.currentView, state.activeProject?.id, state.activeFileId, state.activePage, navigate, location.pathname, location.search]);
+    const nextUrl = `${nextPath}${built ? `?${built}` : ''}`;
+    navigate(nextUrl, { replace: true });
+  }, [
+    state.currentView,
+    state.activeProject?.id,
+    state.activeFileId,
+    state.activePage,
+    state.activeSidebarTab,
+    state.isSidebarOpen,
+    state.isValidationOpen,
+    state.activeArtifact?.id,
+    state.editorView,
+    state.explorerSort,
+    state.explorerStatus,
+    state.overlayQa,
+    state.overlaySplit,
+    state.overlayTitles,
+    state.overlayTags,
+    navigate,
+    location.search,
+    state.isLoadingFiles,
+  ]);
 
   return null;
 }
