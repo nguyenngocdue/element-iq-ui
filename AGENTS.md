@@ -63,7 +63,8 @@ Hook: `use-view-titles.ts` — derives labels from active component result.
 ## Qty tags in UI
 
 - `component_results[].notes` populated by API after OCR — UI does not run EasyOCR
-- `MISSING-TAG` with vision count OK → operator re-analyze after core `ocr_tags.py` fix (see AGENTS §5.2)
+- `MISSING-TAG` with vision count OK → tag miss (ghost PDF, OCR ROI, anchor) — AGENTS §5.2
+- `notes[]` non-empty but MISSING-TAG → proximity rejected tag bbox; re-analyze after core fix
 
 ## Do not
 
