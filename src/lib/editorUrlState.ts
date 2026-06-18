@@ -42,6 +42,7 @@ export type EditorUrlSnapshot = {
   overlayQa: boolean;
   overlaySplit: boolean;
   overlayTitles: boolean;
+  overlayViewports: boolean;
   overlayTags: boolean;
 };
 
@@ -78,6 +79,7 @@ export function parseEditorUrlParams(search: URLSearchParams): EditorUrlSnapshot
     overlayQa: parseBoolParam(search.get('qa'), true),
     overlaySplit: parseBoolParam(search.get('split'), true),
     overlayTitles: parseBoolParam(search.get('titles'), false),
+    overlayViewports: parseBoolParam(search.get('viewports'), false),
     overlayTags: parseBoolParam(search.get('tags'), true),
   };
 }
@@ -105,6 +107,7 @@ export function buildEditorSearchParams(state: SessionState): string {
   if (!state.overlayQa) params.set('qa', '0');
   if (!state.overlaySplit) params.set('split', '0');
   if (state.overlayTitles) params.set('titles', '1');
+  if (state.overlayViewports) params.set('viewports', '1');
   if (!state.overlayTags) params.set('tags', '0');
 
   return params.toString();

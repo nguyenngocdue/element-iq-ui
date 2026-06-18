@@ -121,6 +121,7 @@ function UrlSync() {
     state.overlayQa,
     state.overlaySplit,
     state.overlayTitles,
+    state.overlayViewports,
     state.overlayTags,
     navigate,
     location.search,

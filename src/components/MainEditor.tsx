@@ -15,7 +15,9 @@ import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBr
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { LoadingContent } from './LoadingScreen';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag } from 'lucide-react';
+import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
+import { useViewPanels } from '../hooks/use-view-panels';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid } from 'lucide-react';
 import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -174,6 +176,9 @@ function OverlayToolsBar({
   tagsAvailable,
   showTagOverlay,
   onToggleTagOverlay,
+  viewportsAvailable,
+  showViewportOverlay,
+  onToggleViewportOverlay,
   hideQa = false,
 }: {
   showAnnotations: boolean;
@@ -187,9 +192,12 @@ function OverlayToolsBar({
   tagsAvailable: boolean;
   showTagOverlay: boolean;
   onToggleTagOverlay: () => void;
+  viewportsAvailable: boolean;
+  showViewportOverlay: boolean;
+  onToggleViewportOverlay: () => void;
   hideQa?: boolean;
 }) {
-  if (hideQa && !viewSplit && !titlesAvailable && !tagsAvailable) return null;
+  if (hideQa && !viewSplit && !titlesAvailable && !tagsAvailable && !viewportsAvailable) return null;
 
   const btn = (active: boolean) =>
     cn(
@@ -242,6 +250,17 @@ function OverlayToolsBar({
           <Tag className="w-3 h-3" /> Tags
         </button>
       ) : null}
+      {viewportsAvailable ? (
+        <button
+          type="button"
+          onClick={onToggleViewportOverlay}
+          className={btn(showViewportOverlay)}
+          style={{ borderTopColor: showViewportOverlay ? '#4ade80' : undefined }}
+          title="Show detected view panel boundaries"
+        >
+          <LayoutGrid className="w-3 h-3" /> Viewports
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -257,6 +276,8 @@ function PdfRenderer({
   viewTitles,
   showTagOverlay,
   tagNotes,
+  showViewportOverlay,
+  viewPanels,
   onDimensionsLoaded,
 }: {
   file: any;
@@ -269,6 +290,8 @@ function PdfRenderer({
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   showTagOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
+  showViewportOverlay?: boolean;
+  viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
   onDimensionsLoaded?: (w: number, h: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -433,6 +456,16 @@ function PdfRenderer({
           unitScale={ANALYSIS_TO_PDF_UNIT}
         />
       ) : null}
+
+      {showViewportOverlay && hasViewPanelsData(viewPanels) && baseSize.w > 0 ? (
+        <ViewportOverlay
+          data={viewPanels!}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+        />
+      ) : null}
     </div>
   );
 }
@@ -450,6 +483,8 @@ function ArtifactViewer({
   showTitleOverlay = false,
   tagNotes,
   showTagOverlay = false,
+  viewPanels,
+  showViewportOverlay = false,
 }: {
   artifact: { id: string; type: string; downloadUrl: string; name: string };
   onClose: () => void;
@@ -463,6 +498,8 @@ function ArtifactViewer({
   showTitleOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
   showTagOverlay?: boolean;
+  viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
+  showViewportOverlay?: boolean;
 }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -675,6 +712,15 @@ function ArtifactViewer({
                   unitScale={1}
                 />
               ) : null}
+              {showViewportOverlay && hasViewPanelsData(viewPanels) && imgNaturalSize.w > 0 ? (
+                <ViewportOverlay
+                  data={viewPanels!}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -742,13 +788,16 @@ export function MainEditor() {
   const showViewSplitOverlay = state.overlaySplit;
   const showTitleOverlay = state.overlayTitles;
   const showTagOverlay = state.overlayTags;
+  const showViewportOverlay = state.overlayViewports;
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
   const { viewSplit } = useViewSplit(file);
   const { viewTitles } = useViewTitles(file);
   const { tagNotes } = useTagNotes(file);
+  const { viewPanels } = useViewPanels(file);
   const titlesAvailable = hasViewTitlesData(viewTitles);
   const tagsAvailable = hasTagNotesData(tagNotes);
+  const viewportsAvailable = hasViewPanelsData(viewPanels);
 
   const primaryZoomKey = showingArtifact && state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
@@ -1176,6 +1225,9 @@ export function MainEditor() {
               tagsAvailable={tagsAvailable}
               showTagOverlay={showTagOverlay}
               onToggleTagOverlay={() => setViewerOverlay('tags', !showTagOverlay)}
+              viewportsAvailable={viewportsAvailable}
+              showViewportOverlay={showViewportOverlay}
+              onToggleViewportOverlay={() => setViewerOverlay('viewports', !showViewportOverlay)}
               hideQa={showingArtifact}
             />
           </div>
@@ -1196,6 +1248,8 @@ export function MainEditor() {
             showTitleOverlay={showTitleOverlay}
             tagNotes={tagNotes}
             showTagOverlay={showTagOverlay}
+            viewPanels={viewPanels}
+            showViewportOverlay={showViewportOverlay}
           />
         ) : file ? (
         <div 
@@ -1228,6 +1282,8 @@ export function MainEditor() {
                viewTitles={viewTitles}
                showTagOverlay={showTagOverlay}
                tagNotes={tagNotes}
+               showViewportOverlay={showViewportOverlay}
+               viewPanels={viewPanels}
             />
           </div>
         </div>

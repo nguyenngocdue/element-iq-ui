@@ -21,6 +21,8 @@ export type TagSelectionMetaLike = {
   source?: string;
   selected_raw_text?: string;
   candidates?: TagCandidateLike[];
+  draw_bbox_px?: number[] | null;
+  draw_bbox_source?: string | null;
 };
 
 export type MatchedClusterLike = {
@@ -87,22 +89,53 @@ function padBbox(bbox: number[], pad = 10): [number, number, number, number] {
   return [x1 - pad, y1 - pad, x2 + pad, y2 + pad];
 }
 
-function isVerticalBbox(bbox: number[]): boolean {
-  const [x1, y1, x2, y2] = bbox;
+function tightenTagBbox(bbox: number[], maxW = 140, maxH = 180): number[] {
+  if (bbox.length < 4) return bbox;
+  let [x1, y1, x2, y2] = bbox;
   const w = x2 - x1;
   const h = y2 - y1;
-  return h > w * 1.15;
+  if (w <= maxW && h <= maxH) return bbox.map((v) => Math.round(v));
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  if (w > maxW) {
+    x1 = cx - maxW / 2;
+    x2 = cx + maxW / 2;
+  }
+  if (h > maxH) {
+    y1 = cy - maxH / 2;
+    y2 = cy + maxH / 2;
+  }
+  return [Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2)];
 }
 
-function displayBboxFromRaw(
-  bbox: number[],
-  center: [number, number],
-): [number, number, number, number] {
-  const [x1, y1, x2, y2] = bbox;
-  const w = x2 - x1;
-  const h = y2 - y1;
-  const [cx, cy] = center;
-  return [cx - h / 2, cy - w / 2, cx + h / 2, cy + w / 2];
+function rawNoteNearClusterBBox(note: TagNoteLike, cluster?: MatchedClusterLike | null): boolean {
+  const bb = note.bbox_px;
+  const cb = cluster?.bbox;
+  if (!bb || bb.length < 4 || !cb || cb.length < 4) return false;
+  const cx = (bb[0] + bb[2]) / 2;
+  const cy = (bb[1] + bb[3]) / 2;
+  const [x1, y1, x2, y2] = cb;
+  if (cy < y1 - 180) return false;
+  if (y2 + 15 <= cy && cy <= y2 + 1200) {
+    if (x1 - 520 <= cx && cx <= x2 + 520) return true;
+  }
+  if (x1 - 520 <= cx && cx <= x1 + 100 && y1 - 100 <= cy && cy <= y2 + 1200) return true;
+  if (Math.abs(cy - y2) > 280) return false;
+  if (cx > x2 + 120) return false;
+  return true;
+}
+
+function noteBboxTrustworthyForDraw(note: TagNoteLike, cluster?: MatchedClusterLike | null): boolean {
+  const bb = note.bbox_px;
+  const cb = cluster?.bbox;
+  if (!bb || bb.length < 4 || !cb || cb.length < 4) return false;
+  if (!rawNoteNearClusterBBox(note, cluster)) return false;
+  const w = bb[2] - bb[0];
+  const h = bb[3] - bb[1];
+  const cy = (bb[1] + bb[3]) / 2;
+  const [x1, y1, , y2] = cb;
+  if (h > w * 1.15 && y1 - 120 <= cy && cy <= y2 + 50) return false;
+  return true;
 }
 
 function resolveOverlayBbox(bbox: number[]): {
@@ -110,11 +143,7 @@ function resolveOverlayBbox(bbox: number[]): {
   center: [number, number];
 } {
   const padded = padBbox(bbox);
-  const center = tagCenter(padded);
-  if (isVerticalBbox(padded)) {
-    return { bbox: displayBboxFromRaw(padded, center), center };
-  }
-  return { bbox: padded, center };
+  return { bbox: padded, center: tagCenter(padded) };
 }
 
 /** Mirrors validator `_estimated_callout_bbox`. */
@@ -122,14 +151,16 @@ function estimatedCalloutBbox(cluster: MatchedClusterLike): number[] | null {
   const bb = cluster.bbox;
   if (!bb || bb.length < 4) return null;
   const [x1, , , y2] = bb;
-  return [Math.max(0, x1 - 95), y2 - 120, Math.max(0, x1 - 8), y2 + 12];
+  return [Math.max(0, x1 - 120), y2 + 70, Math.max(0, x1 - 20), y2 + 110];
 }
 
 /** Mirrors validator `_tag_draw_bbox` — pin misaligned PDF rects to tube row. */
 function resolveDrawBbox(note: TagNoteLike, cluster?: MatchedClusterLike | null): number[] {
   const bb = note.bbox_px;
   if (!bb || bb.length < 4) return [];
-  if (!cluster?.bbox || cluster.bbox.length < 4) return bb;
+  if (!cluster?.bbox || cluster.bbox.length < 4) return tightenTagBbox(bb);
+
+  if (noteBboxTrustworthyForDraw(note, cluster)) return tightenTagBbox(bb);
 
   const nc = tagCenter(bb);
   const [cbX1, cbY1, cbX2, cbY2] = cluster.bbox;
@@ -139,10 +170,11 @@ function resolveDrawBbox(note: TagNoteLike, cluster?: MatchedClusterLike | null)
   const aboveRow = nc[1] < cbY1 - 120;
   const belowRow = nc[1] > cbY2 + 250;
   const oversized = w > 220 || h > 220;
-  if (misalignedX || aboveRow || belowRow || oversized) {
-    return estimatedCalloutBbox(cluster) ?? bb;
+  const ghostBesideRow = h > w * 1.15 && cbY1 - 120 <= nc[1] && nc[1] <= cbY2 + 50;
+  if (misalignedX || aboveRow || belowRow || oversized || ghostBesideRow) {
+    return estimatedCalloutBbox(cluster) ?? tightenTagBbox(bb);
   }
-  return bb;
+  return tightenTagBbox(bb);
 }
 
 /** Mirrors validator `_grout_check_reports`. */
@@ -271,7 +303,11 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
     const note = findNoteForReport(raw, notes, report.matched_cluster);
     if (!note) continue;
 
-    const drawBbox = resolveDrawBbox(note, report.matched_cluster);
+    const persistedDraw = report.tag_selection?.draw_bbox_px;
+    const drawBbox =
+      persistedDraw && persistedDraw.length === 4
+        ? persistedDraw
+        : resolveDrawBbox(note, report.matched_cluster);
     if (drawBbox.length < 4) continue;
 
     checkIndex += 1;
@@ -322,15 +358,23 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
 
       if (bboxPx.length < 4) continue;
 
+      const drawBbox = resolveDrawBbox(
+        { raw_text: raw, bbox_px: bboxPx },
+        report.matched_cluster,
+      );
+      if (drawBbox.length < 4) continue;
+
       const isSelected =
         selection.selected_raw_text
         && normalizeTagRaw(raw) === normalizeTagRaw(selection.selected_raw_text);
+
+      if (isSelected) continue;
 
       addFromBbox(tagMap, {
         rawText: raw,
         quantity,
         face,
-        bboxPx,
+        bboxPx: drawBbox,
         source: isSelected ? resolveTagSource(raw, selection) : 'unknown',
         usedForCheck: isSelected,
         rejectedReason: candidate.rejected_reason ?? null,

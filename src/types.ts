@@ -1,6 +1,7 @@
 import type { ParsedTagNotes } from './lib/tagNotes';
 import type { ParsedViewSplit } from './lib/viewSplit';
 import type { ParsedViewTitles } from './lib/viewTitles';
+import type { ParsedViewPanels } from './lib/viewPanels';
 import type { ExplorerSortKey, ExplorerStatusFilter } from './lib/fileView';
 
 export interface Component {
@@ -73,6 +74,7 @@ export interface DocumentFile {
   analyzedComponents?: string[];
   viewSplit?: ParsedViewSplit | null;
   viewTitles?: ParsedViewTitles | null;
+  viewPanels?: ParsedViewPanels | null;
   tagNotes?: ParsedTagNotes | null;
   artifacts?: FileArtifact[];
   // Real progress from backend
@@ -186,5 +188,6 @@ export interface SessionState {
   overlayQa: boolean;
   overlaySplit: boolean;
   overlayTitles: boolean;
+  overlayViewports: boolean;
   overlayTags: boolean;
 }
