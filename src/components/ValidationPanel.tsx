@@ -3,6 +3,8 @@ import { useApp } from '../store';
 import {
   validationPanelAccentClass,
   validationAnnotationsNeedingReview,
+  effectiveFileStatus,
+  filePassRate,
 } from '../lib/analysisStatus';
 import { StatusLabel } from './StatusLabel';
 import {
@@ -171,6 +173,9 @@ export function ValidationPanel() {
   const failDetections = file.detections.filter(d => d.status === 'FAIL');
   const warnDetections = file.detections.filter(d => d.status === 'WARN');
 
+  const displayStatus = effectiveFileStatus(file);
+  const qualityScore = filePassRate(file);
+
   return (
     <aside style={{ width }} className="bg-[#252526] border-l border-[#3c3c3c] flex flex-col shrink-0 relative">
        <div 
@@ -183,12 +188,12 @@ export function ValidationPanel() {
             <div>
               <div className="text-[11px] text-[#858585] uppercase tracking-wider mb-1">Quality Score</div>
               <div className="text-3xl font-light text-[#f0f0f0]">
-                 {file.passRate ?? '--'} <span className="text-lg font-mono text-[#858585]">/ 100</span>
+                 {qualityScore || '--'} <span className="text-lg font-mono text-[#858585]">/ 100</span>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(file.status, file.overallStatus)}`}>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(displayStatus, file.overallStatus)}`}>
               {file.status !== 'PENDING' && file.status !== 'ANALYZING' && file.status !== 'UPLOADING'
-                ? <StatusLabel status={file.status} overallStatus={file.overallStatus} />
+                ? <StatusLabel status={displayStatus} overallStatus={file.overallStatus} />
                 : 'WAIT'}
             </span>
           </div>

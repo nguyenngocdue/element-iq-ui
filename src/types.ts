@@ -86,6 +86,8 @@ export interface DocumentFile {
   fileSizeBytes?: number;      // original file size in bytes
   /** Set when /files/{id}/download fails — avoids infinite "Loading PDF". */
   pdfLoadError?: string;
+  /** Latest completed analyze job — used to ignore stale project revalidate. */
+  analysisJobId?: string;
 }
 
 export interface Detection {

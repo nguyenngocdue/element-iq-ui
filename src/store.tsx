@@ -7,7 +7,8 @@ import { parseViewTitlesFromAnalysis, parseViewTitlesFromReport } from './lib/vi
 import { fetchViewPanelsForFile, parseViewPanelsFromReport } from './lib/viewPanels';
 import {
   hasAnalysisPayload,
-  mapOverallToFileStatus,
+  resolveFileStatusFromAnalysis,
+  reconcileFileStatusWithAnnotations,
   resolveOverallRaw,
   resolvePassRate,
 } from './lib/analysisStatus';
@@ -112,16 +113,20 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
 
     let overallStatus: string | undefined;
     if (f.analysis) {
-      const overallRaw = resolveOverallRaw(f.analysis);
       const hasAnalysis = hasAnalysisPayload(f.analysis);
-      status = mapOverallToFileStatus(overallRaw, hasAnalysis);
-      overallStatus = overallRaw ? overallRaw.toUpperCase() : undefined;
-      passRate = resolvePassRate(f.analysis, overallRaw.toUpperCase());
-      analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
       const mapped = mapAnalysisFields(f.analysis);
       detections = mapped.detections;
       validationAnnotations = mapped.validationAnnotations;
       tubeCount = mapped.tubeCount;
+      const resolved = resolveFileStatusFromAnalysis(
+        f.analysis,
+        validationAnnotations,
+        hasAnalysis,
+      );
+      status = resolved.status;
+      overallStatus = resolved.overallRaw ? resolved.overallRaw.toUpperCase() : undefined;
+      passRate = resolvePassRate(f.analysis, resolved.overallRaw.toUpperCase(), status);
+      analyzedComponents = f.analysis.component_results?.map((c: any) => c.component_id);
     }
 
     return {
@@ -136,6 +141,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       tubeCount,
       passRate,
       analyzedComponents,
+      analysisJobId: f.analysis?.job_id ? String(f.analysis.job_id) : undefined,
       viewSplit: parseViewSplitFromAnalysis(f.analysis),
       viewTitles: parseViewTitlesFromAnalysis(f.analysis),
       tagNotes: parseTagNotesFromAnalysis(f.analysis),
@@ -295,12 +301,84 @@ function mergeDocsWithExistingFiles(
   return docs.map((d) => {
     const existing = prevById.get(d.id);
     if (!existing) return d;
-    return {
+    const base = {
       ...d,
       file: existing.file.size > 0 ? existing.file : d.file,
       viewPanels: existing.viewPanels ?? d.viewPanels,
       pdfLoadError: existing.file.size > 0 ? undefined : existing.pdfLoadError ?? d.pdfLoadError,
     };
+    if (existing.status === 'ANALYZING') {
+      return {
+        ...base,
+        status: existing.status,
+        overallStatus: existing.overallStatus,
+        passRate: existing.passRate,
+        detections: existing.detections,
+        validationAnnotations: existing.validationAnnotations,
+        tubeCount: existing.tubeCount,
+        analysisProgress: existing.analysisProgress,
+        analysisStage: existing.analysisStage,
+        analysisJobId: existing.analysisJobId,
+        artifacts: existing.artifacts ?? base.artifacts,
+        viewSplit: existing.viewSplit ?? base.viewSplit,
+        viewTitles: existing.viewTitles ?? base.viewTitles,
+        tagNotes: existing.tagNotes ?? base.tagNotes,
+      };
+    }
+    if (
+      existing.analysisJobId
+      && d.analysisJobId
+      && existing.analysisJobId !== d.analysisJobId
+      && existing.analysisStage === 'Complete'
+    ) {
+      return {
+        ...base,
+        status: existing.status,
+        overallStatus: existing.overallStatus,
+        passRate: existing.passRate,
+        detections: existing.detections,
+        validationAnnotations: existing.validationAnnotations,
+        tubeCount: existing.tubeCount,
+        analysisStage: existing.analysisStage,
+        analysisProgress: existing.analysisProgress,
+        analysisJobId: existing.analysisJobId,
+        artifacts: existing.artifacts ?? base.artifacts,
+        viewSplit: existing.viewSplit ?? base.viewSplit,
+        viewTitles: existing.viewTitles ?? base.viewTitles,
+        tagNotes: existing.tagNotes ?? base.tagNotes,
+      };
+    }
+    if (
+      existing.analysisStage === 'Complete'
+      && existing.validationAnnotations?.length
+    ) {
+      const localStatus = reconcileFileStatusWithAnnotations(
+        existing.status,
+        existing.validationAnnotations,
+      );
+      if (localStatus !== d.status) {
+        return {
+          ...base,
+          status: localStatus,
+          overallStatus:
+            localStatus === 'PASS'
+              ? 'PASS'
+              : (existing.overallStatus ?? base.overallStatus),
+          passRate: localStatus === 'PASS' ? (existing.passRate ?? 100) : 0,
+          detections: existing.detections?.length ? existing.detections : base.detections,
+          validationAnnotations: existing.validationAnnotations,
+          tubeCount: existing.tubeCount ?? base.tubeCount,
+          analysisStage: existing.analysisStage,
+          analysisProgress: existing.analysisProgress,
+          analysisJobId: existing.analysisJobId ?? base.analysisJobId,
+          artifacts: base.artifacts ?? existing.artifacts,
+          viewSplit: existing.viewSplit ?? base.viewSplit,
+          viewTitles: existing.viewTitles ?? base.viewTitles,
+          tagNotes: existing.tagNotes ?? base.tagNotes,
+        };
+      }
+    }
+    return base;
   });
 }
 
@@ -509,6 +587,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const navHistoryRef = React.useRef(new EditorNavigationHistory());
   const stateRef = React.useRef(state);
   stateRef.current = state;
+  /** Bumped when analyze commits in-memory results — stale revalidate must not overwrite. */
+  const lastLocalAnalysisAtRef = React.useRef(0);
+  const analyzeInFlightRef = React.useRef(0);
+
+  function isAnalysisUiBusy(): boolean {
+    if (analyzeInFlightRef.current > 0) return true;
+    const s = stateRef.current;
+    if (s.analysisQueue) return true;
+    return s.files.some((f) => f.status === 'ANALYZING');
+  }
 
   const syncEditorNavUi = useCallback(() => {
     setEditorNavUi({
@@ -1195,17 +1283,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const revalidateInBackground = () => {
       void (async () => {
+        const fetchStartedAt = Date.now();
         try {
           const snapshot = await fetchProjectEditorSnapshot(projectId);
           if (!isSessionCurrent(loadSessionId) || !snapshot) return;
+          if (isAnalysisUiBusy()) return;
+          if (lastLocalAnalysisAtRef.current > fetchStartedAt) return;
 
           const cached = await readProjectSessionCache(projectId, userId ?? null);
-          persistProjectSessionCache(projectId, userId ?? null, snapshot);
-
           if (!projectSnapshotChanged(cached, snapshot.meta, snapshot.rawFiles)) {
             return;
           }
+          if (isAnalysisUiBusy()) return;
+          if (lastLocalAnalysisAtRef.current > fetchStartedAt) return;
 
+          persistProjectSessionCache(projectId, userId ?? null, snapshot);
           applyHydratedProject(snapshot.meta, snapshot.rawFiles, false);
           console.log(`[ElementIQ] Project ${projectId} updated from server (cache revalidate)`);
         } catch {
@@ -1270,11 +1362,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isSessionCurrent]);
 
-  const refreshProjectFiles = useCallback(async (options?: { silent?: boolean; focusFileIds?: string[] }) => {
+  const refreshProjectFiles = useCallback(async (options?: {
+    silent?: boolean;
+    focusFileIds?: string[];
+    /** After batch analyze — always sync even if busy guards would block. */
+    force?: boolean;
+  }) => {
     const projectId = state.activeProject?.id;
     if (!projectId) return;
 
     const refreshSessionId = projectSessionRef.current;
+    const fetchStartedAt = Date.now();
+
+    if (!options?.force && isAnalysisUiBusy()) return;
 
     if (!options?.silent) {
       setState((prev) => ({ ...prev, isLoadingFiles: true }));
@@ -1286,24 +1386,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) {
         throw new Error(`Failed to load project files: HTTP ${res.status}`);
       }
+      if (!options?.force && isAnalysisUiBusy()) return;
+      if (!options?.force && lastLocalAnalysisAtRef.current > fetchStartedAt) return;
+
       const rawFiles = await res.json();
       const docs = mapApiProjectFiles(rawFiles);
       if (!isSessionCurrent(refreshSessionId)) return;
+      if (!options?.force && isAnalysisUiBusy()) return;
+      if (!options?.force && lastLocalAnalysisAtRef.current > fetchStartedAt) return;
 
-      const focusIds = (options?.focusFileIds ?? []).filter((id) => docs.some((d) => d.id === id));
       const prevFiles = stateRef.current.files;
-      const prevById = new Map(prevFiles.map((f) => [f.id, f]));
-      const mergedDocs = docs.map((d) => {
-        const existing = prevById.get(d.id);
-        if (existing && existing.file.size > 0) {
-          return {
-            ...d,
-            file: existing.file,
-            viewPanels: existing.viewPanels ?? d.viewPanels,
-          };
-        }
-        return d;
-      });
+      const mergedDocs = mergeDocsWithExistingFiles(docs, prevFiles);
+      const focusIds = (options?.focusFileIds ?? []).filter((id) => mergedDocs.some((d) => d.id === id));
 
       setState((prev) => {
         if (!isSessionCurrent(refreshSessionId)) return prev;
@@ -1751,6 +1845,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const fetchOpts = { signal: abortController.signal };
 
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
+    analyzeInFlightRef.current += 1;
     log({ level: 'dim', message: `Connecting to backend…`, fileId: id });
     let file = filesRef.current.find(f => f.id === id)?.file;
     if (!file) {
@@ -1760,8 +1855,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         analysisStage: 'Missing file data',
       });
       log({ level: 'error', message: 'Cannot analyze — file not loaded in browser', fileId: id });
+      analyzeInFlightRef.current = Math.max(0, analyzeInFlightRef.current - 1);
       return;
     }
+
+    let analyzeResultCommitted = false;
 
     try {
       const { authFetch, isServerFileId } = await import('./lib/supabase');
@@ -1913,10 +2011,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const result = await poll();
 
-      // ── DEBUG: log full result to browser console ──────────
-      // console.group('[ElementIQ] Analysis Result');
-      // console.log('status:', result.status);
-      // console.log('result.result:', result.result);
       // Map backend result → frontend detections + validation annotations
       const components = result.result?.component_results ?? result.result?.components ?? [];
       const mapped = mapAnalysisFields({ component_results: components });
@@ -1924,16 +2018,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const validationAnnotations = mapped.validationAnnotations;
       const tubeCount = mapped.tubeCount;
 
-      const passRate = resolvePassRate(result.result, resolveOverallRaw(result.result).toUpperCase()) ?? 0;
-      const overallRaw = resolveOverallRaw(result.result);
-      const overallStatus = overallRaw.toUpperCase();
-      const fileStatus = mapOverallToFileStatus(
-        overallRaw,
-        detections.length > 0 || (result.result?.artifacts?.length ?? 0) > 0 || hasAnalysisPayload(result.result),
+      const hasResultData =
+        detections.length > 0
+        || (result.result?.artifacts?.length ?? 0) > 0
+        || hasAnalysisPayload(result.result);
+      const resolved = resolveFileStatusFromAnalysis(
+        result.result,
+        validationAnnotations,
+        hasResultData,
       );
+      const overallRaw = resolved.overallRaw;
+      const overallStatus = overallRaw.toUpperCase();
+      const fileStatus = resolved.status;
+      const passRate = resolvePassRate(result.result, overallStatus, fileStatus) ?? 0;
 
       console.log('[ElementIQ] Mapped detections:', detections.length, detections[0]);
       console.log('[ElementIQ] overallStatus:', overallStatus, 'fileStatus:', fileStatus, 'passRate:', passRate);
+
+      // Commit core result immediately — optional overlay fetches must not block status.
+      updateFileStatus(id, {
+        status: fileStatus,
+        overallStatus: overallStatus || undefined,
+        detections,
+        validationAnnotations,
+        tubeCount,
+        passRate,
+        analysisJobId: result.job_id ? String(result.job_id) : undefined,
+        analysisProgress: 100,
+        analysisStage: 'Complete',
+        events: [
+          ...(filesRef.current.find(f => f.id === id)?.events ?? []),
+          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Analysis complete — ${overallStatus}`, type: 'SUCCESS' },
+        ],
+      });
+      lastLocalAnalysisAtRef.current = Date.now();
+      analyzeResultCommitted = true;
 
       // Extract artifacts from result
       const artifacts = dedupeArtifactsForDisplay(
@@ -1976,30 +2095,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (!viewPanels?.panels?.length) {
-        viewPanels = await fetchViewPanelsForFile(
-          { artifacts: artifacts.map((a) => ({ type: a.type, downloadUrl: a.downloadUrl })) },
-          (url) => authFetch(url, fetchOpts),
-        );
+        try {
+          viewPanels = await fetchViewPanelsForFile(
+            { artifacts: artifacts.map((a) => ({ type: a.type, downloadUrl: a.downloadUrl })) },
+            (url) => authFetch(url, fetchOpts),
+          );
+        } catch {
+          // Viewport overlay enrichment is optional — must not fail the whole analyze UI update.
+        }
       }
 
       updateFileStatus(id, {
-        status: fileStatus,
-        overallStatus: overallStatus || undefined,
-        detections,
-        validationAnnotations,
-        tubeCount,
         artifacts,
         viewSplit,
         viewTitles,
         tagNotes,
         viewPanels,
-        analysisProgress: 100,
-        analysisStage: 'Complete',
-        events: [
-          ...(filesRef.current.find(f => f.id === id)?.events ?? []),
-          { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Analysis complete — ${overallStatus}`, type: 'SUCCESS' },
-        ],
-        passRate,
       });
 
       // New job → new artifact IDs; drop stale viewer so user reopens fresh PNG/PDF.
@@ -2051,8 +2162,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       if (stopAnalysisRef.current) return;
       log({ level: 'error', message: `${fileName} → ${msg}`, fileId: id });
+      if (analyzeResultCommitted) {
+        log({
+          level: 'warn',
+          message: `${fileName} — overlay enrichment failed after analyze (${msg}); status kept from report`,
+          fileId: id,
+        });
+        return;
+      }
       updateFileStatus(id, {
         status: 'FAIL',
+        passRate: 0,
         analysisProgress: 0,
         analysisStage: 'Error',
         events: [
@@ -2061,6 +2181,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ],
       });
     } finally {
+      analyzeInFlightRef.current = Math.max(0, analyzeInFlightRef.current - 1);
       if (analysisAbortRef.current === abortController) {
         analysisAbortRef.current = null;
       }
@@ -2183,9 +2304,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appendAnalysisLog({ level: 'warn', message: 'Queue stopped by user' });
     } else {
       appendAnalysisLog({ level: 'success', message: 'Queue finished' });
+      const projectId = stateRef.current.activeProject?.id;
+      if (projectId) {
+        await refreshProjectFiles({ silent: true, focusFileIds: ids, force: true });
+      }
     }
     setState((prev) => ({ ...prev, analysisQueue: null }));
-  }, [analyzeFile, appendAnalysisLog, clearAnalysisLogs, state.selectedComponents, state.availableComponents, state.componentConfidence, state.componentModels, state.confidenceThreshold]);
+  }, [analyzeFile, appendAnalysisLog, clearAnalysisLogs, refreshProjectFiles, state.selectedComponents, state.availableComponents, state.componentConfidence, state.componentModels, state.confidenceThreshold]);
 
   const analyzeAll = useCallback(async (orderedIds?: string[]) => {
     const ids = orderedIds ?? filesRef.current

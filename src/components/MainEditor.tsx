@@ -17,6 +17,7 @@ import { useTagNotes } from '../hooks/use-tag-notes';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 import { enrichViewPanelsWithTubeCounts, fileHasLayoutArtifacts } from '../lib/viewPanels';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
+import { effectiveFileStatus } from '../lib/analysisStatus';
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { LoadingContent } from './LoadingScreen';
@@ -1410,7 +1411,7 @@ export function MainEditor() {
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
-          <StatusLabel status={file.status} overallStatus={file.overallStatus} />
+          <StatusLabel status={effectiveFileStatus(file)} overallStatus={file.overallStatus} />
         </div>
         )}
 

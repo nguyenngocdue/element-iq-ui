@@ -2,11 +2,15 @@ import type { DocumentFile, ValidationAnnotation } from '../types';
 
 const OVERALL_PRIORITY: Record<string, number> = {
   FAIL: 0,
+  'MISSING-TAG': 1,
+  'TAG-OCR-SUSPECT': 1,
   WARN: 1,
   'NO-TUBE': 2,
   'NO-NOTE': 3,
   PASS: 4,
 };
+
+const GROUT_COMPONENT_ID = 'grout-tube';
 
 const KNOWN_OVERALL = ['PASS', 'FAIL', 'NO-NOTE', 'NO-TUBE', 'WARN'] as const;
 
@@ -39,7 +43,7 @@ function inBucket(status: DocumentFile['status'], bucket: StatusBucket): boolean
 }
 
 export function fileMatchesBucket(file: DocumentFile, bucket: StatusBucket): boolean {
-  return inBucket(file.status, bucket);
+  return inBucket(effectiveFileStatus(file), bucket);
 }
 
 export function filterFilesByBucket(files: DocumentFile[], bucket: StatusBucket): DocumentFile[] {
@@ -50,8 +54,23 @@ export function countFilesByBucket(files: DocumentFile[], bucket: StatusBucket):
   return filterFilesByBucket(files, bucket).length;
 }
 
+function groutComponentOverall(analysis: AnalysisPayload): string {
+  const grout = analysis?.component_results?.find(
+    (c) => c.component_id === GROUT_COMPONENT_ID,
+  );
+  if (!grout) return '';
+  const fromSummary = grout.summary?.overall?.trim();
+  if (fromSummary) return fromSummary;
+  if (grout.overall_status) return grout.overall_status;
+  return '';
+}
+
 export function resolveOverallRaw(analysis: AnalysisPayload): string {
   if (!analysis) return '';
+
+  // Grout badge must follow grout-tube report rows (Active Annotations), not stale job.overall_status.
+  const groutOverall = groutComponentOverall(analysis);
+  if (groutOverall) return groutOverall;
 
   const candidates: string[] = [];
   if (analysis.overall_status) candidates.push(analysis.overall_status);
@@ -97,11 +116,66 @@ export function mapOverallToFileStatus(
   return 'PASS';
 }
 
-export function resolvePassRate(analysis: AnalysisPayload, overallUpper: string): number | undefined {
+/** Align badge with Active Annotations when report rows and overall disagree. */
+export function reconcileFileStatusWithAnnotations(
+  fileStatus: DocumentFile['status'],
+  annotations: ValidationAnnotation[] | undefined,
+): DocumentFile['status'] {
+  if (!annotations?.length) return fileStatus;
+
+  const issues = annotations.filter(
+    (a) => a.status !== 'PASS' && a.status !== 'REINF-COUNT',
+  );
+  const plan = annotations.find((a) => a.view === 'PLAN AS CAST');
+
+  if (issues.some((a) => a.status === 'FAIL' || a.status === 'VISION-GAP')) {
+    return 'FAIL';
+  }
+  if (issues.some((a) => a.status === 'MISSING-TAG' || a.status === 'TAG-OCR-SUSPECT')) {
+    return 'WARN';
+  }
+  if (issues.length === 0 && plan?.status === 'PASS' && fileStatus === 'FAIL') {
+    return 'PASS';
+  }
+  return fileStatus;
+}
+
+export function resolveFileStatusFromAnalysis(
+  analysis: AnalysisPayload,
+  annotations: ValidationAnnotation[] | undefined,
+  hasAnalysisData: boolean,
+): { status: DocumentFile['status']; overallRaw: string } {
+  const overallRaw = resolveOverallRaw(analysis);
+  const fromOverall = mapOverallToFileStatus(overallRaw, hasAnalysisData);
+  const status = reconcileFileStatusWithAnnotations(fromOverall, annotations);
+  return { status, overallRaw };
+}
+
+/** Badge status — prefer validation report rows over stale file.status. */
+export function effectiveFileStatus(file: DocumentFile): DocumentFile['status'] {
+  if (
+    file.status === 'ANALYZING'
+    || file.status === 'UPLOADING'
+    || file.status === 'PENDING'
+  ) {
+    return file.status;
+  }
+  if (!file.validationAnnotations?.length) {
+    return file.status;
+  }
+  return reconcileFileStatusWithAnnotations(file.status, file.validationAnnotations);
+}
+
+export function resolvePassRate(
+  analysis: AnalysisPayload,
+  overallUpper: string,
+  mappedStatus?: DocumentFile['status'],
+): number | undefined {
   if (!hasAnalysisPayload(analysis)) return undefined;
+  if (mappedStatus && mappedStatus !== 'PASS') return 0;
+  if (overallUpper !== 'PASS') return 0;
   if (typeof analysis?.summary?.pass_rate === 'number') return analysis.summary.pass_rate;
-  if (overallUpper === 'PASS') return 100;
-  return 0;
+  return 100;
 }
 
 export function isAnalyzedStatus(status: DocumentFile['status']): boolean {
@@ -109,8 +183,10 @@ export function isAnalyzedStatus(status: DocumentFile['status']): boolean {
 }
 
 export function filePassRate(file: DocumentFile): number {
+  const status = effectiveFileStatus(file);
+  if (status !== 'PASS') return 0;
   if (typeof file.passRate === 'number') return file.passRate;
-  return file.status === 'PASS' ? 100 : 0;
+  return 100;
 }
 
 export function averagePassRate(files: DocumentFile[]): number {
