@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { SessionState, DocumentFile, Component, Project, AnalysisLogLine } from './types';
-import { filterArtifactsForFile } from './lib/fileView';
+import { dedupeArtifactsForDisplay, filterArtifactsForFile } from './lib/fileView';
 import { parseViewSplitFromAnalysis, parseViewSplitFromReport } from './lib/viewSplit';
 import { parseTagNotesFromAnalysis, parseTagNotesFromReport } from './lib/tagNotes';
 import { parseViewTitlesFromAnalysis, parseViewTitlesFromReport } from './lib/viewTitles';
+import { parseViewPanelsFromReport } from './lib/viewPanels';
 import {
   hasAnalysisPayload,
   mapOverallToFileStatus,
@@ -16,6 +17,8 @@ import {
   mapValidationAnnotations,
 } from './lib/mapAnalysis';
 import { analysisStageFromProgress, ELEMENTIQ_ENGINE } from './lib/engineBranding';
+import { normalizeSelectedComponents } from './lib/analysisComponents';
+import { hydrateViewPanelsForDocs } from './lib/hydrateViewPanels';
 import {
   formatWorkerLogMessage,
   levelForServerLogLine,
@@ -139,7 +142,8 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
       uploadedAt: f.uploaded_at,
       localPath: f.local_path,
       fileSizeBytes: f.file_size_bytes,
-      artifacts: filterArtifactsForFile(
+      artifacts: dedupeArtifactsForDisplay(
+        filterArtifactsForFile(
         (f.analysis?.artifacts ?? []).map((a: any) => ({
           id: a.id,
           type: a.artifact_type,
@@ -155,6 +159,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
         })),
         f.id,
         f.original_filename,
+        ),
       ),
       events: [{
         id: Date.now().toString(),
@@ -281,6 +286,23 @@ function editorStateFromProjectApi(
   };
 }
 
+function mergeDocsWithExistingFiles(
+  docs: DocumentFile[],
+  prevFiles: DocumentFile[],
+): DocumentFile[] {
+  const prevById = new Map(prevFiles.map((f) => [f.id, f]));
+  return docs.map((d) => {
+    const existing = prevById.get(d.id);
+    if (!existing) return d;
+    return {
+      ...d,
+      file: existing.file.size > 0 ? existing.file : d.file,
+      viewPanels: existing.viewPanels ?? d.viewPanels,
+      pdfLoadError: existing.file.size > 0 ? undefined : existing.pdfLoadError ?? d.pdfLoadError,
+    };
+  });
+}
+
 async function prefetchProjectPdf(
   doc: DocumentFile,
   loadSessionId: number,
@@ -295,7 +317,21 @@ async function prefetchProjectPdf(
       if (!isSessionCurrent(loadSessionId)) return prev;
       return {
         ...prev,
-        files: prev.files.map((f) => (f.id === doc.id ? { ...f, file: realFile } : f)),
+        files: prev.files.map((f) =>
+          f.id === doc.id ? { ...f, file: realFile, pdfLoadError: undefined } : f,
+        ),
+      };
+    });
+  };
+
+  const setPdfLoadError = (message: string) => {
+    setState((prev) => {
+      if (!isSessionCurrent(loadSessionId)) return prev;
+      return {
+        ...prev,
+        files: prev.files.map((f) =>
+          f.id === doc.id ? { ...f, pdfLoadError: message } : f,
+        ),
       };
     });
   };
@@ -309,13 +345,30 @@ async function prefetchProjectPdf(
   try {
     const { authFetch } = await import('./lib/supabase');
     const dlRes = await authFetch(`/api/v1/files/${doc.id}/download`);
-    if (!isSessionCurrent(loadSessionId) || !dlRes.ok) return;
+    if (!isSessionCurrent(loadSessionId)) return;
+    if (!dlRes.ok) {
+      const detail = await dlRes.text().catch(() => '');
+      let message = `HTTP ${dlRes.status}`;
+      try {
+        const parsed = JSON.parse(detail);
+        if (parsed.detail) message = typeof parsed.detail === 'string' ? parsed.detail : message;
+      } catch {
+        if (detail) message = detail.slice(0, 120);
+      }
+      setPdfLoadError(message);
+      return;
+    }
     const blob = await dlRes.blob();
     if (!isSessionCurrent(loadSessionId)) return;
+    if (blob.size === 0) {
+      setPdfLoadError('Downloaded PDF is empty');
+      return;
+    }
     void putCachedPdfBlob(doc.id, versionKey, blob);
     applyBlob(blob);
-  } catch {
-    // PDF prefetch is best-effort
+  } catch (err) {
+    if (!isSessionCurrent(loadSessionId)) return;
+    setPdfLoadError(err instanceof Error ? err.message : 'Failed to download PDF');
   }
 }
 
@@ -369,6 +422,7 @@ interface AppContextType {
   setExplorerStatus: (status: ExplorerStatusFilter) => void;
   setViewerOverlay: (key: 'qa' | 'split' | 'titles' | 'viewports' | 'tags', value: boolean) => void;
   applyEditorUrlFromSearch: (search: string) => void;
+  retryPdfLoad: (fileId: string) => void;
 }
 
 // Mock available components (P0: grout-tube ready, others not ready)
@@ -418,7 +472,9 @@ const initialState: SessionState = {
   isEngineLive: true,
   confidenceThreshold: savedConfig?.confidenceThreshold ?? 0.4,
   availableComponents: [],  // loaded from API
-  selectedComponents: savedConfig?.selectedComponents ?? ['grout-tube'],
+  selectedComponents: normalizeSelectedComponents(
+    savedConfig?.selectedComponents ?? ['grout-tube'],
+  ),
   componentConfidence: savedConfig?.componentConfidence ?? { 'grout-tube': 0.40 },
   componentModels: savedConfig?.componentModels ?? {},
   showConfigModal: false,
@@ -447,6 +503,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editorNavUi, setEditorNavUi] = useState({ canBack: false, canForward: false });
   const projectSessionRef = React.useRef(0);
   const stopAnalysisRef = React.useRef(false);
+  const analysisAbortRef = React.useRef<AbortController | null>(null);
   const navHistoryRef = React.useRef(new EditorNavigationHistory());
   const stateRef = React.useRef(state);
   stateRef.current = state;
@@ -466,6 +523,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const invalidateProjectSession = useCallback(() => {
     projectSessionRef.current += 1;
     stopAnalysisRef.current = true;
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
     disposeDocumentFilesInPlace(stateRef.current.files);
   }, []);
 
@@ -651,6 +710,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [updateFileStatus, state.activeProject?.id]);
 
+  const downloadFileIfNeeded = useCallback(async (id: string, sessionId: number) => {
+    const doc = stateRef.current.files.find((f) => f.id === id);
+    if (!doc || doc.file.size > 0) return;
+    await prefetchProjectPdf(doc, sessionId, isSessionCurrent, setState);
+  }, [isSessionCurrent]);
+
+  const retryPdfLoad = useCallback((id: string) => {
+    updateFileStatus(id, { pdfLoadError: undefined });
+    void downloadFileIfNeeded(id, projectSessionRef.current);
+  }, [downloadFileIfNeeded, updateFileStatus]);
+
   const setActiveFile = useCallback((
     id: string,
     page: number = 1,
@@ -685,40 +755,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // If file has no bytes (loaded from server), download first then activate
     if (file && file.file.size === 0) {
       const sessionId = projectSessionRef.current;
-      (async () => {
-        try {
-          const { authFetch } = await import('./lib/supabase');
-          const res = await authFetch(`/api/v1/files/${id}/download`);
-          if (!isSessionCurrent(sessionId) || !res.ok) return;
-          const blob = await res.blob();
-          if (!isSessionCurrent(sessionId)) return;
-          const realFile = new File([blob], file.name, { type: 'application/pdf' });
-          updateFileStatus(id, { file: realFile });
-          applyActivation();
-        } catch (err) {
-          console.error('Failed to download file:', err);
-        }
+      void (async () => {
+        await downloadFileIfNeeded(id, sessionId);
+        if (!isSessionCurrent(sessionId)) return;
+        applyActivation();
       })();
     } else {
       applyActivation();
     }
-  }, [state.files, updateFileStatus, isSessionCurrent, syncEditorNavUi]);
-
-  const downloadFileIfNeeded = useCallback(async (id: string, sessionId: number) => {
-    const file = stateRef.current.files.find((f) => f.id === id);
-    if (!file || file.file.size > 0) return;
-    try {
-      const { authFetch } = await import('./lib/supabase');
-      const res = await authFetch(`/api/v1/files/${id}/download`);
-      if (!isSessionCurrent(sessionId) || !res.ok) return;
-      const blob = await res.blob();
-      if (!isSessionCurrent(sessionId)) return;
-      const realFile = new File([blob], file.name, { type: 'application/pdf' });
-      updateFileStatus(id, { file: realFile });
-    } catch (err) {
-      console.error('Failed to download file:', err);
-    }
-  }, [isSessionCurrent, updateFileStatus]);
+  }, [state.files, downloadFileIfNeeded, isSessionCurrent, syncEditorNavUi]);
 
   const applyNavEntry = useCallback((entry: EditorNavEntry) => {
     const sessionId = projectSessionRef.current;
@@ -849,7 +894,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setSelectedComponents = useCallback((ids: string[]) => {
-    setState((prev) => ({ ...prev, selectedComponents: ids }));
+    setState((prev) => ({ ...prev, selectedComponents: normalizeSelectedComponents(ids) }));
   }, []);
 
   const setComponentConfidence = useCallback((id: string, confidence: number) => {
@@ -878,9 +923,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleComponent = useCallback((id: string) => {
     setState((prev) => {
       const isSelected = prev.selectedComponents.includes(id);
-      const newSelection = isSelected
-        ? prev.selectedComponents.filter(c => c !== id)
-        : [...prev.selectedComponents, id];
+      const newSelection = normalizeSelectedComponents(
+        isSelected
+          ? prev.selectedComponents.filter(c => c !== id)
+          : [...prev.selectedComponents, id],
+      );
       return { ...prev, selectedComponents: newSelection };
     });
   }, []);
@@ -1078,6 +1125,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
           : prev.activeProject,
       }));
+      const activeId = stateRef.current.activeFileId;
+      if (activeId) {
+        const doc = stateRef.current.files.find((f) => f.id === activeId);
+        if (doc && doc.file.size === 0) {
+          void prefetchProjectPdf(
+            doc,
+            projectSessionRef.current,
+            isSessionCurrent,
+            setState,
+          );
+        }
+      }
       return 'ok';
     }
 
@@ -1104,13 +1163,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         projectId,
         userId,
       );
+      const mergedDocs = mergeDocsWithExistingFiles(docs, stateRef.current.files);
       setState((prev) => {
         if (!isSessionCurrent(loadSessionId)) return prev;
-        return { ...prev, ...patch, pinnedFiles: prev.pinnedFiles };
+        return { ...prev, ...patch, files: mergedDocs, pinnedFiles: prev.pinnedFiles };
       });
-      if (initialFileId) {
-        const activeDoc = docs.find((d) => d.id === initialFileId);
-        if (activeDoc) {
+      void (async () => {
+        const hydrated = await hydrateViewPanelsForDocs(mergedDocs);
+        setState((prev) => {
+          if (!isSessionCurrent(loadSessionId)) return prev;
+          const byId = new Map(hydrated.map((d) => [d.id, d]));
+          return {
+            ...prev,
+            files: prev.files.map((f) => byId.get(f.id) ?? f),
+          };
+        });
+      })();
+      const prefetchId = initialFileId ?? stateRef.current.activeFileId;
+      if (prefetchId) {
+        const activeDoc = mergedDocs.find((d) => d.id === prefetchId);
+        if (activeDoc && activeDoc.file.size === 0) {
           void prefetchProjectPdf(activeDoc, loadSessionId, isSessionCurrent, setState);
         }
       }
@@ -1217,6 +1289,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!isSessionCurrent(refreshSessionId)) return;
 
       const focusIds = (options?.focusFileIds ?? []).filter((id) => docs.some((d) => d.id === id));
+      const prevFiles = stateRef.current.files;
+      const prevById = new Map(prevFiles.map((f) => [f.id, f]));
+      const mergedDocs = docs.map((d) => {
+        const existing = prevById.get(d.id);
+        if (existing && existing.file.size > 0) {
+          return {
+            ...d,
+            file: existing.file,
+            viewPanels: existing.viewPanels ?? d.viewPanels,
+          };
+        }
+        return d;
+      });
+
       setState((prev) => {
         if (!isSessionCurrent(refreshSessionId)) return prev;
 
@@ -1226,15 +1312,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             disposeDocumentFile(old);
           }
         }
-
-        const prevById = new Map(prev.files.map((f) => [f.id, f]));
-        const mergedDocs = docs.map((d) => {
-          const existing = prevById.get(d.id);
-          if (existing && existing.file.size > 0) {
-            return { ...d, file: existing.file };
-          }
-          return d;
-        });
 
         const preservedActive =
           focusIds.find((id) => mergedDocs.some((d) => d.id === id))
@@ -1274,6 +1351,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
+      void (async () => {
+        const hydrated = await hydrateViewPanelsForDocs(mergedDocs);
+        if (!isSessionCurrent(refreshSessionId)) return;
+        setState((prev) => {
+          const byId = new Map(hydrated.map((d) => [d.id, d]));
+          return {
+            ...prev,
+            files: prev.files.map((f) => byId.get(f.id) ?? f),
+          };
+        });
+      })();
+
       const activeProject = stateRef.current.activeProject;
       if (activeProject?.ownerId) {
         persistProjectSessionCache(
@@ -1295,8 +1384,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (focusIds.length > 0) {
         const activeId = focusIds[0];
-        const activeDoc = docs.find((d) => d.id === activeId);
-        if (activeDoc) {
+        const activeDoc = mergedDocs.find((d) => d.id === activeId);
+        if (activeDoc && activeDoc.file.size === 0) {
+          void prefetchProjectPdf(activeDoc, refreshSessionId, isSessionCurrent, setState);
+        }
+      } else {
+        const activeId = stateRef.current.activeFileId;
+        const activeDoc = mergedDocs.find((d) => d.id === activeId);
+        if (activeDoc && activeDoc.file.size === 0) {
           void prefetchProjectPdf(activeDoc, refreshSessionId, isSessionCurrent, setState);
         }
       }
@@ -1640,11 +1735,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const guestViewerKey = session.guestViewerKey;
     const projectId = session.activeProject?.id;
     const fileName = getFileName(id);
-    stopAnalysisRef.current = false;
+
+    // Single-file analyze (not batch queue) — new Run clears prior Stop.
+    if (!stateRef.current.analysisQueue) {
+      stopAnalysisRef.current = false;
+    }
+    if (stopAnalysisRef.current) return;
+
+    const abortController = new AbortController();
+    analysisAbortRef.current = abortController;
+    const fetchOpts = { signal: abortController.signal };
+
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
     log({ level: 'dim', message: `Connecting to backend…`, fileId: id });
     let file = filesRef.current.find(f => f.id === id)?.file;
-    if (!file) return;
+    if (!file) {
+      updateFileStatus(id, {
+        status: 'PENDING',
+        analysisProgress: 0,
+        analysisStage: 'Missing file data',
+      });
+      log({ level: 'error', message: 'Cannot analyze — file not loaded in browser', fileId: id });
+      return;
+    }
 
     try {
       const { authFetch, isServerFileId } = await import('./lib/supabase');
@@ -1654,7 +1767,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!useServerReRun && file.size === 0) {
         updateFileStatus(id, { analysisProgress: 5, analysisStage: 'Downloading PDF from server...' });
         log({ level: 'dim', message: 'Downloading PDF from server…', fileId: id });
-        const dlRes = await authFetch(`/api/v1/files/${id}/download`);
+        const dlRes = await authFetch(`/api/v1/files/${id}/download`, fetchOpts);
         if (!dlRes.ok) throw new Error('Failed to download file for analysis');
         const blob = await dlRes.blob();
         file = new File([blob], file.name, { type: 'application/pdf' });
@@ -1663,7 +1776,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // ── 1. Quick health check ──────────────────────────────
       try {
-        const hRes = await authFetch('/api/v1/health');
+        const hRes = await authFetch('/api/v1/health', fetchOpts);
         if (!hRes.ok) throw new Error('Backend not healthy');
       } catch {
         throw new Error('Backend offline — run: uvicorn app.main:app --reload --port 8000');
@@ -1721,6 +1834,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             components: selectedComps,
             config: analysisConfig,
           }),
+          ...fetchOpts,
         });
         if (!res.ok) throw new Error(await parseApiError(res));
         ({ status_url } = await res.json());
@@ -1730,7 +1844,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('components', JSON.stringify(selectedComps));
         formData.append('config', JSON.stringify(analysisConfig));
 
-        const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData });
+        const res = await authFetch('/api/v1/analyze', { method: 'POST', body: formData, ...fetchOpts });
         if (!res.ok) throw new Error(await parseApiError(res));
         ({ status_url } = await res.json());
       }
@@ -1752,7 +1866,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!isSessionCurrent(analysisSessionId)) {
           throw new Error('Session ended');
         }
-        const jobRes = await authFetch(status_url);
+        const jobRes = await authFetch(status_url, fetchOpts);
         if (!jobRes.ok) throw new Error(`Failed to fetch job status: ${jobRes.status}`);
         const job = await jobRes.json();
 
@@ -1818,7 +1932,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.log('[ElementIQ] overallStatus:', overallStatus, 'fileStatus:', fileStatus, 'passRate:', passRate);
 
       // Extract artifacts from result
-      const artifacts = filterArtifactsForFile(
+      const artifacts = dedupeArtifactsForDisplay(
+        filterArtifactsForFile(
         (result.result?.artifacts ?? []).map((a: any) => ({
           id: a.id,
           type: a.artifact_type,
@@ -1834,20 +1949,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         })),
         id,
         fileName,
+        ),
       );
 
       let viewSplit = parseViewSplitFromAnalysis({ component_results: components });
       let viewTitles = parseViewTitlesFromAnalysis({ component_results: components });
       let tagNotes = parseTagNotesFromAnalysis({ component_results: components });
+      let viewPanels: import('./lib/viewPanels').ParsedViewPanels | null = null;
       const reportArtifact = artifacts.find((a) => a.type === 'REPORT_JSON');
       if (reportArtifact?.downloadUrl) {
         try {
-          const reportRes = await authFetch(reportArtifact.downloadUrl);
+          const reportRes = await authFetch(reportArtifact.downloadUrl, fetchOpts);
           if (reportRes.ok) {
             const reportText = await reportRes.text();
             if (!viewSplit) viewSplit = parseViewSplitFromReport(reportText);
             if (!viewTitles) viewTitles = parseViewTitlesFromReport(reportText);
             if (!tagNotes) tagNotes = parseTagNotesFromReport(reportText);
+            viewPanels = parseViewPanelsFromReport(reportText);
           }
         } catch {
           // Report JSON optional for overlay; ignore fetch errors
@@ -1864,6 +1982,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         viewSplit,
         viewTitles,
         tagNotes,
+        viewPanels,
         analysisProgress: 100,
         analysisStage: 'Complete',
         events: [
@@ -1919,6 +2038,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'Stopped by user') return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (stopAnalysisRef.current) return;
       log({ level: 'error', message: `${fileName} → ${msg}`, fileId: id });
       updateFileStatus(id, {
         status: 'FAIL',
@@ -1929,16 +2050,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           { id: Date.now().toString(), timestamp: new Date().toISOString(), message: `Error: ${msg}`, type: 'ERROR' },
         ],
       });
+    } finally {
+      if (analysisAbortRef.current === abortController) {
+        analysisAbortRef.current = null;
+      }
     }
   }, [state.confidenceThreshold, state.selectedComponents, state.componentConfidence, state.componentModels, state.availableComponents, updateFileStatus, appendAnalysisLog, isSessionCurrent, syncProjectSessionCache]);
 
   const runAnalysisQueue = useCallback(async (orderedIds: string[]) => {
     stopAnalysisRef.current = false;
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+
     const ids = orderedIds.filter((id) => {
       const f = filesRef.current.find((ff) => ff.id === id);
-      return f && f.status !== 'ANALYZING' && f.status !== 'UPLOADING';
+      return f && f.status !== 'UPLOADING';
     });
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      appendAnalysisLog({
+        level: 'warn',
+        message: 'No files to analyze (all uploading or list empty)',
+      });
+      return;
+    }
+
+    // Clear stuck ANALYZING spinners from a prior hung/stopped run.
+    setState((prev) => ({
+      ...prev,
+      files: prev.files.map((f) =>
+        ids.includes(f.id) && f.status === 'ANALYZING'
+          ? { ...f, status: 'PENDING', analysisProgress: 0, analysisStage: undefined }
+          : f
+      ),
+    }));
 
     let queueConcurrency = 2;
     let slotUser = 2;
@@ -2035,7 +2179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const analyzeAll = useCallback(async (orderedIds?: string[]) => {
     const ids = orderedIds ?? filesRef.current
-      .filter(f => f.status !== 'ANALYZING' && f.status !== 'UPLOADING')
+      .filter(f => f.status !== 'UPLOADING')
       .map(f => f.id);
     await runAnalysisQueue(ids);
   }, [runAnalysisQueue]);
@@ -2046,8 +2190,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const stopAnalysis = useCallback(() => {
     stopAnalysisRef.current = true;
-    appendAnalysisLog({ level: 'warn', message: 'Stop requested — finishing active files…' });
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+    setState((prev) => ({
+      ...prev,
+      files: prev.files.map((f) =>
+        f.status === 'ANALYZING'
+          ? { ...f, status: 'PENDING', analysisProgress: 0, analysisStage: undefined }
+          : f
+      ),
+      analysisQueue: null,
+    }));
+    appendAnalysisLog({ level: 'warn', message: 'Analysis stopped — spinner cleared (server job may still run)' });
   }, [appendAnalysisLog]);
+
+  React.useEffect(() => {
+    const id = state.activeFileId;
+    if (!id || state.isLoadingFiles || state.currentView !== 'editor') return;
+    const doc = state.files.find((f) => f.id === id);
+    if (doc && doc.file.size === 0 && !doc.pdfLoadError) {
+      void downloadFileIfNeeded(id, projectSessionRef.current);
+    }
+  }, [state.activeFileId, state.files, state.isLoadingFiles, state.currentView, downloadFileIfNeeded]);
 
   return (
     <AppContext.Provider
@@ -2098,6 +2262,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setExplorerStatus,
         setViewerOverlay,
         applyEditorUrlFromSearch,
+        retryPdfLoad,
       }}
     >
       {children}

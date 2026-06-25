@@ -84,6 +84,8 @@ export interface DocumentFile {
   uploadedAt?: string;         // ISO timestamp from server
   localPath?: string;          // server storage path
   fileSizeBytes?: number;      // original file size in bytes
+  /** Set when /files/{id}/download fails — avoids infinite "Loading PDF". */
+  pdfLoadError?: string;
 }
 
 export interface Detection {

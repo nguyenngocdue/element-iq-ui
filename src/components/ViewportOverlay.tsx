@@ -1,5 +1,5 @@
 import React from 'react';
-import { ParsedViewPanels, ViewPanelItem } from '../lib/viewPanels';
+import { ParsedViewPanels, ViewPanelItem, ViewportTextSpan } from '../lib/viewPanels';
 
 const PANEL_COLORS: Record<string, { border: string; fill: string; chip: string }> = {
   plan_view: {
@@ -189,6 +189,34 @@ function PanelCorner({
   );
 }
 
+function TextSpanBox({
+  span,
+  toScreen,
+}: {
+  span: ViewportTextSpan;
+  toScreen: (v: number) => number;
+}) {
+  const [x1, y1, x2, y2] = span.bbox_px;
+  const left = toScreen(x1);
+  const top = toScreen(y1);
+  const width = Math.max(toScreen(x2) - left, 2);
+  const height = Math.max(toScreen(y2) - top, 2);
+
+  return (
+    <div
+      className="absolute pointer-events-none"
+      style={{ left, top, width, height, border: '1px solid #00dcff' }}
+    >
+      <span
+        className="absolute left-0 -translate-y-full text-[8px] font-mono text-[#00dcff] bg-[#1e1e1e]/90 px-0.5 leading-tight"
+        style={{ top: 0 }}
+      >
+        #{span.index}
+      </span>
+    </div>
+  );
+}
+
 function PanelBox({
   panel,
   toScreen,
@@ -204,7 +232,9 @@ function PanelBox({
   const colors = panelColors(panel.view_class);
   const label = panel.name
     ? `${panel.id}. ${panel.name} · ${(panel.confidence * 100).toFixed(0)}%`
-    : `${panel.id}. ${panel.view_class} · ${(panel.confidence * 100).toFixed(0)}%`;
+    : `${panel.id}. ${panel.view_class} (?) · ${(panel.confidence * 100).toFixed(0)}%`;
+  const textHint =
+    panel.text_count != null && panel.text_count > 0 ? ` · ${panel.text_count} text` : '';
 
   return (
     <div
@@ -221,8 +251,11 @@ function PanelBox({
       <div
         className={`absolute left-0 -top-5 px-1.5 py-0.5 text-[10px] font-mono text-white border rounded-sm whitespace-nowrap ${colors.chip}`}
       >
-        {label}
+        {label}{textHint}
       </div>
+      {panel.text_spans?.map((span) => (
+        <TextSpanBox key={`${panel.id}-${span.index}`} span={span} toScreen={toScreen} />
+      ))}
       <PanelCorner localLeft={0} localTop={0} label={`(${x1}, ${y1})`} color={colors.border} placement="above" />
       <PanelCorner localLeft={width} localTop={0} label={`(${x2}, ${y1})`} color={colors.border} placement="above" />
       <PanelCorner localLeft={0} localTop={height} label={`(${x1}, ${y2})`} color={colors.border} placement="below" />

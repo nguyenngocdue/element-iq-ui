@@ -16,6 +16,10 @@ interface ComponentCardProps {
   onToggle: (id: string) => void;
   onConfidenceChange: (id: string, confidence: number) => void;
   onModelChange: (id: string, modelFile: string) => void;
+  /** Checkbox disabled but may still show selected (e.g. layout bundled with grout). */
+  toggleDisabled?: boolean;
+  bundledBadge?: string;
+  pipelineNote?: string;
 }
 
 export function ComponentCard({
@@ -26,8 +30,12 @@ export function ComponentCard({
   onToggle,
   onConfidenceChange,
   onModelChange,
+  toggleDisabled = false,
+  bundledBadge,
+  pipelineNote,
 }: ComponentCardProps) {
   const isDisabled = component.status !== 'ready';
+  const checkboxDisabled = isDisabled || toggleDisabled;
   const [models, setModels] = useState<ComponentModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
@@ -125,18 +133,28 @@ export function ComponentCard({
       <div className="flex items-start justify-between mb-3">
         <label className={cn(
           'flex items-center gap-3 flex-1',
-          !isDisabled && 'cursor-pointer'
+          !checkboxDisabled && 'cursor-pointer'
         )}>
           <input
             type="checkbox"
             checked={selected}
-            onChange={() => !isDisabled && onToggle(component.id)}
-            disabled={isDisabled}
+            onChange={() => !checkboxDisabled && onToggle(component.id)}
+            disabled={checkboxDisabled}
             className="w-5 h-5"
           />
           <div>
-            <h4 className="text-white font-semibold text-[14px]">{component.name}</h4>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-white font-semibold text-[14px]">{component.name}</h4>
+              {bundledBadge && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[#3b82f6] border border-[#3b82f6]/40 bg-[#3b82f6]/10 px-1.5 py-0.5 rounded">
+                  {bundledBadge}
+                </span>
+              )}
+            </div>
             <p className="text-[#858585] text-xs mt-0.5">{component.description}</p>
+            {pipelineNote && (
+              <p className="text-[#6b9bd1] text-[10px] mt-1 leading-snug">{pipelineNote}</p>
+            )}
           </div>
         </label>
 

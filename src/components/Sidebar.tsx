@@ -12,6 +12,7 @@ import {
   ExplorerStatusFilter,
   formatFileCreatedAt,
   formatFileSizeBytes,
+  artifactDisplayLabel,
   getFileSizeBytes,
   readExplorerViewPrefs,
   sortFiles,
@@ -484,7 +485,7 @@ export function Sidebar() {
                       <>
                         <button
                           onClick={stopAnalysis}
-                          title="Stop after current file finishes"
+                          title="Stop analysis immediately (clears spinners)"
                           className={cn(toolbarSegBtn, toolbarRemovePrimary)}
                         >
                           <X className="w-3.5 h-3.5 shrink-0" />
@@ -1353,7 +1354,7 @@ export function FileItem({
               <span className="ml-auto text-[9px] text-[#555]">{file.artifacts!.length}</span>
             </div>
             {artifactsExpanded && file.artifacts!.map(a => {
-              const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+              const artifactName = artifactDisplayLabel(a);
               return (
                 <ExplorerArtifactRow
                   key={a.id}
@@ -1454,7 +1455,7 @@ export function FileItem({
       )}
 
       {showArtifactsBlock && artifactsExpanded && file.artifacts!.map((a, ai) => {
-        const artifactName = a.type === 'ANNOTATED_PNG' ? 'Annotated PNG' : a.type === 'ANNOTATED_PDF' ? 'Annotated PDF' : 'Report JSON';
+        const artifactName = artifactDisplayLabel(a);
         const isLastArtifact = ai === file.artifacts!.length - 1;
         const artifactIsLast = isLastArtifact && !sheetsFollowArtifacts;
         return (

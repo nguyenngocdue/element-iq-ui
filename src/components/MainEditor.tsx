@@ -18,7 +18,8 @@ import { LoadingContent } from './LoadingScreen';
 import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
 import { useViewPanels } from '../hooks/use-view-panels';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid } from 'lucide-react';
-import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
+import { artifactDisplayLabel, artifactIconMeta, isJsonArtifactType } from '../lib/fileView';
+import { isGroutOverlayArtifactType } from '../lib/hydrateViewPanels';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -31,7 +32,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
   progress?: number;
   stage?: string;
 }) {
-  const { state, closeFile } = useApp();
+  const { state, stopAnalysis } = useApp();
   const [logs, setLogs] = useState<{msg: string, type: 'info'|'debug'|'success'}[]>([]);
   const progress = realProgress ?? 0;
 
@@ -152,10 +153,11 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
 
          <div className="p-4 border-t border-[#3c3c3c] bg-[#1e1e1e] flex justify-end gap-3">
            <button
-             onClick={() => { closeFile(state.activeFileId!); }}
+             type="button"
+             onClick={() => stopAnalysis()}
              className="bg-[#3c3c3c] hover:bg-[#4d4d4d] text-white px-4 py-1.5 text-xs font-semibold rounded transition-colors"
            >
-             Cancel Analysis
+             Stop Analysis
            </button>
          </div>
       </div>
@@ -279,6 +281,7 @@ function PdfRenderer({
   showViewportOverlay,
   viewPanels,
   onDimensionsLoaded,
+  onRetryPdf,
 }: {
   file: any;
   pageNum: number;
@@ -293,6 +296,7 @@ function PdfRenderer({
   showViewportOverlay?: boolean;
   viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
   onDimensionsLoaded?: (w: number, h: number) => void;
+  onRetryPdf?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [renderScale, setRenderScale] = useState(scale);
@@ -385,7 +389,25 @@ function PdfRenderer({
     };
   }, [file?.file, renderScale, pageNum]);
 
-  // Show loading state when file not yet downloaded
+  // Show loading / error when file not yet downloaded
+  if (file.pdfLoadError) {
+    return (
+      <div className="relative shadow-2xl origin-top-left border border-[#444] bg-[#1e1e1e] flex flex-col items-center justify-center gap-3 px-6 text-center" style={{ width: 600, height: 400 }}>
+        <span className="text-[#ef4444] text-sm">Failed to load PDF</span>
+        <span className="text-[11px] text-[#858585] font-mono max-w-md break-all">{file.pdfLoadError}</span>
+        {onRetryPdf ? (
+          <button
+            type="button"
+            onClick={onRetryPdf}
+            className="text-[11px] px-3 py-1.5 rounded bg-[#333] hover:bg-[#444] text-white"
+          >
+            Retry download
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   if (file.file.size === 0) {
     return (
       <div className="relative shadow-2xl origin-top-left border border-[#444] bg-[#1e1e1e] flex items-center justify-center" style={{ width: 600, height: 400 }}>
@@ -537,8 +559,12 @@ function ArtifactViewer({
           setLoadError(message);
           return;
         }
-        if (artifact.type === 'REPORT_JSON') {
+        if (isJsonArtifactType(artifact.type)) {
           setContent(await res.text());
+        } else if (artifact.type === 'ANNOTATED_PDF') {
+          const blob = await res.blob();
+          objectUrl = URL.createObjectURL(blob);
+          setContent(objectUrl);
         } else {
           const blob = await res.blob();
           objectUrl = URL.createObjectURL(blob);
@@ -561,7 +587,7 @@ function ArtifactViewer({
 
   // Ctrl+Wheel zoom for PNG — bind after scroll container mounts (post-load)
   React.useEffect(() => {
-    if (loading || !content || artifact.type !== 'ANNOTATED_PNG') return;
+    if (loading || !content || !isGroutOverlayArtifactType(artifact.type)) return;
     const el = containerRef.current;
     if (!el) return;
     return attachPaneWheelZoom(el, onScaleChange);
@@ -650,7 +676,7 @@ function ArtifactViewer({
         <div className="flex-1 flex items-center justify-center">
           <LoadingContent title="Loading artifact" showProgress={false} spinnerSize="md" compact textVariant="embed" />
         </div>
-      ) : artifact.type === 'ANNOTATED_PNG' && content ? (
+      ) : isGroutOverlayArtifactType(artifact.type) && content ? (
         <div 
           ref={containerRef}
           data-artifact-container=""
@@ -728,7 +754,7 @@ function ArtifactViewer({
         <div className="flex-1 overflow-hidden flex items-center justify-center bg-[#0a0a0a] relative">
           <iframe src={`${content}#page=1&view=Fit`} className="w-full h-full border-0" style={{ minHeight: 'calc(100vh - 80px)' }} />
         </div>
-      ) : artifact.type === 'REPORT_JSON' && content ? (
+      ) : isJsonArtifactType(artifact.type) && content ? (
         <div className="flex-1 overflow-hidden p-4">
           <ReportJsonPanel
             content={content}
@@ -776,6 +802,7 @@ export function MainEditor() {
     setEditorView,
     toggleAnalysisTerminal,
     setViewerOverlay,
+    retryPdfLoad,
   } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun ?? !isReadOnly;
@@ -831,7 +858,7 @@ export function MainEditor() {
 
   const fitScreen = () => {
     // For PNG artifact — use pngDimensions
-    if (showingArtifact && state.activeArtifact && state.activeArtifact.type === 'ANNOTATED_PNG' && pngDimensions) {
+    if (showingArtifact && state.activeArtifact && isGroutOverlayArtifactType(state.activeArtifact.type) && pngDimensions) {
       // Approximate available space (full pane minus padding)
       const pane = document.querySelector('[data-artifact-container]') as HTMLElement;
       if (pane) {
@@ -863,7 +890,7 @@ export function MainEditor() {
     if (!primaryZoomKey || autoFitDoneRef.current === primaryZoomKey) return;
 
     const readyForPng =
-      showingArtifact && state.activeArtifact?.type === 'ANNOTATED_PNG' && pngDimensions != null;
+      showingArtifact && state.activeArtifact && isGroutOverlayArtifactType(state.activeArtifact.type) && pngDimensions != null;
     const readyForPdf = !showingArtifact && pdfDimensions != null;
 
     if (readyForPng || readyForPdf) {
@@ -1002,7 +1029,7 @@ export function MainEditor() {
 
   // Block browser zoom for artifact types without a custom wheel handler
   useEffect(() => {
-    if (!showingArtifact || !state.activeArtifact || state.activeArtifact.type === 'ANNOTATED_PNG') return;
+    if (!showingArtifact || !state.activeArtifact || isGroutOverlayArtifactType(state.activeArtifact.type)) return;
     
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -1166,14 +1193,18 @@ export function MainEditor() {
                           const url = URL.createObjectURL(blob);
                           const link = document.createElement('a');
                           link.href = url;
-                          link.download = a.type === 'ANNOTATED_PNG' ? `${file.name.replace('.pdf','')}_annotated.png` : a.type === 'ANNOTATED_PDF' ? `${file.name.replace('.pdf','')}_annotated.pdf` : `${file.name.replace('.pdf','')}_report.json`;
+                          link.download = isGroutOverlayArtifactType(a.type)
+                            ? `${file.name.replace('.pdf', '')}_grout_overlay.png`
+                            : a.type === 'ANNOTATED_PDF'
+                              ? `${file.name.replace('.pdf', '')}_annotated.pdf`
+                              : `${file.name.replace('.pdf', '')}_report.json`;
                           document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
                         }
                       }}
                       className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white flex items-center gap-2"
                     >
                       <Icon className={cn('w-3.5 h-3.5 shrink-0', color)} />
-                      <span>{artifactDisplayName(a.type)}</span>
+                      <span>{artifactDisplayLabel(a)}</span>
                     </button>
                     );
                   })}
@@ -1211,7 +1242,7 @@ export function MainEditor() {
 
         {/* Overlay tools — row below Re-analyze, floats over canvas (no layout shift) */}
         {file && file.status !== 'ANALYZING'
-          && (!showingArtifact || state.activeArtifact?.type === 'ANNOTATED_PNG') ? (
+          && (!showingArtifact || isGroutOverlayArtifactType(state.activeArtifact?.type ?? '')) ? (
           <div className="absolute top-[43px] right-2 z-50 pointer-events-none">
             <OverlayToolsBar
               showAnnotations={showAnnotations}
@@ -1275,6 +1306,7 @@ export function MainEditor() {
                pageNum={state.activePage || 1} 
                scale={primaryScale || 0.5} 
                onDimensionsLoaded={(w, h) => setPdfDimensions({w, h})}
+               onRetryPdf={() => retryPdfLoad(file.id)}
                showAnnotations={showAnnotations}
                showViewSplitOverlay={showViewSplitOverlay}
                viewSplit={viewSplit}
@@ -1304,7 +1336,7 @@ export function MainEditor() {
         )}
 
         {/* Floating Toolbar (Pane 1) — hidden while analyzing */}
-        {(!showingArtifact || state.activeArtifact?.type === 'ANNOTATED_PNG') && file && file.status !== 'ANALYZING' && (
+        {(!showingArtifact || isGroutOverlayArtifactType(state.activeArtifact?.type ?? '')) && file && file.status !== 'ANALYZING' && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
           <button 
             onClick={() => setToolMode('select')}
@@ -1385,7 +1417,8 @@ export function MainEditor() {
                  <PdfRenderer 
                    file={splitFile} 
                    pageNum={state.activePage || 1} 
-                   scale={splitScale} 
+                   scale={splitScale}
+                   onRetryPdf={() => retryPdfLoad(splitFile.id)}
                    showAnnotations={showAnnotations} 
                  />
                ) : (

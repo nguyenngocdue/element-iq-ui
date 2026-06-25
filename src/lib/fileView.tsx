@@ -73,10 +73,33 @@ export function formatFileCreatedAt(file: DocumentFile): string {
 }
 
 export function artifactDisplayName(type: string): string {
-  if (type === 'ANNOTATED_PNG') return 'Annotated PNG';
+  if (type === 'ANNOTATED_PNG') return 'Grout overlay PNG';
   if (type === 'ANNOTATED_PDF') return 'Annotated PDF';
   if (type === 'REPORT_JSON') return 'JSON Report';
+  if (type === 'LAYOUT_OVERLAY_PNG') return 'Layout overlay';
+  if (type === 'GROUT_OVERLAY_PNG') return 'Grout overlay';
+  if (type === 'VIEWPORTS_OVERLAY_PNG') return 'Viewports text overlay';
+  if (type === 'LAYOUT_JSON') return 'Layout JSON';
+  if (type === 'BINDINGS_JSON') return 'Bindings JSON';
+  if (type === 'GROUT_REPORT_JSON') return 'Grout report JSON';
   return type;
+}
+
+/** Sidebar / tab label — prefer on-disk filename from data/media (matches Explorer on disk). */
+export function artifactDisplayLabel(artifact: { type: string; originalFilename?: string }): string {
+  if (artifact.originalFilename) return artifact.originalFilename;
+  return artifactDisplayName(artifact.type);
+}
+
+export const JSON_ARTIFACT_TYPES = new Set([
+  'REPORT_JSON',
+  'LAYOUT_JSON',
+  'BINDINGS_JSON',
+  'GROUT_REPORT_JSON',
+]);
+
+export function isJsonArtifactType(type: string): boolean {
+  return JSON_ARTIFACT_TYPES.has(type);
 }
 
 export type ArtifactIconMeta = {
@@ -92,7 +115,9 @@ export const ARTIFACT_ICON_COLORS = {
 } as const;
 
 export function artifactIconMeta(type: string): ArtifactIconMeta {
-  if (type === 'ANNOTATED_PNG') return { Icon: Image, color: ARTIFACT_ICON_COLORS.png };
+  if (type === 'ANNOTATED_PNG' || type === 'LAYOUT_OVERLAY_PNG' || type === 'GROUT_OVERLAY_PNG' || type === 'VIEWPORTS_OVERLAY_PNG') {
+    return { Icon: Image, color: ARTIFACT_ICON_COLORS.png };
+  }
   if (type === 'ANNOTATED_PDF') return { Icon: FileText, color: ARTIFACT_ICON_COLORS.pdf };
   return { Icon: FileJson, color: ARTIFACT_ICON_COLORS.json };
 }
@@ -110,6 +135,38 @@ export function filterArtifactsForFile<T extends { originalFilename?: string; so
     const name = a.originalFilename;
     return name.startsWith(stem) || name.replace(/\.[^.]+$/, '').startsWith(stem);
   });
+}
+
+/** One sidebar row per on-disk file — sheet-analyze may register ANNOTATED_PNG + GROUT_OVERLAY_PNG for same PNG. */
+export function dedupeArtifactsForDisplay<
+  T extends { type: string; localPath?: string; originalFilename?: string },
+>(artifacts: T[]): T[] {
+  const priority = [
+    'VIEWPORTS_OVERLAY_PNG',
+    'LAYOUT_OVERLAY_PNG',
+    'GROUT_OVERLAY_PNG',
+    'ANNOTATED_PNG',
+    'ANNOTATED_PDF',
+    'REPORT_JSON',
+    'GROUT_REPORT_JSON',
+    'BINDINGS_JSON',
+    'LAYOUT_JSON',
+  ];
+  const rank = (type: string) => {
+    const i = priority.indexOf(type);
+    return i === -1 ? 99 : i;
+  };
+  const best = new Map<string, T>();
+  for (const a of artifacts) {
+    const pathKey = a.localPath?.replace(/\\/g, '/').toLowerCase();
+    const key = pathKey || `${a.type}:${a.originalFilename ?? ''}`.toLowerCase();
+    const prev = best.get(key);
+    if (!prev || rank(a.type) < rank(prev.type)) {
+      best.set(key, a);
+    }
+  }
+  const kept = new Set(best.values());
+  return artifacts.filter((a) => kept.has(a));
 }
 
 export function formatIsoDateTime(iso?: string): string {

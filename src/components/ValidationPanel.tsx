@@ -17,7 +17,7 @@ import { useResizable } from '../hooks/useResizable';
 import { cn } from '../lib/utils';
 import { ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { Download, Eye } from 'lucide-react';
-import { artifactDisplayName, artifactIconMeta } from '../lib/fileView';
+import { artifactDisplayLabel, artifactIconMeta } from '../lib/fileView';
 
 const CARD = 'rounded-md border border-[#3c3c3c] bg-[#1e1e1e]';
 
@@ -223,7 +223,7 @@ export function ValidationPanel() {
                         id: a.id,
                         type: a.type,
                         downloadUrl: a.downloadUrl,
-                        name: artifactDisplayName(a.type),
+                        name: artifactDisplayLabel(a),
                         sourceFileId: file.id,
                       },
                     }));
@@ -252,7 +252,7 @@ export function ValidationPanel() {
                     className="w-full text-left px-2 py-1.5 bg-[#1e1e1e] border border-[#3c3c3c] rounded text-[11px] text-[#e8e8e8] hover:bg-[#2a2a2a] flex items-center gap-2"
                   >
                     <Icon className={cn('w-3.5 h-3.5 shrink-0', color)} />
-                    <span className="flex-1 truncate">{artifactDisplayName(a.type)}</span>
+                    <span className="flex-1 truncate">{artifactDisplayLabel(a)}</span>
                     {canDownload
                       ? <Download className="w-3 h-3 text-[#858585] shrink-0" />
                       : <Eye className="w-3 h-3 text-[#858585] shrink-0" />}

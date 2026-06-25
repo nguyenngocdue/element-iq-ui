@@ -260,7 +260,7 @@ function ProjectEditorPage() {
     return () => {
       signal.cancelled = true;
     };
-  }, [projectId, user?.id, navigate, location.pathname, location.search, loadProjectEditor, loadAttempt]);
+  }, [projectId, user?.id, navigate, loadProjectEditor, loadAttempt]);
 
   if (!projectId) {
     return <Navigate to="/" replace />;

@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { DocumentFile } from '../types';
 import { statusBadgeLabel } from './analysisStatus';
 
+import { artifactDisplayLabel } from './fileView';
+
 export function artifactLabel(type: string): string {
   if (type === 'ANNOTATED_PNG') return 'Annotated PNG';
   if (type === 'ANNOTATED_PDF') return 'Annotated PDF';
@@ -20,8 +22,9 @@ export function fileMatchesQuery(file: DocumentFile, query: string): boolean {
   if (file.id.toLowerCase().includes(q)) return true;
 
   if (file.artifacts?.some((a) => {
-    const label = artifactLabel(a.type).toLowerCase();
-    return label.includes(q) || a.type.toLowerCase().includes(q);
+    const label = artifactDisplayLabel(a).toLowerCase();
+    return label.includes(q) || a.type.toLowerCase().includes(q)
+      || (a.originalFilename?.toLowerCase().includes(q) ?? false);
   })) {
     return true;
   }

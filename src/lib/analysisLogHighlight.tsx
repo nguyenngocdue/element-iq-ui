@@ -31,7 +31,7 @@ const HIGHLIGHT_RULES: { pattern: RegExp; className: string }[] = [
   { pattern: /\[W\d+\]/g, className: HL.keyword },
   { pattern: /\[[\d]+\/[\d]+\]/g, className: HL.number },
   { pattern: /\bConfig:|GPU:|Models:|Engine:/g, className: HL.keyword },
-  { pattern: /\bPrepare ·|Scan ·|Read tags ·|Validate ·|Save report ·|Complete ·/g, className: HL.stage },
+  { pattern: /\bPrepare ·|Scan ·|Read tags ·|Validate ·|Save report ·|Complete ·|layout ·|name ·|detach ·|grout ·/g, className: HL.stage },
   { pattern: /\bTOTAL\b/g, className: HL.pass },
   { pattern: /\(\d+%\)/g, className: HL.number },
   { pattern: /\bconf \d+%/g, className: HL.number },

@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../lib/utils';
 import {
-  artifactDisplayName,
+  artifactDisplayLabel,
   formatFileSizeBytes,
   formatIsoDateTime,
   artifactIconMeta,
@@ -21,7 +21,7 @@ function ArtifactTooltipContent({
   artifact: FileArtifact;
   sourceFileName: string;
 }) {
-  const displayName = artifactDisplayName(artifact.type);
+  const displayName = artifactDisplayLabel(artifact);
   const sizeStr = formatFileSizeBytes(artifact.fileSizeBytes ?? 0);
   const createdStr = formatIsoDateTime(artifact.createdAt);
   const locationStr = artifact.localPath ?? '—';
@@ -66,7 +66,7 @@ export function ExplorerArtifactRow({
   spacerColumns?: number;
 }) {
   const { anchorRef, hoverProps, renderTooltip } = useExplorerHoverTooltip();
-  const displayName = artifactDisplayName(artifact.type);
+  const displayName = artifactDisplayLabel(artifact);
   const { Icon, color } = artifactIconMeta(artifact.type);
   const tooltip = renderTooltip(
     <ArtifactTooltipContent artifact={artifact} sourceFileName={sourceFileName} />,
