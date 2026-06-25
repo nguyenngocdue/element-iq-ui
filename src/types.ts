@@ -191,5 +191,6 @@ export interface SessionState {
   overlaySplit: boolean;
   overlayTitles: boolean;
   overlayViewports: boolean;
+  overlayViewportCoords: boolean;
   overlayTags: boolean;
 }

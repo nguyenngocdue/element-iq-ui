@@ -22,7 +22,7 @@ import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { LoadingContent } from './LoadingScreen';
 import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
 import { useViewPanels } from '../hooks/use-view-panels';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid, Crosshair } from 'lucide-react';
 import { artifactDisplayLabel, artifactIconMeta, isJsonArtifactType } from '../lib/fileView';
 import { isGroutOverlayArtifactType } from '../lib/hydrateViewPanels';
 import { cn } from '../lib/utils';
@@ -186,6 +186,8 @@ function OverlayToolsBar({
   viewportsAvailable,
   showViewportOverlay,
   onToggleViewportOverlay,
+  showViewportCoords,
+  onToggleViewportCoords,
   hideQa = false,
 }: {
   showAnnotations: boolean;
@@ -202,6 +204,8 @@ function OverlayToolsBar({
   viewportsAvailable: boolean;
   showViewportOverlay: boolean;
   onToggleViewportOverlay: () => void;
+  showViewportCoords: boolean;
+  onToggleViewportCoords: () => void;
   hideQa?: boolean;
 }) {
   if (hideQa && !viewSplitAvailable && !titlesAvailable && !tagsAvailable && !viewportsAvailable) return null;
@@ -268,6 +272,17 @@ function OverlayToolsBar({
           <LayoutGrid className="w-3 h-3" /> Viewports
         </button>
       ) : null}
+      {viewportsAvailable ? (
+        <button
+          type="button"
+          onClick={onToggleViewportCoords}
+          className={btn(showViewportCoords)}
+          style={{ borderTopColor: showViewportCoords ? '#ffc800' : undefined }}
+          title="Show viewport bbox corners and sheet origin (analysis px)"
+        >
+          <Crosshair className="w-3 h-3" /> Coords
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -287,6 +302,7 @@ function PdfRenderer({
   showTagOverlay,
   tagNotes,
   showViewportOverlay,
+  showViewportCoords = false,
   viewPanels,
   onDimensionsLoaded,
   onRetryPdf,
@@ -305,6 +321,7 @@ function PdfRenderer({
   showTagOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
   showViewportOverlay?: boolean;
+  showViewportCoords?: boolean;
   viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
   onDimensionsLoaded?: (w: number, h: number) => void;
   onRetryPdf?: () => void;
@@ -501,13 +518,15 @@ function PdfRenderer({
         />
       ) : null}
 
-      {showViewportOverlay && hasViewPanelsData(viewPanels) && baseSize.w > 0 ? (
+      {(showViewportOverlay || showViewportCoords) && hasViewPanelsData(viewPanels) && baseSize.w > 0 ? (
         <ViewportOverlay
           data={viewPanels!}
           viewerWidth={baseSize.w}
           viewerHeight={baseSize.h}
           viewerScale={scale}
           unitScale={ANALYSIS_TO_PDF_UNIT}
+          showPanels={Boolean(showViewportOverlay)}
+          showCoords={showViewportCoords}
         />
       ) : null}
     </div>
@@ -532,6 +551,7 @@ function ArtifactViewer({
   showTagOverlay = false,
   viewPanels,
   showViewportOverlay = false,
+  showViewportCoords = false,
 }: {
   artifact: { id: string; type: string; downloadUrl: string; name: string };
   onClose: () => void;
@@ -550,6 +570,7 @@ function ArtifactViewer({
   showTagOverlay?: boolean;
   viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
   showViewportOverlay?: boolean;
+  showViewportCoords?: boolean;
 }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -776,13 +797,15 @@ function ArtifactViewer({
                   unitScale={1}
                 />
               ) : null}
-              {showViewportOverlay && hasViewPanelsData(viewPanels) && imgNaturalSize.w > 0 ? (
+              {(showViewportOverlay || showViewportCoords) && hasViewPanelsData(viewPanels) && imgNaturalSize.w > 0 ? (
                 <ViewportOverlay
                   data={viewPanels!}
                   viewerWidth={imgNaturalSize.w}
                   viewerHeight={imgNaturalSize.h}
                   viewerScale={scale}
                   unitScale={1}
+                  showPanels={showViewportOverlay}
+                  showCoords={showViewportCoords}
                 />
               ) : null}
             </div>
@@ -854,6 +877,7 @@ export function MainEditor() {
   const showTitleOverlay = state.overlayTitles;
   const showTagOverlay = state.overlayTags;
   const showViewportOverlay = state.overlayViewports;
+  const showViewportCoords = state.overlayViewportCoords;
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
 
   const { viewSplit } = useViewSplit(file);
@@ -1309,6 +1333,8 @@ export function MainEditor() {
               viewportsAvailable={viewportsAvailable}
               showViewportOverlay={showViewportOverlay}
               onToggleViewportOverlay={() => setViewerOverlay('viewports', !showViewportOverlay)}
+              showViewportCoords={showViewportCoords}
+              onToggleViewportCoords={() => setViewerOverlay('coords', !showViewportCoords)}
               hideQa={showingArtifact}
             />
           </div>
@@ -1334,6 +1360,7 @@ export function MainEditor() {
             showTagOverlay={showTagOverlay}
             viewPanels={viewPanelsWithCounts}
             showViewportOverlay={showViewportOverlay}
+            showViewportCoords={showViewportCoords}
           />
         ) : file ? (
         <div 
@@ -1371,6 +1398,7 @@ export function MainEditor() {
                showTagOverlay={showTagOverlay}
                tagNotes={tagNotes}
                showViewportOverlay={showViewportOverlay}
+               showViewportCoords={showViewportCoords}
                viewPanels={viewPanelsWithCounts}
             />
           </div>

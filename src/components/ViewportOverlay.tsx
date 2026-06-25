@@ -46,6 +46,10 @@ type ViewportOverlayProps = {
   viewerHeight: number;
   viewerScale: number;
   unitScale?: number;
+  /** Panel dashed boxes, labels, detached text spans. */
+  showPanels?: boolean;
+  /** Origin, sheet size, panel corner (x, y) in analysis px. */
+  showCoords?: boolean;
 };
 
 function panelColors(viewClass: string) {
@@ -224,9 +228,13 @@ function TextSpanBox({
 function PanelBox({
   panel,
   toScreen,
+  showPanels,
+  showCoords,
 }: {
   panel: ViewPanelItem;
   toScreen: (v: number) => number;
+  showPanels: boolean;
+  showCoords: boolean;
 }) {
   const [x1, y1, x2, y2] = panel.bbox_px;
   const left = toScreen(x1);
@@ -240,30 +248,40 @@ function PanelBox({
   const textHint =
     panel.text_count != null && panel.text_count > 0 ? ` · ${panel.text_count} text` : '';
 
+  if (!showPanels && !showCoords) return null;
+
   return (
     <div
       className="absolute pointer-events-none"
       style={{ left, top, width, height }}
     >
-      <div
-        className="absolute inset-0"
-        style={{
-          border: `2px dashed ${colors.border}`,
-          backgroundColor: colors.fill,
-        }}
-      />
-      <div
-        className={`absolute left-0 -top-5 px-1.5 py-0.5 text-[10px] font-mono text-white border rounded-sm whitespace-nowrap ${colors.chip}`}
-      >
-        {label}{textHint}
-      </div>
-      {panel.text_spans?.map((span) => (
-        <TextSpanBox key={`${panel.id}-${span.index}`} span={span} toScreen={toScreen} />
-      ))}
-      <PanelCorner localLeft={0} localTop={0} label={`(${x1}, ${y1})`} color={colors.border} placement="above" />
-      <PanelCorner localLeft={width} localTop={0} label={`(${x2}, ${y1})`} color={colors.border} placement="above" />
-      <PanelCorner localLeft={0} localTop={height} label={`(${x1}, ${y2})`} color={colors.border} placement="below" />
-      <PanelCorner localLeft={width} localTop={height} label={`(${x2}, ${y2})`} color={colors.border} placement="below" />
+      {showPanels ? (
+        <>
+          <div
+            className="absolute inset-0"
+            style={{
+              border: `2px dashed ${colors.border}`,
+              backgroundColor: colors.fill,
+            }}
+          />
+          <div
+            className={`absolute left-0 -top-5 px-1.5 py-0.5 text-[10px] font-mono text-white border rounded-sm whitespace-nowrap ${colors.chip}`}
+          >
+            {label}{textHint}
+          </div>
+          {panel.text_spans?.map((span) => (
+            <TextSpanBox key={`${panel.id}-${span.index}`} span={span} toScreen={toScreen} />
+          ))}
+        </>
+      ) : null}
+      {showCoords ? (
+        <>
+          <PanelCorner localLeft={0} localTop={0} label={`(${x1}, ${y1})`} color={colors.border} placement="above" />
+          <PanelCorner localLeft={width} localTop={0} label={`(${x2}, ${y1})`} color={colors.border} placement="above" />
+          <PanelCorner localLeft={0} localTop={height} label={`(${x1}, ${y2})`} color={colors.border} placement="below" />
+          <PanelCorner localLeft={width} localTop={height} label={`(${x2}, ${y2})`} color={colors.border} placement="below" />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -274,11 +292,15 @@ export function ViewportOverlay({
   viewerHeight,
   viewerScale,
   unitScale = 1,
+  showPanels = true,
+  showCoords = false,
 }: ViewportOverlayProps) {
   const toScreen = (v: number) => v * unitScale * viewerScale;
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
   const [sheetW, sheetH] = data.sheet_size_px;
+
+  if (!showPanels && !showCoords) return null;
 
   return (
     <div
@@ -286,12 +308,18 @@ export function ViewportOverlay({
       style={{ width: w, height: h }}
       aria-label="Viewports overlay"
     >
-      <OriginMarker toScreen={toScreen} />
-      {sheetW > 0 && sheetH > 0 ? (
+      {showCoords ? <OriginMarker toScreen={toScreen} /> : null}
+      {showCoords && sheetW > 0 && sheetH > 0 ? (
         <SheetBoundaryMarker sheetW={sheetW} sheetH={sheetH} toScreen={toScreen} />
       ) : null}
       {data.panels.map((panel) => (
-        <PanelBox key={panel.id} panel={panel} toScreen={toScreen} />
+        <PanelBox
+          key={panel.id}
+          panel={panel}
+          toScreen={toScreen}
+          showPanels={showPanels}
+          showCoords={showCoords}
+        />
       ))}
     </div>
   );
