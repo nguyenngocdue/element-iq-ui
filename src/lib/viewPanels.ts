@@ -1,10 +1,18 @@
 import type { Detection } from '../types';
-import { extractReportComponents } from './viewSplit';
+import { extractReportComponents, type ParsedViewSplit, type ViewSplitObject } from './viewSplit';
 
 /** Analysis raster px per PDF point (inverse of 72/300). */
 export const PDF_TO_ANALYSIS_UNIT = 300 / 72;
 
 export const GROUT_VIEWPORT_CLASSES = new Set(['plan_view', 'reinforcement_plan']);
+
+/** YOLO classes that are never grout view-split panels (even if title harvest is wrong). */
+export const NON_GROUT_VIEW_CLASSES = new Set([
+  'section_view',
+  'detail_view',
+  'rigging_diagram',
+  'title_block',
+]);
 
 export type ViewportTextSpan = {
   index: number;
@@ -83,15 +91,93 @@ function normalizeSheetLayout(
   };
 }
 
+export function parseViewPanelsFromLayoutJson(content: string | null | undefined): ParsedViewPanels | null {
+  if (!content) return null;
+  try {
+    const data = JSON.parse(content) as SheetLayoutBlock;
+    return normalizeSheetLayout(data);
+  } catch {
+    return null;
+  }
+}
+
+export function fileHasLayoutArtifacts(file: { artifacts?: { type: string }[] } | null | undefined): boolean {
+  return Boolean(
+    file?.artifacts?.some((a) => a.type === 'LAYOUT_JSON' || a.type === 'REPORT_JSON'),
+  );
+}
+
+export async function fetchViewPanelsForFile(
+  file: { artifacts?: { type: string; downloadUrl?: string }[] },
+  authFetch: (url: string) => Promise<Response>,
+): Promise<ParsedViewPanels | null> {
+  const reportArt = file.artifacts?.find((a) => a.type === 'REPORT_JSON');
+  if (reportArt?.downloadUrl) {
+    try {
+      const res = await authFetch(reportArt.downloadUrl);
+      if (res.ok) {
+        const parsed = parseViewPanelsFromReport(await res.text());
+        if (parsed) return parsed;
+      }
+    } catch {
+      // fall through to layout json
+    }
+  }
+  const layoutArt = file.artifacts?.find((a) => a.type === 'LAYOUT_JSON');
+  if (layoutArt?.downloadUrl) {
+    try {
+      const res = await authFetch(layoutArt.downloadUrl);
+      if (res.ok) {
+        return parseViewPanelsFromLayoutJson(await res.text());
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function parseViewPanelsFromReport(content: string | null | undefined): ParsedViewPanels | null {
   if (!content) return null;
   try {
     const data = JSON.parse(content) as unknown;
     if (typeof data === 'object' && data !== null) {
-      const record = data as { sheet_layout?: SheetLayoutBlock };
+      const record = data as {
+        sheet_layout?: SheetLayoutBlock;
+        viewport_text?: {
+          dpi?: number;
+          viewports?: Array<{
+            panel_id?: number;
+            panel_name?: string | null;
+            view_class?: string;
+            bbox_px?: [number, number, number, number];
+            text_spans?: ViewportTextSpan[];
+            text_count?: number;
+          }>;
+        };
+      };
       const spanMap = textSpansByPanelId(data);
       const fromTop = normalizeSheetLayout(record.sheet_layout, spanMap);
       if (fromTop) return fromTop;
+
+      const bindings = record.viewport_text?.viewports;
+      if (bindings?.length) {
+        const panels: ViewPanelItem[] = bindings.map((vp, idx) => ({
+          id: vp.panel_id ?? idx + 1,
+          name: vp.panel_name ?? null,
+          view_class: vp.view_class ?? 'unknown',
+          bbox_px: vp.bbox_px ?? [0, 0, 0, 0],
+          confidence: 1,
+          text_spans: vp.text_spans,
+          text_count: vp.text_count,
+        }));
+        return {
+          dpi: record.viewport_text?.dpi ?? 300,
+          sheet_size_px: [0, 0],
+          panels,
+          panel_count: panels.length,
+        };
+      }
     }
     return null;
   } catch {
@@ -152,6 +238,85 @@ export const VIEW_CLASS_TO_CANONICAL: Record<string, string> = {
   plan_view: 'PLAN AS CAST',
   reinforcement_plan: 'REINFORCEMENT PLAN',
 };
+
+/** Panels included in viewport-scoped view split (class or harvested title name). */
+export function isGroutViewSplitPanel(panel: ViewPanelItem): boolean {
+  if (panel.view_class === 'plan_view' || panel.view_class === 'reinforcement_plan') return true;
+  if (NON_GROUT_VIEW_CLASSES.has(panel.view_class)) return false;
+  const name = (panel.name ?? '').toUpperCase().trim();
+  if (!name) return false;
+  if (name === 'PLAN AS CAST' || name.startsWith('PLAN AS CAST')) return true;
+  if (name.includes('REINFORCEMENT')) return true;
+  return false;
+}
+
+/** Canonical PLAN / REINF label for overlay styling. */
+export function groutPanelCanonicalName(panel: ViewPanelItem): string {
+  const mapped = VIEW_CLASS_TO_CANONICAL[panel.view_class];
+  if (mapped) return mapped;
+  const name = (panel.name ?? '').toUpperCase().trim();
+  if (NON_GROUT_VIEW_CLASSES.has(panel.view_class)) {
+    return panel.name?.trim() || panel.view_class;
+  }
+  if (name.includes('REINFORCEMENT')) return 'REINFORCEMENT PLAN';
+  if (name.includes('PLAN AS CAST') || name === 'PLAN AS CAST') return 'PLAN AS CAST';
+  return panel.name ?? panel.view_class;
+}
+
+export function findGroutPlanPanel(panels: ViewPanelItem[]): ViewPanelItem | undefined {
+  const byClass = panels.find((p) => p.view_class === 'plan_view');
+  if (byClass) return byClass;
+  return panels.find(
+    (p) =>
+      !NON_GROUT_VIEW_CLASSES.has(p.view_class) &&
+      (p.name ?? '').toUpperCase().includes('PLAN AS CAST'),
+  );
+}
+
+export function findGroutReinfPanel(panels: ViewPanelItem[]): ViewPanelItem | undefined {
+  const byClass = panels.find((p) => p.view_class === 'reinforcement_plan');
+  if (byClass) return byClass;
+  return panels.find(
+    (p) =>
+      !NON_GROUT_VIEW_CLASSES.has(p.view_class) &&
+      (p.name ?? '').toUpperCase().includes('REINFORCEMENT'),
+  );
+}
+
+/** Label for overlay chip — harvested panel name when available. */
+export function viewportDisplayName(panel: ViewPanelItem): string {
+  const name = panel.name?.trim();
+  if (name) return name;
+  return groutPanelCanonicalName(panel);
+}
+
+function objectCenterAnalysisPx(obj: ViewSplitObject): [number, number] {
+  const [x1, y1, x2, y2] = obj.bbox;
+  return [(x1 + x2) / 2, (y1 + y2) / 2];
+}
+
+/** Grout tube count for a viewport panel (vision in bbox, then report objects, then view_regions). */
+export function tubeCountForGroutPanel(
+  panel: ViewPanelItem,
+  split: ParsedViewSplit | null,
+  objects: ViewSplitObject[] = [],
+): number {
+  if (panel.tube_count != null) return panel.tube_count;
+
+  const [x1, y1, x2, y2] = panel.bbox_px;
+  let inBbox = 0;
+  for (const obj of objects) {
+    const [cx, cy] = objectCenterAnalysisPx(obj);
+    if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) inBbox += 1;
+  }
+  if (inBbox > 0) return inBbox;
+
+  const canonical = groutPanelCanonicalName(panel);
+  const region = split?.viewRegions[canonical];
+  if (region?.tube_ids?.length) return region.tube_ids.length;
+
+  return 0;
+}
 
 /** Legacy helper — not used for panels but keeps parity with viewSplit exports. */
 export { extractReportComponents };

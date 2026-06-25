@@ -1,7 +1,12 @@
 import React from 'react';
 import {
-  GROUT_VIEWPORT_CLASSES,
+  findGroutPlanPanel,
+  findGroutReinfPanel,
+  groutPanelCanonicalName,
+  isGroutViewSplitPanel,
   ParsedViewPanels,
+  tubeCountForGroutPanel,
+  viewportDisplayName,
   ViewPanelItem,
 } from '../lib/viewPanels';
 import {
@@ -34,11 +39,6 @@ const VIEW_STYLES: Record<
   },
 };
 
-const VIEW_CLASS_TO_CANONICAL: Record<string, string> = {
-  plan_view: 'PLAN AS CAST',
-  reinforcement_plan: 'REINFORCEMENT PLAN',
-};
-
 function objectCenter(obj: ViewSplitObject): [number, number] {
   const [x1, y1, x2, y2] = obj.bbox;
   return [(x1 + x2) / 2, (y1 + y2) / 2];
@@ -52,10 +52,12 @@ function objectInPanel(obj: ViewSplitObject, panel: ViewPanelItem): boolean {
 
 function PanelViewSplitBox({
   panel,
+  split,
   toScreen,
   objects,
 }: {
   panel: ViewPanelItem;
+  split: ParsedViewSplit | null;
   toScreen: (v: number) => number;
   objects: ViewSplitObject[];
 }) {
@@ -64,7 +66,9 @@ function PanelViewSplitBox({
   const top = toScreen(y1);
   const width = toScreen(x2) - left;
   const height = toScreen(y2) - top;
-  const viewName = VIEW_CLASS_TO_CANONICAL[panel.view_class] ?? panel.view_class;
+  const viewName = groutPanelCanonicalName(panel);
+  const label = viewportDisplayName(panel);
+  const tubeCount = tubeCountForGroutPanel(panel, split, objects);
   const styles = VIEW_STYLES[viewName] ?? VIEW_STYLES['PLAN AS CAST'];
   const panelObjects = objects.filter((o) => objectInPanel(o, panel));
   const ambiguous = panelObjects.filter(
@@ -73,19 +77,30 @@ function PanelViewSplitBox({
 
   return (
     <div
-      className="absolute overflow-hidden"
+      className="absolute pointer-events-none"
       style={{ left, top, width, height }}
-      aria-label={`${viewName} viewport`}
+      aria-label={`${label} · ${tubeCount} grout tubes`}
     >
       <div
-        className="absolute inset-0"
+        className="absolute left-0 -top-5 px-2 py-0.5 text-[10px] font-bold font-mono text-white border rounded-sm whitespace-nowrap shadow-md max-w-[min(100%,320px)] truncate"
         style={{
-          backgroundColor: styles.fill,
-          border: `2px solid ${styles.border}`,
-          boxShadow: `inset 0 0 0 1px ${styles.border}40`,
+          borderColor: styles.border,
+          backgroundColor: `${styles.border}e8`,
         }}
-      />
-      {ambiguous.map((obj) => {
+      >
+        {label}
+        <span className="text-white/95"> · {tubeCount} tube{tubeCount === 1 ? '' : 's'}</span>
+      </div>
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundColor: styles.fill,
+            border: `2px solid ${styles.border}`,
+            boxShadow: `inset 0 0 0 1px ${styles.border}40`,
+          }}
+        />
+        {ambiguous.map((obj) => {
         const [ox1, oy1, ox2, oy2] = obj.bbox;
         const oLeft = toScreen(ox1) - left;
         const oTop = toScreen(oy1) - top;
@@ -106,6 +121,7 @@ function PanelViewSplitBox({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -163,9 +179,9 @@ export function ViewportScopedViewSplitOverlay({
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
 
-  const groutPanels = panels.panels.filter((p) => GROUT_VIEWPORT_CLASSES.has(p.view_class));
-  const planPanel = groutPanels.find((p) => p.view_class === 'plan_view');
-  const reinfPanel = groutPanels.find((p) => p.view_class === 'reinforcement_plan');
+  const groutPanels = panels.panels.filter(isGroutViewSplitPanel);
+  const planPanel = findGroutPlanPanel(groutPanels);
+  const reinfPanel = findGroutReinfPanel(groutPanels);
   const objects = split?.objects ?? [];
   const source = split?.source ?? 'viewport';
   const midX = split?.midX ?? null;
@@ -181,6 +197,7 @@ export function ViewportScopedViewSplitOverlay({
         <PanelViewSplitBox
           key={panel.id}
           panel={panel}
+          split={split}
           toScreen={toScreen}
           objects={objects}
         />
@@ -219,5 +236,5 @@ export function ViewportScopedViewSplitOverlay({
 }
 
 export function hasGroutViewportPanels(panels: ParsedViewPanels | null | undefined): boolean {
-  return Boolean(panels?.panels?.some((p) => GROUT_VIEWPORT_CLASSES.has(p.view_class)));
+  return Boolean(panels?.panels?.some(isGroutViewSplitPanel));
 }

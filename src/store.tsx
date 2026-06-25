@@ -4,7 +4,7 @@ import { dedupeArtifactsForDisplay, filterArtifactsForFile } from './lib/fileVie
 import { parseViewSplitFromAnalysis, parseViewSplitFromReport } from './lib/viewSplit';
 import { parseTagNotesFromAnalysis, parseTagNotesFromReport } from './lib/tagNotes';
 import { parseViewTitlesFromAnalysis, parseViewTitlesFromReport } from './lib/viewTitles';
-import { parseViewPanelsFromReport } from './lib/viewPanels';
+import { fetchViewPanelsForFile, parseViewPanelsFromReport } from './lib/viewPanels';
 import {
   hasAnalysisPayload,
   mapOverallToFileStatus,
@@ -1970,6 +1970,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // Report JSON optional for overlay; ignore fetch errors
         }
+      }
+      if (!viewPanels?.panels?.length) {
+        viewPanels = await fetchViewPanelsForFile(
+          { artifacts: artifacts.map((a) => ({ type: a.type, downloadUrl: a.downloadUrl })) },
+          (url) => authFetch(url, fetchOpts),
+        );
       }
 
       updateFileStatus(id, {

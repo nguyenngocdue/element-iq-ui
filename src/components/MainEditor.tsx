@@ -15,7 +15,7 @@ import { useViewSplit } from '../hooks/use-view-split';
 import { useViewTitles } from '../hooks/use-view-titles';
 import { useTagNotes } from '../hooks/use-tag-notes';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
-import { enrichViewPanelsWithTubeCounts } from '../lib/viewPanels';
+import { enrichViewPanelsWithTubeCounts, fileHasLayoutArtifacts } from '../lib/viewPanels';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
@@ -278,6 +278,7 @@ function PdfRenderer({
   scale,
   showAnnotations,
   showViewSplitOverlay,
+  showLegacyViewSplit = false,
   viewSplit,
   viewportScopedSplit,
   viewPanelsWithCounts,
@@ -295,6 +296,7 @@ function PdfRenderer({
   scale: number;
   showAnnotations: boolean;
   showViewSplitOverlay?: boolean;
+  showLegacyViewSplit?: boolean;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   viewportScopedSplit?: boolean;
   viewPanelsWithCounts?: import('../lib/viewPanels').ParsedViewPanels | null;
@@ -469,7 +471,7 @@ function PdfRenderer({
         />
       ) : null}
 
-      {showViewSplitOverlay && !viewportScopedSplit && viewSplit && baseSize.w > 0 ? (
+      {showLegacyViewSplit && viewSplit && baseSize.w > 0 ? (
         <ViewSplitOverlay
           split={viewSplit}
           viewerWidth={baseSize.w}
@@ -521,6 +523,7 @@ function ArtifactViewer({
   onImageDimensions,
   viewSplit,
   showViewSplitOverlay = false,
+  showLegacyViewSplit = false,
   viewportScopedSplit = false,
   viewPanelsWithCounts,
   viewTitles,
@@ -538,6 +541,7 @@ function ArtifactViewer({
   onImageDimensions?: (w: number, h: number) => void;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   showViewSplitOverlay?: boolean;
+  showLegacyViewSplit?: boolean;
   viewportScopedSplit?: boolean;
   viewPanelsWithCounts?: import('../lib/viewPanels').ParsedViewPanels | null;
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
@@ -745,7 +749,7 @@ function ArtifactViewer({
                   unitScale={1}
                 />
               ) : null}
-              {showViewSplitOverlay && !viewportScopedSplit && viewSplit && imgNaturalSize.w > 0 ? (
+              {showLegacyViewSplit && viewSplit && imgNaturalSize.w > 0 ? (
                 <ViewSplitOverlay
                   split={viewSplit}
                   viewerWidth={imgNaturalSize.w}
@@ -855,7 +859,7 @@ export function MainEditor() {
   const { viewSplit } = useViewSplit(file);
   const { viewTitles } = useViewTitles(file);
   const { tagNotes } = useTagNotes(file);
-  const { viewPanels } = useViewPanels(file);
+  const { viewPanels, loading: viewPanelsLoading } = useViewPanels(file);
   const viewPanelsWithCounts = React.useMemo(() => {
     if (!hasViewPanelsData(viewPanels) || !file?.detections?.length) return viewPanels;
     return enrichViewPanelsWithTubeCounts(viewPanels, file.detections, state.activePage || 1);
@@ -864,6 +868,12 @@ export function MainEditor() {
   const tagsAvailable = hasTagNotesData(tagNotes);
   const viewportsAvailable = hasViewPanelsData(viewPanels);
   const viewportScopedSplit = hasGroutViewportPanels(viewPanelsWithCounts);
+  const showLegacyViewSplit =
+    showViewSplitOverlay &&
+    !viewportScopedSplit &&
+    Boolean(viewSplit) &&
+    !viewPanelsLoading &&
+    !fileHasLayoutArtifacts(file);
   const viewSplitAvailable = viewportScopedSplit || Boolean(viewSplit);
 
   const primaryZoomKey = showingArtifact && state.activeArtifact
@@ -1315,6 +1325,7 @@ export function MainEditor() {
             onImageDimensions={(w, h) => setPngDimensions({ w, h })}
             viewSplit={viewSplit}
             showViewSplitOverlay={showViewSplitOverlay}
+            showLegacyViewSplit={showLegacyViewSplit}
             viewportScopedSplit={viewportScopedSplit}
             viewPanelsWithCounts={viewPanelsWithCounts}
             viewTitles={viewTitles}
@@ -1351,6 +1362,7 @@ export function MainEditor() {
                onRetryPdf={() => retryPdfLoad(file.id)}
                showAnnotations={showAnnotations}
                showViewSplitOverlay={showViewSplitOverlay}
+               showLegacyViewSplit={showLegacyViewSplit}
                viewSplit={viewSplit}
                viewportScopedSplit={viewportScopedSplit}
                viewPanelsWithCounts={viewPanelsWithCounts}
