@@ -458,6 +458,33 @@ async function prefetchProjectPdf(
   }
 }
 
+export type DeleteFilesOptions = {
+  /** Remove drawing PDF + file record from the project. Default true. */
+  removeFile?: boolean;
+  /** Delete jobs, artifacts, and analysis rows (Supabase + disk). Default true. */
+  purgeAnalysis?: boolean;
+};
+
+function analysisResetPatch(): Partial<DocumentFile> {
+  return {
+    status: 'PENDING',
+    overallStatus: undefined,
+    passRate: undefined,
+    detections: [],
+    validationAnnotations: undefined,
+    tubeCount: undefined,
+    analyzedComponents: undefined,
+    analysisJobId: undefined,
+    analysisProgress: undefined,
+    analysisStage: undefined,
+    artifacts: [],
+    viewSplit: undefined,
+    viewTitles: undefined,
+    tagNotes: undefined,
+    viewPanels: undefined,
+  };
+}
+
 interface AppContextType {
   state: SessionState;
   addFiles: (files: File[]) => void;
@@ -476,8 +503,15 @@ interface AppContextType {
   toggleSidebar: () => void;
   toggleValidation: () => void;
   setConfidenceThreshold: (val: number) => void;
-  clearSession: (onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
-  deleteFiles: (ids: string[], onProgress?: (current: number, total: number, filename: string) => void) => Promise<void>;
+  clearSession: (
+    onProgress?: (current: number, total: number, filename: string) => void,
+    options?: DeleteFilesOptions,
+  ) => Promise<void>;
+  deleteFiles: (
+    ids: string[],
+    onProgress?: (current: number, total: number, filename: string) => void,
+    options?: DeleteFilesOptions,
+  ) => Promise<void>;
   renameFile: (id: string, newName: string) => Promise<void>;
   updateFileStatus: (id: string, updates: Partial<DocumentFile>) => void;
   analyzeFile: (id: string, opts?: { workerId?: number }) => Promise<void>;
@@ -1681,35 +1715,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteFiles = useCallback(async (
     ids: string[],
     onProgress?: (current: number, total: number, filename: string) => void,
+    options?: DeleteFilesOptions,
   ) => {
     if (ids.length === 0) return;
+    const removeFile = options?.removeFile ?? true;
+    const purgeAnalysis = options?.purgeAnalysis ?? true;
+    if (!removeFile && !purgeAnalysis) return;
+
     const idSet = new Set(ids);
     const filesToDelete = state.files.filter((f) => idSet.has(f.id));
     const total = filesToDelete.length;
     const { authFetch } = await import('./lib/supabase');
 
     const deletedIds: string[] = [];
+    const analysisClearedIds: string[] = [];
     const failures: string[] = [];
 
     for (let i = 0; i < filesToDelete.length; i++) {
       const f = filesToDelete[i];
       onProgress?.(i + 1, total, f.name);
       try {
-        const res = await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
-        if (!res.ok) {
-          let message = `HTTP ${res.status}`;
-          try {
-            const body = await res.json();
-            if (body.detail) {
-              message = typeof body.detail === 'string' ? body.detail : message;
-            }
-          } catch { /* ignore */ }
-          failures.push(`${f.name}: ${message}`);
-          continue;
+        if (removeFile) {
+          const res = await authFetch(`/api/v1/files/${f.id}`, { method: 'DELETE' });
+          if (!res.ok) {
+            let message = `HTTP ${res.status}`;
+            try {
+              const body = await res.json();
+              if (body.detail) {
+                message = typeof body.detail === 'string' ? body.detail : message;
+              }
+            } catch { /* ignore */ }
+            failures.push(`${f.name}: ${message}`);
+            continue;
+          }
+          deletedIds.push(f.id);
+        } else if (purgeAnalysis) {
+          const res = await authFetch(`/api/v1/files/${f.id}/analysis`, { method: 'DELETE' });
+          if (!res.ok) {
+            let message = `HTTP ${res.status}`;
+            try {
+              const body = await res.json();
+              if (body.detail) {
+                message = typeof body.detail === 'string' ? body.detail : message;
+              }
+            } catch { /* ignore */ }
+            failures.push(`${f.name}: ${message}`);
+            continue;
+          }
+          analysisClearedIds.push(f.id);
         }
-        deletedIds.push(f.id);
       } catch (err) {
         failures.push(`${f.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (analysisClearedIds.length > 0) {
+      const clearedSet = new Set(analysisClearedIds);
+      setState((prev) => {
+        const dropArtifact =
+          prev.activeArtifact?.sourceFileId && clearedSet.has(prev.activeArtifact.sourceFileId);
+        return {
+          ...prev,
+          files: prev.files.map((file) =>
+            clearedSet.has(file.id) ? { ...file, ...analysisResetPatch() } : file,
+          ),
+          activeArtifact: dropArtifact ? null : prev.activeArtifact,
+          editorView: dropArtifact ? 'pdf' : prev.editorView,
+        };
+      });
+      const projectId = stateRef.current.activeProject?.id;
+      if (projectId) {
+        void syncProjectSessionCache(projectId);
       }
     }
 
@@ -1753,8 +1829,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.files, syncProjectSessionCache]);
 
-  const clearSession = useCallback(async (onProgress?: (current: number, total: number, filename: string) => void) => {
-    await deleteFiles(state.files.map((f) => f.id), onProgress);
+  const clearSession = useCallback(async (
+    onProgress?: (current: number, total: number, filename: string) => void,
+    options?: DeleteFilesOptions,
+  ) => {
+    await deleteFiles(state.files.map((f) => f.id), onProgress, options);
   }, [state.files, deleteFiles]);
 
   const renameFile = useCallback(async (id: string, newName: string) => {

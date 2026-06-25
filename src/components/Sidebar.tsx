@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useApp } from '../store';
+import { useApp, type DeleteFilesOptions } from '../store';
 import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ExplorerFilesLoading } from './ProjectLoadingScreen';
@@ -29,12 +29,35 @@ import {
   ExplorerTooltipRow,
   useExplorerHoverTooltip,
 } from '../hooks/useExplorerHoverTooltip';
-import { ConfirmDialog } from './ConfirmDialog';
+import { ConfirmDialog, type ConfirmDialogOption } from './ConfirmDialog';
 import { ExplorerArtifactRow } from './ExplorerArtifactRow';
 import { HoverTooltip } from './HoverTooltip';
 import { ProjectTooltipContent } from './tooltipContent';
 import { ExplorerViewMenu } from './ExplorerViewMenu';
 import { TreeRow } from './TreeRow';
+
+const DELETE_DIALOG_OPTIONS: ConfirmDialogOption[] = [
+  {
+    id: 'removeFile',
+    label: 'Remove drawing file from project',
+    description: 'Deletes the PDF from this project.',
+    defaultChecked: true,
+  },
+  {
+    id: 'purgeAnalysis',
+    label: 'Delete analysis data (artifacts, jobs, Supabase records)',
+    description: 'Removes annotated PNG/PDF, report JSON, jobs, and related database rows.',
+    defaultChecked: true,
+  },
+];
+
+function resolveDeleteOptions(values?: Record<string, boolean>): DeleteFilesOptions {
+  const removeFile = values?.removeFile !== false;
+  return {
+    removeFile,
+    purgeAnalysis: removeFile ? true : values?.purgeAnalysis !== false,
+  };
+}
 
 export function Sidebar() {
   const {
@@ -58,6 +81,8 @@ export function Sidebar() {
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showRemoveOneDialog, setShowRemoveOneDialog] = useState(false);
+  const [showClearAnalysisDialog, setShowClearAnalysisDialog] = useState(false);
+  const [clearAnalysisIds, setClearAnalysisIds] = useState<string[]>([]);
   const [removeOneFileId, setRemoveOneFileId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -284,6 +309,10 @@ export function Sidebar() {
             onRemove={(id) => {
               setRemoveOneFileId(id);
               setShowRemoveOneDialog(true);
+            }}
+            onClearAnalysis={(id) => {
+              setClearAnalysisIds([id]);
+              setShowClearAnalysisDialog(true);
             }}
             isSelected={selectedFileIds.has(file.id)}
             onToggleSelect={() => {
@@ -684,7 +713,7 @@ export function Sidebar() {
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-[#ccc]">Remove selected drawings</p>
                 <p className="text-[10px] text-[#858585] mt-1 leading-snug">
-                  Click files below or use checkboxes, then remove them from the project.
+                  Remove files or clear analysis only. Use Remove for checkbox options.
                 </p>
               </div>
               <button
@@ -716,6 +745,19 @@ export function Sidebar() {
                 className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
               >
                 Deselect
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedInViewCount === 0) return;
+                  const ids = selectableFileIds.filter((id) => selectedFileIds.has(id));
+                  setClearAnalysisIds(ids);
+                  setShowClearAnalysisDialog(true);
+                }}
+                disabled={selectedInViewCount === 0}
+                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+              >
+                Clear analysis{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
               <button
                 type="button"
@@ -888,18 +930,20 @@ export function Sidebar() {
       <ConfirmDialog
         open={showClearAllDialog}
         title="Clear All Files"
-        description={`Delete all ${state.files.length} file(s) from this project? All analysis data will be permanently removed.`}
-        confirmLabel="Clear All"
+        description={`Choose what to remove for all ${state.files.length} file(s) in this project.`}
+        confirmLabel="Confirm"
         variant="danger"
         loading={clearLoading}
         progressText={clearProgress}
-        onConfirm={async () => {
+        options={DELETE_DIALOG_OPTIONS}
+        onConfirm={async (values) => {
+          const opts = resolveDeleteOptions(values);
           setClearLoading(true);
-          setClearProgress(`Deleting ${state.files.length} file(s)...`);
+          setClearProgress(`Processing ${state.files.length} file(s)...`);
           try {
             await clearSession((current, total, filename) => {
-              setClearProgress(`Deleting "${filename}" (${current}/${total})`);
-            });
+              setClearProgress(`Processing "${filename}" (${current}/${total})`);
+            }, opts);
             setShowClearAllDialog(false);
             exitBulkMode();
           } catch (err) {
@@ -914,19 +958,21 @@ export function Sidebar() {
       <ConfirmDialog
         open={showDeleteSelectedDialog}
         title="Remove Selected Files"
-        description={`Delete ${selectedInViewCount} selected file(s) from this project? Analysis data for these files will be permanently removed.`}
-        confirmLabel="Remove"
+        description={`Choose what to remove for ${selectedInViewCount} selected file(s).`}
+        confirmLabel="Confirm"
         variant="danger"
         loading={clearLoading}
         progressText={clearProgress}
-        onConfirm={async () => {
+        options={DELETE_DIALOG_OPTIONS}
+        onConfirm={async (values) => {
           const ids = selectableFileIds.filter((id) => selectedFileIds.has(id));
+          const opts = resolveDeleteOptions(values);
           setClearLoading(true);
-          setClearProgress(`Deleting ${ids.length} file(s)...`);
+          setClearProgress(`Processing ${ids.length} file(s)...`);
           try {
             await deleteFiles(ids, (current, total, filename) => {
-              setClearProgress(`Deleting "${filename}" (${current}/${total})`);
-            });
+              setClearProgress(`Processing "${filename}" (${current}/${total})`);
+            }, opts);
             setShowDeleteSelectedDialog(false);
             exitBulkMode();
           } catch (err) {
@@ -941,19 +987,21 @@ export function Sidebar() {
       <ConfirmDialog
         open={showRemoveOneDialog}
         title="Remove File"
-        description={`Delete "${state.files.find((f) => f.id === removeOneFileId)?.name ?? 'this file'}" from the project? All analysis data will be permanently removed.`}
-        confirmLabel="Remove"
+        description={`Choose what to remove for "${state.files.find((f) => f.id === removeOneFileId)?.name ?? 'this file'}".`}
+        confirmLabel="Confirm"
         variant="danger"
         loading={clearLoading}
         progressText={clearProgress}
-        onConfirm={async () => {
+        options={DELETE_DIALOG_OPTIONS}
+        onConfirm={async (values) => {
           if (!removeOneFileId) return;
+          const opts = resolveDeleteOptions(values);
           setClearLoading(true);
-          setClearProgress('Deleting file...');
+          setClearProgress('Processing file...');
           try {
             await deleteFiles([removeOneFileId], (_c, _t, filename) => {
-              setClearProgress(`Deleting "${filename}"...`);
-            });
+              setClearProgress(`Processing "${filename}"...`);
+            }, opts);
             setShowRemoveOneDialog(false);
             setRemoveOneFileId(null);
           } catch (err) {
@@ -965,6 +1013,41 @@ export function Sidebar() {
         onCancel={() => {
           setShowRemoveOneDialog(false);
           setRemoveOneFileId(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={showClearAnalysisDialog}
+        title="Clear Analysis Data"
+        description={
+          clearAnalysisIds.length <= 1
+            ? `Delete artifacts, jobs, and database records for "${state.files.find((f) => f.id === clearAnalysisIds[0])?.name ?? 'this file'}"? The PDF stays in the project.`
+            : `Delete analysis data for ${clearAnalysisIds.length} file(s)? PDFs stay in the project; status resets to Ready.`
+        }
+        confirmLabel="Clear Analysis"
+        variant="warning"
+        loading={clearLoading}
+        progressText={clearProgress}
+        onConfirm={async () => {
+          if (clearAnalysisIds.length === 0) return;
+          setClearLoading(true);
+          setClearProgress(`Clearing ${clearAnalysisIds.length} file(s)...`);
+          try {
+            await deleteFiles(clearAnalysisIds, (current, total, filename) => {
+              setClearProgress(`Clearing "${filename}" (${current}/${total})`);
+            }, { removeFile: false, purgeAnalysis: true });
+            setShowClearAnalysisDialog(false);
+            setClearAnalysisIds([]);
+            exitBulkMode();
+          } catch (err) {
+            setClearProgress(err instanceof Error ? err.message : 'Clear analysis failed');
+          } finally {
+            setClearLoading(false);
+          }
+        }}
+        onCancel={() => {
+          setShowClearAnalysisDialog(false);
+          setClearAnalysisIds([]);
         }}
       />
 
@@ -1054,6 +1137,7 @@ export function FileItem({
   canManage = false,
   onRename,
   onRemove,
+  onClearAnalysis,
   isSelected = false,
   onToggleSelect,
 }: {
@@ -1079,6 +1163,7 @@ export function FileItem({
   canManage?: boolean;
   onRename?: (id: string, name: string) => void;
   onRemove?: (id: string) => void;
+  onClearAnalysis?: (id: string) => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
 }) {
@@ -1148,6 +1233,10 @@ export function FileItem({
   }, [menuOpen]);
   const isAnalyzing = file.status === 'ANALYZING';
   const isUploading = file.status === 'UPLOADING';
+  const canClearAnalysis =
+    file.status !== 'PENDING'
+    && file.status !== 'UPLOADING'
+    && file.status !== 'ANALYZING';
   const runningRowClass = isAnalyzing
     ? 'bg-[#10b981]/15 text-[#d1fae5] border-l-2 border-[#10b981]'
     : isUploading
@@ -1284,6 +1373,20 @@ export function FileItem({
               >
                 <Pencil className="w-3 h-3 shrink-0" /> Rename
               </button>
+              {canClearAnalysis && (
+                <button
+                  type="button"
+                  disabled={selectDisabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    onClearAnalysis?.(file.id);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#f59e0b] hover:bg-[#f59e0b]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="w-3 h-3 shrink-0" /> Clear analysis
+                </button>
+              )}
               <button
                 type="button"
                 disabled={selectDisabled}
