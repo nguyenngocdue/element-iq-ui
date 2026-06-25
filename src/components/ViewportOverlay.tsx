@@ -1,5 +1,9 @@
 import React from 'react';
-import { ParsedViewPanels, ViewPanelItem, ViewportTextSpan } from '../lib/viewPanels';
+import {
+  ParsedViewPanels,
+  ViewPanelItem,
+  ViewportTextSpan,
+} from '../lib/viewPanels';
 
 const PANEL_COLORS: Record<string, { border: string; fill: string; chip: string }> = {
   plan_view: {

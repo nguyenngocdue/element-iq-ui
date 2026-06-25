@@ -58,6 +58,7 @@ export const VIEW_CONFIDENCE_THRESHOLD = 0.75;
 export const VIEW_SOURCE_LABELS: Record<string, string> = {
   consensus: 'Title + geometry agree',
   title: 'Title midpoint only',
+  viewport: 'Layout panel boundary',
   none: 'No tagged views',
 };
 

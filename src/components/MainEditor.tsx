@@ -4,13 +4,18 @@ import { useApp } from '../store';
 import { usePerViewZoom, zoomKeyForArtifact, zoomKeyForFile } from '../hooks/usePerViewZoom';
 import { attachPaneWheelZoom } from '../lib/paneWheelZoom';
 import { ReportJsonPanel } from './ReportJsonPanel';
-import { ViewSplitOverlay } from './ViewSplitOverlay';
 import { TitleOverlay, hasViewTitlesData } from './TitleOverlay';
 import { TagOverlay, hasTagNotesData } from './TagOverlay';
+import { ViewSplitOverlay } from './ViewSplitOverlay';
+import {
+  ViewportScopedViewSplitOverlay,
+  hasGroutViewportPanels,
+} from './ViewportScopedViewSplitOverlay';
 import { useViewSplit } from '../hooks/use-view-split';
 import { useViewTitles } from '../hooks/use-view-titles';
 import { useTagNotes } from '../hooks/use-tag-notes';
 import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
+import { enrichViewPanelsWithTubeCounts } from '../lib/viewPanels';
 import { analysisOperationFromProgress, ELEMENTIQ_ENGINE } from '../lib/engineBranding';
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
@@ -169,7 +174,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
 function OverlayToolsBar({
   showAnnotations,
   onToggleAnnotations,
-  viewSplit,
+  viewSplitAvailable,
   showViewSplitOverlay,
   onToggleViewSplit,
   titlesAvailable,
@@ -185,7 +190,7 @@ function OverlayToolsBar({
 }: {
   showAnnotations: boolean;
   onToggleAnnotations: () => void;
-  viewSplit: import('../lib/viewSplit').ParsedViewSplit | null;
+  viewSplitAvailable: boolean;
   showViewSplitOverlay: boolean;
   onToggleViewSplit: () => void;
   titlesAvailable: boolean;
@@ -199,7 +204,7 @@ function OverlayToolsBar({
   onToggleViewportOverlay: () => void;
   hideQa?: boolean;
 }) {
-  if (hideQa && !viewSplit && !titlesAvailable && !tagsAvailable && !viewportsAvailable) return null;
+  if (hideQa && !viewSplitAvailable && !titlesAvailable && !tagsAvailable && !viewportsAvailable) return null;
 
   const btn = (active: boolean) =>
     cn(
@@ -219,13 +224,13 @@ function OverlayToolsBar({
           <ShieldCheck className="w-3 h-3" /> QA Overlay
         </button>
       ) : null}
-      {viewSplit ? (
+      {viewSplitAvailable ? (
         <button
           type="button"
           onClick={onToggleViewSplit}
           className={btn(showViewSplitOverlay)}
           style={{ borderTopColor: showViewSplitOverlay ? '#ffc800' : undefined }}
-          title="Toggle PLAN / REINFORCEMENT boundary"
+          title="PLAN / REINFORCEMENT shading per viewport (no full-sheet line)"
         >
           <Columns2 className="w-3 h-3" /> View Split
         </button>
@@ -258,7 +263,7 @@ function OverlayToolsBar({
           onClick={onToggleViewportOverlay}
           className={btn(showViewportOverlay)}
           style={{ borderTopColor: showViewportOverlay ? '#4ade80' : undefined }}
-          title="Show detected view panel boundaries"
+          title="Show view panel boundaries (layout debug)"
         >
           <LayoutGrid className="w-3 h-3" /> Viewports
         </button>
@@ -274,6 +279,8 @@ function PdfRenderer({
   showAnnotations,
   showViewSplitOverlay,
   viewSplit,
+  viewportScopedSplit,
+  viewPanelsWithCounts,
   showTitleOverlay,
   viewTitles,
   showTagOverlay,
@@ -289,6 +296,8 @@ function PdfRenderer({
   showAnnotations: boolean;
   showViewSplitOverlay?: boolean;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
+  viewportScopedSplit?: boolean;
+  viewPanelsWithCounts?: import('../lib/viewPanels').ParsedViewPanels | null;
   showTitleOverlay?: boolean;
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   showTagOverlay?: boolean;
@@ -449,7 +458,18 @@ function PdfRenderer({
         </div>
       ))}
 
-      {showViewSplitOverlay && viewSplit && baseSize.w > 0 ? (
+      {showViewSplitOverlay && viewportScopedSplit && viewPanelsWithCounts && baseSize.w > 0 ? (
+        <ViewportScopedViewSplitOverlay
+          panels={viewPanelsWithCounts}
+          split={viewSplit ?? null}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+        />
+      ) : null}
+
+      {showViewSplitOverlay && !viewportScopedSplit && viewSplit && baseSize.w > 0 ? (
         <ViewSplitOverlay
           split={viewSplit}
           viewerWidth={baseSize.w}
@@ -500,7 +520,9 @@ function ArtifactViewer({
   onScaleChange,
   onImageDimensions,
   viewSplit,
-  showViewSplitOverlay = true,
+  showViewSplitOverlay = false,
+  viewportScopedSplit = false,
+  viewPanelsWithCounts,
   viewTitles,
   showTitleOverlay = false,
   tagNotes,
@@ -516,6 +538,8 @@ function ArtifactViewer({
   onImageDimensions?: (w: number, h: number) => void;
   viewSplit?: import('../lib/viewSplit').ParsedViewSplit | null;
   showViewSplitOverlay?: boolean;
+  viewportScopedSplit?: boolean;
+  viewPanelsWithCounts?: import('../lib/viewPanels').ParsedViewPanels | null;
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   showTitleOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
@@ -711,7 +735,17 @@ function ArtifactViewer({
                   display: 'block',
                 }}
               />
-              {showViewSplitOverlay && viewSplit && imgNaturalSize.w > 0 ? (
+              {showViewSplitOverlay && viewportScopedSplit && viewPanelsWithCounts && imgNaturalSize.w > 0 ? (
+                <ViewportScopedViewSplitOverlay
+                  panels={viewPanelsWithCounts}
+                  split={viewSplit ?? null}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                />
+              ) : null}
+              {showViewSplitOverlay && !viewportScopedSplit && viewSplit && imgNaturalSize.w > 0 ? (
                 <ViewSplitOverlay
                   split={viewSplit}
                   viewerWidth={imgNaturalSize.w}
@@ -822,9 +856,15 @@ export function MainEditor() {
   const { viewTitles } = useViewTitles(file);
   const { tagNotes } = useTagNotes(file);
   const { viewPanels } = useViewPanels(file);
+  const viewPanelsWithCounts = React.useMemo(() => {
+    if (!hasViewPanelsData(viewPanels) || !file?.detections?.length) return viewPanels;
+    return enrichViewPanelsWithTubeCounts(viewPanels, file.detections, state.activePage || 1);
+  }, [viewPanels, file?.detections, state.activePage]);
   const titlesAvailable = hasViewTitlesData(viewTitles);
   const tagsAvailable = hasTagNotesData(tagNotes);
   const viewportsAvailable = hasViewPanelsData(viewPanels);
+  const viewportScopedSplit = hasGroutViewportPanels(viewPanelsWithCounts);
+  const viewSplitAvailable = viewportScopedSplit || Boolean(viewSplit);
 
   const primaryZoomKey = showingArtifact && state.activeArtifact
     ? zoomKeyForArtifact(state.activeArtifact.id)
@@ -1247,7 +1287,7 @@ export function MainEditor() {
             <OverlayToolsBar
               showAnnotations={showAnnotations}
               onToggleAnnotations={() => setViewerOverlay('qa', !showAnnotations)}
-              viewSplit={viewSplit}
+              viewSplitAvailable={viewSplitAvailable}
               showViewSplitOverlay={showViewSplitOverlay}
               onToggleViewSplit={() => setViewerOverlay('split', !showViewSplitOverlay)}
               titlesAvailable={titlesAvailable}
@@ -1275,11 +1315,13 @@ export function MainEditor() {
             onImageDimensions={(w, h) => setPngDimensions({ w, h })}
             viewSplit={viewSplit}
             showViewSplitOverlay={showViewSplitOverlay}
+            viewportScopedSplit={viewportScopedSplit}
+            viewPanelsWithCounts={viewPanelsWithCounts}
             viewTitles={viewTitles}
             showTitleOverlay={showTitleOverlay}
             tagNotes={tagNotes}
             showTagOverlay={showTagOverlay}
-            viewPanels={viewPanels}
+            viewPanels={viewPanelsWithCounts}
             showViewportOverlay={showViewportOverlay}
           />
         ) : file ? (
@@ -1310,12 +1352,14 @@ export function MainEditor() {
                showAnnotations={showAnnotations}
                showViewSplitOverlay={showViewSplitOverlay}
                viewSplit={viewSplit}
+               viewportScopedSplit={viewportScopedSplit}
+               viewPanelsWithCounts={viewPanelsWithCounts}
                showTitleOverlay={showTitleOverlay}
                viewTitles={viewTitles}
                showTagOverlay={showTagOverlay}
                tagNotes={tagNotes}
                showViewportOverlay={showViewportOverlay}
-               viewPanels={viewPanels}
+               viewPanels={viewPanelsWithCounts}
             />
           </div>
         </div>

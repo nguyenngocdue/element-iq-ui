@@ -1,4 +1,10 @@
+import type { Detection } from '../types';
 import { extractReportComponents } from './viewSplit';
+
+/** Analysis raster px per PDF point (inverse of 72/300). */
+export const PDF_TO_ANALYSIS_UNIT = 300 / 72;
+
+export const GROUT_VIEWPORT_CLASSES = new Set(['plan_view', 'reinforcement_plan']);
 
 export type ViewportTextSpan = {
   index: number;
@@ -16,6 +22,8 @@ export type ViewPanelItem = {
   /** PDF text lines detached into this viewport (from viewport_text bindings). */
   text_spans?: ViewportTextSpan[];
   text_count?: number;
+  /** Tubes whose center falls inside this panel bbox (analysis px). */
+  tube_count?: number;
 };
 
 export type ParsedViewPanels = {
@@ -94,6 +102,56 @@ export function parseViewPanelsFromReport(content: string | null | undefined): P
 export function hasViewPanelsData(data: ParsedViewPanels | null | undefined): data is ParsedViewPanels {
   return Boolean(data?.panels?.length);
 }
+
+function detectionCenterAnalysisPx(d: Detection): [number, number] {
+  const cx = (d.x + d.width / 2) * PDF_TO_ANALYSIS_UNIT;
+  const cy = (d.y + d.height / 2) * PDF_TO_ANALYSIS_UNIT;
+  return [cx, cy];
+}
+
+function pointInBBox(px: number, py: number, bbox: [number, number, number, number]): boolean {
+  const [x1, y1, x2, y2] = bbox;
+  return px >= x1 && px <= x2 && py >= y1 && py <= y2;
+}
+
+/** Count tube detections whose center lies inside each panel bbox (300 dpi px). */
+export function countTubesPerPanel(
+  panels: ViewPanelItem[],
+  detections: Detection[],
+  page = 1,
+): Map<number, number> {
+  const map = new Map<number, number>();
+  const pageDets = detections.filter((d) => d.page === page);
+  for (const panel of panels) {
+    let count = 0;
+    for (const d of pageDets) {
+      const [cx, cy] = detectionCenterAnalysisPx(d);
+      if (pointInBBox(cx, cy, panel.bbox_px)) count += 1;
+    }
+    map.set(panel.id, count);
+  }
+  return map;
+}
+
+export function enrichViewPanelsWithTubeCounts(
+  data: ParsedViewPanels,
+  detections: Detection[],
+  page = 1,
+): ParsedViewPanels {
+  const counts = countTubesPerPanel(data.panels, detections, page);
+  return {
+    ...data,
+    panels: data.panels.map((panel) => ({
+      ...panel,
+      tube_count: counts.get(panel.id) ?? 0,
+    })),
+  };
+}
+
+export const VIEW_CLASS_TO_CANONICAL: Record<string, string> = {
+  plan_view: 'PLAN AS CAST',
+  reinforcement_plan: 'REINFORCEMENT PLAN',
+};
 
 /** Legacy helper — not used for panels but keeps parity with viewSplit exports. */
 export { extractReportComponents };
