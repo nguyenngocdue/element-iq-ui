@@ -239,48 +239,45 @@ export const VIEW_CLASS_TO_CANONICAL: Record<string, string> = {
   reinforcement_plan: 'REINFORCEMENT PLAN',
 };
 
-/** Panels included in viewport-scoped view split (class or harvested title name). */
+function panelHarvestedGroutName(panel: ViewPanelItem): string {
+  return (panel.name ?? '').toUpperCase().trim();
+}
+
+function panelNameIsPlan(name: string): boolean {
+  return name === 'PLAN AS CAST' || name.startsWith('PLAN AS CAST');
+}
+
+function panelNameIsReinf(name: string): boolean {
+  return name.includes('REINFORCEMENT');
+}
+
+/** Panels included in viewport-scoped view split — same viewport rows as Viewports overlay. */
 export function isGroutViewSplitPanel(panel: ViewPanelItem): boolean {
-  if (panel.view_class === 'plan_view' || panel.view_class === 'reinforcement_plan') return true;
-  if (NON_GROUT_VIEW_CLASSES.has(panel.view_class)) return false;
-  const name = (panel.name ?? '').toUpperCase().trim();
-  if (!name) return false;
-  if (name === 'PLAN AS CAST' || name.startsWith('PLAN AS CAST')) return true;
-  if (name.includes('REINFORCEMENT')) return true;
-  return false;
+  const name = panelHarvestedGroutName(panel);
+  if (name && (panelNameIsPlan(name) || panelNameIsReinf(name))) return true;
+  return panel.view_class === 'plan_view' || panel.view_class === 'reinforcement_plan';
 }
 
 /** Canonical PLAN / REINF label for overlay styling. */
 export function groutPanelCanonicalName(panel: ViewPanelItem): string {
+  const name = panelHarvestedGroutName(panel);
+  if (panelNameIsReinf(name)) return 'REINFORCEMENT PLAN';
+  if (panelNameIsPlan(name)) return 'PLAN AS CAST';
   const mapped = VIEW_CLASS_TO_CANONICAL[panel.view_class];
   if (mapped) return mapped;
-  const name = (panel.name ?? '').toUpperCase().trim();
-  if (NON_GROUT_VIEW_CLASSES.has(panel.view_class)) {
-    return panel.name?.trim() || panel.view_class;
-  }
-  if (name.includes('REINFORCEMENT')) return 'REINFORCEMENT PLAN';
-  if (name.includes('PLAN AS CAST') || name === 'PLAN AS CAST') return 'PLAN AS CAST';
-  return panel.name ?? panel.view_class;
+  return panel.name?.trim() || panel.view_class;
 }
 
 export function findGroutPlanPanel(panels: ViewPanelItem[]): ViewPanelItem | undefined {
   const byClass = panels.find((p) => p.view_class === 'plan_view');
   if (byClass) return byClass;
-  return panels.find(
-    (p) =>
-      !NON_GROUT_VIEW_CLASSES.has(p.view_class) &&
-      (p.name ?? '').toUpperCase().includes('PLAN AS CAST'),
-  );
+  return panels.find((p) => panelNameIsPlan(panelHarvestedGroutName(p)));
 }
 
 export function findGroutReinfPanel(panels: ViewPanelItem[]): ViewPanelItem | undefined {
   const byClass = panels.find((p) => p.view_class === 'reinforcement_plan');
   if (byClass) return byClass;
-  return panels.find(
-    (p) =>
-      !NON_GROUT_VIEW_CLASSES.has(p.view_class) &&
-      (p.name ?? '').toUpperCase().includes('REINFORCEMENT'),
-  );
+  return panels.find((p) => panelNameIsReinf(panelHarvestedGroutName(p)));
 }
 
 /** Label for overlay chip — harvested panel name when available. */

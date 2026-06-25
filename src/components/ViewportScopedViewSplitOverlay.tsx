@@ -189,7 +189,7 @@ export function ViewportScopedViewSplitOverlay({
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none overflow-hidden z-[21]"
+      className="absolute inset-0 pointer-events-none overflow-hidden z-[23]"
       style={{ width: w, height: h }}
       aria-label="Viewport-scoped view split overlay"
     >
