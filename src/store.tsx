@@ -122,6 +122,7 @@ function mapApiProjectFiles(files: any[]): DocumentFile[] {
         f.analysis,
         validationAnnotations,
         hasAnalysis,
+        tubeCount ?? 0,
       );
       status = resolved.status;
       overallStatus = resolved.overallRaw ? resolved.overallRaw.toUpperCase() : undefined;
@@ -348,22 +349,28 @@ function mergeDocsWithExistingFiles(
         tagNotes: existing.tagNotes ?? base.tagNotes,
       };
     }
+    if (d.status === 'NO-TUBE' || d.status === 'NO-NOTE') {
+      return base;
+    }
     if (
       existing.analysisStage === 'Complete'
       && existing.validationAnnotations?.length
     ) {
+      const tubes = existing.tubeCount ?? existing.detections?.length ?? d.tubeCount ?? 0;
       const localStatus = reconcileFileStatusWithAnnotations(
         existing.status,
         existing.validationAnnotations,
+        tubes,
       );
-      if (localStatus !== d.status) {
+      if (
+        localStatus !== d.status
+        && localStatus !== 'NO-TUBE'
+        && !(localStatus === 'PASS' && (d.tubeCount ?? 0) === 0)
+      ) {
         return {
           ...base,
           status: localStatus,
-          overallStatus:
-            localStatus === 'PASS'
-              ? 'PASS'
-              : (existing.overallStatus ?? base.overallStatus),
+          overallStatus: localStatus.toUpperCase(),
           passRate: localStatus === 'PASS' ? (existing.passRate ?? 100) : 0,
           detections: existing.detections?.length ? existing.detections : base.detections,
           validationAnnotations: existing.validationAnnotations,
@@ -2026,6 +2033,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         result.result,
         validationAnnotations,
         hasResultData,
+        tubeCount ?? 0,
       );
       const overallRaw = resolved.overallRaw;
       const overallStatus = overallRaw.toUpperCase();

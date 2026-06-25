@@ -142,6 +142,16 @@ export function summarizeGroutCheck(
   annotations: ValidationAnnotation[],
   tubeCount: number,
 ): GroutCheckSummary {
+  if (tubeCount === 0) {
+    return {
+      tone: 'warn',
+      title: 'No Grout Tubes Detected',
+      statNumber: '0',
+      statUnit: 'tubes',
+      statContent: 'Sheet has no grout tubes (NO-TUBE).',
+    };
+  }
+
   if (annotations.length === 0) {
     return {
       tone: 'info',

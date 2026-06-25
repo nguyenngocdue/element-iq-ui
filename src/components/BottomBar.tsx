@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../store';
-import { analysisCompleteMessage, effectiveFileStatus, isAnalyzedStatus } from '../lib/analysisStatus';
+import { analysisCompleteMessage, effectiveFileStatus, effectiveOverallStatus, isAnalyzedStatus } from '../lib/analysisStatus';
 import { AnalysisTerminalToggle } from './AnalysisTerminal';
 
 export function BottomBar() {
@@ -21,7 +21,7 @@ export function BottomBar() {
     if (uploadingCount > 0) return `Uploading ${uploadingCount} file(s)... ${uploadProgress}%`;
     if (analyzingCount > 0) return `Analyzing ${analyzingCount} file(s)...`;
     const complete = file
-      ? analysisCompleteMessage(effectiveFileStatus(file), file.overallStatus)
+      ? analysisCompleteMessage(effectiveFileStatus(file), effectiveOverallStatus(file))
       : null;
     if (complete) return complete;
     if (totalFiles > 0) return 'Ready';

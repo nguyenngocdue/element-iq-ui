@@ -116,11 +116,31 @@ export function mapOverallToFileStatus(
   return 'PASS';
 }
 
+function tubeCountForFile(file: Pick<DocumentFile, 'tubeCount' | 'detections'>): number {
+  if (typeof file.tubeCount === 'number') return file.tubeCount;
+  return file.detections?.length ?? 0;
+}
+
+function overallLabelToStatus(raw: string | undefined): DocumentFile['status'] | null {
+  const overall = raw?.trim().toUpperCase();
+  if (overall === 'NO-TUBE' || overall === 'NO-NOTE') {
+    return overall as DocumentFile['status'];
+  }
+  return null;
+}
+
 /** Align badge with Active Annotations when report rows and overall disagree. */
 export function reconcileFileStatusWithAnnotations(
   fileStatus: DocumentFile['status'],
   annotations: ValidationAnnotation[] | undefined,
+  tubeCount = 0,
 ): DocumentFile['status'] {
+  if (tubeCount === 0) {
+    return 'NO-TUBE';
+  }
+  if (fileStatus === 'NO-TUBE' || fileStatus === 'NO-NOTE') {
+    return fileStatus;
+  }
   if (!annotations?.length) return fileStatus;
 
   const issues = annotations.filter(
@@ -144,10 +164,11 @@ export function resolveFileStatusFromAnalysis(
   analysis: AnalysisPayload,
   annotations: ValidationAnnotation[] | undefined,
   hasAnalysisData: boolean,
+  tubeCount = 0,
 ): { status: DocumentFile['status']; overallRaw: string } {
   const overallRaw = resolveOverallRaw(analysis);
   const fromOverall = mapOverallToFileStatus(overallRaw, hasAnalysisData);
-  const status = reconcileFileStatusWithAnnotations(fromOverall, annotations);
+  const status = reconcileFileStatusWithAnnotations(fromOverall, annotations, tubeCount);
   return { status, overallRaw };
 }
 
@@ -160,10 +181,34 @@ export function effectiveFileStatus(file: DocumentFile): DocumentFile['status'] 
   ) {
     return file.status;
   }
-  if (!file.validationAnnotations?.length) {
-    return file.status;
+
+  const fromOverall = overallLabelToStatus(file.overallStatus);
+  if (fromOverall) return fromOverall;
+
+  const tubes = tubeCountForFile(file);
+  if (tubes === 0 && (file.status === 'NO-TUBE' || file.overallStatus?.toUpperCase() === 'NO-TUBE')) {
+    return 'NO-TUBE';
   }
-  return reconcileFileStatusWithAnnotations(file.status, file.validationAnnotations);
+
+  if (!file.validationAnnotations?.length) {
+    return tubes === 0 && file.status === 'PASS' ? 'NO-TUBE' : file.status;
+  }
+
+  return reconcileFileStatusWithAnnotations(
+    file.status,
+    file.validationAnnotations,
+    tubes,
+  );
+}
+
+/** Keep overall label aligned with effective badge (NO-TUBE must not read as PASS). */
+export function effectiveOverallStatus(file: DocumentFile): string | undefined {
+  const status = effectiveFileStatus(file);
+  if (status === 'WARN' && file.overallStatus) return file.overallStatus;
+  if (status === 'PENDING' || status === 'ANALYZING' || status === 'UPLOADING') {
+    return file.overallStatus;
+  }
+  return status;
 }
 
 export function resolvePassRate(

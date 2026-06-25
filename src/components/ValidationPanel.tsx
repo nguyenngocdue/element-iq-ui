@@ -4,6 +4,7 @@ import {
   validationPanelAccentClass,
   validationAnnotationsNeedingReview,
   effectiveFileStatus,
+  effectiveOverallStatus,
   filePassRate,
 } from '../lib/analysisStatus';
 import { StatusLabel } from './StatusLabel';
@@ -174,6 +175,7 @@ export function ValidationPanel() {
   const warnDetections = file.detections.filter(d => d.status === 'WARN');
 
   const displayStatus = effectiveFileStatus(file);
+  const displayOverall = effectiveOverallStatus(file);
   const qualityScore = filePassRate(file);
 
   return (
@@ -191,9 +193,9 @@ export function ValidationPanel() {
                  {qualityScore || '--'} <span className="text-lg font-mono text-[#858585]">/ 100</span>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(displayStatus, file.overallStatus)}`}>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${validationPanelAccentClass(displayStatus, displayOverall)}`}>
               {file.status !== 'PENDING' && file.status !== 'ANALYZING' && file.status !== 'UPLOADING'
-                ? <StatusLabel status={displayStatus} overallStatus={file.overallStatus} />
+                ? <StatusLabel status={displayStatus} overallStatus={displayOverall} />
                 : 'WAIT'}
             </span>
           </div>
