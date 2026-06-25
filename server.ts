@@ -115,6 +115,8 @@ async function startServer() {
     // ── Mock mode (no backend needed) ──────────────────────────
     console.log('[server] Running in MOCK mode — no backend required');
     app.post('/api/v1/analyze', mockAnalyze);
+    app.post('/api/v1/analyze/re-run', mockAnalyze);
+    app.post('/api/v1/analyze/public-run', mockAnalyze);
     app.get('/api/v1/jobs/:id', mockJob);
     app.get('/api/v1/components', mockComponents);
     app.get('/api/v1/health', mockHealth);
