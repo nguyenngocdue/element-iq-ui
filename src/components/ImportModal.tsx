@@ -8,7 +8,6 @@ import {
   GROUT_PIPELINE_STAGES,
   GROUT_TUBE_ID,
   normalizeSelectedComponents,
-  groutTubeSelected,
 } from '../lib/analysisComponents';
 
 export interface AnalysisConfigModalProps {
@@ -656,7 +655,6 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
     (c) => !AUTO_RUN_ANALYSIS_COMPONENT_IDS.has(c.id),
   );
   const readyComponents = configurableComponents.filter((c) => c.status === 'ready');
-  const groutSelected = groutTubeSelected(state.selectedComponents);
   const canAnalyze = mode === 'import' ? files.length > 0 : selectedCount > 0;
   const targetFileCount = targetFileIds?.length ?? (targetFileId ? 1 : state.files.length);
 
@@ -719,20 +717,6 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                     {selectedCount} of {readyComponents.length} selected
                   </span>
                 </div>
-                {groutSelected && (
-                  <div className="mb-4 rounded-lg border border-[#3b82f6]/30 bg-[#1e3a5f]/25 px-4 py-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-[#93c5fd] mb-1">
-                      Viewport-first pipeline
-                    </p>
-                    <p className="text-xs text-[#cbd5e1] leading-relaxed">
-                      Viewport detection, naming, and text detach run automatically before grout QA on{' '}
-                      <span className="text-white font-medium">PLAN AS CAST</span> and{' '}
-                      <span className="text-white font-medium">REINFORCEMENT PLAN</span> crops.
-                      Toggle <span className="font-mono text-[#93c5fd]">Viewports</span> on the viewer after analyze.
-                    </p>
-                    <p className="text-[10px] text-[#64748b] mt-2 font-mono">{GROUT_PIPELINE_STAGES}</p>
-                  </div>
-                )}
                 <div className="space-y-3">
                   {configurableComponents.map((comp) => (
                     <ComponentCard

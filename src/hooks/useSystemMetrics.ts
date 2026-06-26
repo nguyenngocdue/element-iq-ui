@@ -25,6 +25,16 @@ export interface SystemMetricsGpu {
   memory_used_bytes: number;
   memory_total_bytes: number;
   memory_percent: number;
+  allocated_bytes?: number;
+  reserved_bytes?: number;
+  max_allocated_bytes?: number;
+  max_gpu_slots?: number;
+  max_user_slots?: number;
+  warmup_slots?: number | null;
+  active_analysis_jobs?: number;
+  models_warmed_up?: boolean;
+  warmup_delta_bytes?: number;
+  estimated_bytes_per_warmup_slot?: number;
 }
 
 export interface SystemMetricsSnapshot {

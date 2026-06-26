@@ -389,6 +389,8 @@ function mergeDocsWithExistingFiles(
   });
 }
 
+const pdfFetchInflight = new Map<string, Promise<void>>();
+
 async function prefetchProjectPdf(
   doc: DocumentFile,
   loadSessionId: number,
@@ -396,6 +398,18 @@ async function prefetchProjectPdf(
   setState: React.Dispatch<React.SetStateAction<SessionState>>,
 ) {
   const versionKey = pdfVersionKey(doc.uploadedAt, doc.fileSizeBytes);
+
+  const setPdfLoading = (loading: boolean) => {
+    setState((prev) => {
+      if (!isSessionCurrent(loadSessionId)) return prev;
+      return {
+        ...prev,
+        files: prev.files.map((f) =>
+          f.id === doc.id ? { ...f, pdfLoading: loading } : f,
+        ),
+      };
+    });
+  };
 
   const applyBlob = (blob: Blob) => {
     const realFile = new File([blob], doc.name, { type: 'application/pdf' });
@@ -422,13 +436,14 @@ async function prefetchProjectPdf(
     });
   };
 
-  const cached = await getCachedPdfBlob(doc.id, versionKey);
-  if (cached && isSessionCurrent(loadSessionId)) {
-    applyBlob(cached);
-    return;
-  }
-
+  setPdfLoading(true);
   try {
+    const cached = await getCachedPdfBlob(doc.id, versionKey);
+    if (cached && isSessionCurrent(loadSessionId)) {
+      applyBlob(cached);
+      return;
+    }
+
     const { authFetch } = await import('./lib/supabase');
     const dlRes = await authFetch(`/api/v1/files/${doc.id}/download`);
     if (!isSessionCurrent(loadSessionId)) return;
@@ -455,6 +470,8 @@ async function prefetchProjectPdf(
   } catch (err) {
     if (!isSessionCurrent(loadSessionId)) return;
     setPdfLoadError(err instanceof Error ? err.message : 'Failed to download PDF');
+  } finally {
+    setPdfLoading(false);
   }
 }
 
@@ -518,6 +535,8 @@ interface AppContextType {
   analyzeAll: (orderedIds?: string[]) => Promise<void>;
   analyzeSelected: (ids: string[]) => Promise<void>;
   stopAnalysis: () => void;
+  dismissAnalysisProgressOverlay: () => void;
+  showAnalysisProgressOverlay: () => void;
   appendAnalysisLog: (entry: Omit<AnalysisLogLine, 'id' | 'ts'>) => void;
   clearAnalysisLogs: () => void;
   toggleAnalysisTerminal: () => void;
@@ -615,6 +634,7 @@ const initialState: SessionState = {
   overlayViewports: bootUrlPrefs?.overlayViewports ?? false,
   overlayViewportCoords: bootUrlPrefs?.overlayViewportCoords ?? false,
   overlayTags: bootUrlPrefs?.overlayTags ?? true,
+  analysisProgressOverlayDismissed: false,
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -844,7 +864,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const downloadFileIfNeeded = useCallback(async (id: string, sessionId: number) => {
     const doc = stateRef.current.files.find((f) => f.id === id);
     if (!doc || doc.file.size > 0) return;
-    await prefetchProjectPdf(doc, sessionId, isSessionCurrent, setState);
+    let inflight = pdfFetchInflight.get(id);
+    if (!inflight) {
+      inflight = prefetchProjectPdf(doc, sessionId, isSessionCurrent, setState);
+      pdfFetchInflight.set(id, inflight);
+      void inflight.finally(() => {
+        if (pdfFetchInflight.get(id) === inflight) pdfFetchInflight.delete(id);
+      });
+    }
+    await inflight;
   }, [isSessionCurrent]);
 
   const retryPdfLoad = useCallback((id: string) => {
@@ -883,18 +911,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncEditorNavUi();
     };
 
-    // If file has no bytes (loaded from server), download first then activate
-    if (file && file.file.size === 0) {
-      const sessionId = projectSessionRef.current;
-      void (async () => {
-        await downloadFileIfNeeded(id, sessionId);
-        if (!isSessionCurrent(sessionId)) return;
-        applyActivation();
-      })();
-    } else {
-      applyActivation();
+    applyActivation();
+
+    if (file && file.file.size === 0 && !file.pdfLoadError) {
+      void downloadFileIfNeeded(id, projectSessionRef.current);
     }
-  }, [state.files, downloadFileIfNeeded, isSessionCurrent, syncEditorNavUi]);
+  }, [state.files, downloadFileIfNeeded, syncEditorNavUi]);
 
   const applyNavEntry = useCallback((entry: EditorNavEntry) => {
     const sessionId = projectSessionRef.current;
@@ -1931,6 +1953,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const fetchOpts = { signal: abortController.signal };
 
     updateFileStatus(id, { status: 'ANALYZING', analysisProgress: 0, analysisStage: 'Connecting to backend...' });
+    setState((prev) => ({ ...prev, analysisProgressOverlayDismissed: false }));
     analyzeInFlightRef.current += 1;
     log({ level: 'dim', message: `Connecting to backend…`, fileId: id });
     let file = filesRef.current.find(f => f.id === id)?.file;
@@ -2279,6 +2302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     stopAnalysisRef.current = false;
     analysisAbortRef.current?.abort();
     analysisAbortRef.current = null;
+    setState((prev) => ({ ...prev, analysisProgressOverlayDismissed: false }));
 
     const ids = orderedIds.filter((id) => {
       const f = filesRef.current.find((ff) => ff.id === id);
@@ -2416,6 +2440,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     analysisAbortRef.current = null;
     setState((prev) => ({
       ...prev,
+      analysisProgressOverlayDismissed: false,
       files: prev.files.map((f) =>
         f.status === 'ANALYZING'
           ? { ...f, status: 'PENDING', analysisProgress: 0, analysisStage: undefined }
@@ -2425,6 +2450,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
     appendAnalysisLog({ level: 'warn', message: 'Analysis stopped — spinner cleared (server job may still run)' });
   }, [appendAnalysisLog]);
+
+  const dismissAnalysisProgressOverlay = useCallback(() => {
+    setState((prev) => {
+      if (prev.analysisProgressOverlayDismissed) return prev;
+      return { ...prev, analysisProgressOverlayDismissed: true };
+    });
+    appendAnalysisLog({
+      level: 'dim',
+      message: 'Analysis progress hidden — job continues in background (Analysis log / Scanning… to reopen)',
+    });
+  }, [appendAnalysisLog]);
+
+  const showAnalysisProgressOverlay = useCallback(() => {
+    setState((prev) => {
+      if (!prev.analysisProgressOverlayDismissed) return prev;
+      return { ...prev, analysisProgressOverlayDismissed: false };
+    });
+  }, []);
 
   React.useEffect(() => {
     const id = state.activeFileId;
@@ -2463,6 +2506,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         analyzeAll,
         analyzeSelected,
         stopAnalysis,
+        dismissAnalysisProgressOverlay,
+        showAnalysisProgressOverlay,
         appendAnalysisLog,
         clearAnalysisLogs,
         toggleAnalysisTerminal,

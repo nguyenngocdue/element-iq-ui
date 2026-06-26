@@ -28,6 +28,10 @@
   100% { top: calc(100% - 3px); opacity: 0; }
 }
 
+.animate-scan {
+  animation: scan 2.2s ease-in-out infinite;
+}
+
 @keyframes project-loading-bar {
   0% { transform: translateX(-120%); }
   100% { transform: translateX(420%); }

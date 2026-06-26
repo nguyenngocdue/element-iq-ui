@@ -19,6 +19,65 @@ function fmtBytes(n: number) {
   return `${Math.round(n / 1024)} KB`;
 }
 
+function VramBreakdown({ gpu }: { gpu: SystemMetricsSnapshot['gpu'] }) {
+  if (!gpu?.available) return null;
+
+  const rows: { label: string; value: string; hint?: string }[] = [
+    {
+      label: 'Device VRAM (NVML)',
+      value: `${fmtBytes(gpu.memory_used_bytes)} / ${fmtBytes(gpu.memory_total_bytes)} (${gpu.memory_percent.toFixed(1)}%)`,
+    },
+  ];
+
+  if (gpu.allocated_bytes != null) {
+    rows.push({
+      label: 'PyTorch allocated',
+      value: fmtBytes(gpu.allocated_bytes),
+      hint: gpu.reserved_bytes != null ? `reserved ${fmtBytes(gpu.reserved_bytes)}` : undefined,
+    });
+  }
+
+  if (gpu.warmup_delta_bytes != null && gpu.warmup_slots) {
+    const perSlot = gpu.estimated_bytes_per_warmup_slot;
+    rows.push({
+      label: 'Warmup footprint',
+      value: `${fmtBytes(gpu.warmup_delta_bytes)} · ${gpu.warmup_slots} slot(s)`,
+      hint: perSlot != null ? `~${fmtBytes(perSlot)} / slot` : undefined,
+    });
+  } else if (gpu.warmup_slots != null) {
+    rows.push({
+      label: 'Warmup slots',
+      value: String(gpu.warmup_slots),
+      hint: gpu.models_warmed_up ? 'models ready' : 'warming up…',
+    });
+  }
+
+  if (gpu.max_gpu_slots != null) {
+    const active = gpu.active_analysis_jobs ?? 0;
+    rows.push({
+      label: 'Analysis slots',
+      value: `${active} / ${gpu.max_gpu_slots} GPU · max ${gpu.max_user_slots ?? '—'} / user`,
+    });
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#262626] rounded-lg p-4">
+      <h3 className="text-sm font-semibold text-white mb-3">VRAM breakdown</h3>
+      <dl className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between gap-4 text-xs">
+            <dt className="text-[#737373] shrink-0">{row.label}</dt>
+            <dd className="text-right text-[#e5e5e5] tabular-nums">
+              {row.value}
+              {row.hint && <span className="block text-[10px] text-[#525252] mt-0.5">{row.hint}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function buildSeries(
   points: SystemMetricsSnapshot[],
   pick: (p: SystemMetricsSnapshot) => number | null | undefined,
@@ -171,6 +230,12 @@ export function AdminMetricsCharts({
   const latest = points[points.length - 1];
   const gpuName = latest?.gpu?.device_name
     ?? [...points].reverse().find((p) => p.gpu?.device_name)?.gpu?.device_name;
+  const gpuMemUsed = latest?.gpu?.memory_used_bytes;
+  const gpuMemTotal = latest?.gpu?.memory_total_bytes;
+  const gpuMemSubtitle =
+    gpuMemUsed != null && gpuMemTotal
+      ? `VRAM used · ${fmtBytes(gpuMemUsed)} / ${fmtBytes(gpuMemTotal)}`
+      : 'VRAM used by loaded models';
   const cpuSubtitle =
     latest?.cpu?.subtitle
     ?? latest?.cpu_name
@@ -193,24 +258,34 @@ export function AdminMetricsCharts({
       <RealtimeChart title="CPU" subtitle={cpuSubtitle} data={cpuData} color="#34d399" mode="percent" live={live} />
       <RealtimeChart title="RAM" subtitle={ramSubtitle} data={ramData} color="#60a5fa" mode="percent" live={live} />
       {hasGpu ? (
-        <>
-          <RealtimeChart
-            title="GPU compute"
-            subtitle={gpuName ?? 'CUDA device'}
-            data={gpuUtilData}
-            color="#fbbf24"
-            mode="percent"
-            live={live}
-          />
-          <RealtimeChart
-            title="GPU memory"
-            subtitle={gpuName ?? 'VRAM usage'}
-            data={gpuMemData}
-            color="#c4b5fd"
-            mode="percent"
-            live={live}
-          />
-        </>
+        <div className="lg:col-span-2 space-y-3">
+          <div className="px-1">
+            <p className="text-[11px] uppercase tracking-wide text-[#737373]">CUDA GPU (1 device)</p>
+            <p className="text-xs text-[#a3a3a3] mt-0.5">{gpuName ?? 'CUDA device'}</p>
+            <p className="text-[11px] text-[#525252] mt-1">
+              Two metrics below — processing load and VRAM — not two separate GPUs.
+            </p>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <RealtimeChart
+              title="GPU compute"
+              subtitle="Processing load while analyzing"
+              data={gpuUtilData}
+              color="#fbbf24"
+              mode="percent"
+              live={live}
+            />
+            <RealtimeChart
+              title="GPU memory"
+              subtitle={gpuMemSubtitle}
+              data={gpuMemData}
+              color="#c4b5fd"
+              mode="percent"
+              live={live}
+            />
+          </div>
+          {latest?.gpu && <VramBreakdown gpu={latest.gpu} />}
+        </div>
       ) : (
         <div className="lg:col-span-2 bg-[#141414] border border-[#262626] rounded-lg p-5 text-sm text-[#737373]">
           No CUDA GPU detected on this host — CPU/RAM charts only.

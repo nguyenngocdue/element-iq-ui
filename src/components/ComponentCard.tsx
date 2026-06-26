@@ -6,6 +6,7 @@ import { authFetch } from '../lib/supabase';
 import { readModelLabDefaults, writeModelLabDefault } from '../lib/modelLabDefaults';
 import { ModelVerdictBadge } from './model-lab/ModelVerdictBadge';
 import { ModelWeightsPicker } from './ModelWeightsPicker';
+import { Spinner } from './LoadingScreen';
 
 interface ComponentCardProps {
   key?: React.Key;
@@ -191,11 +192,31 @@ export function ComponentCard({
               </p>
             )}
           </div>
+        ) : modelsLoading ? (
+          <div
+            className="rounded-md border border-[#10b981]/35 bg-[#10b981]/10 px-3 py-2.5"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div className="flex items-center gap-2.5">
+              <Spinner size="sm" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold text-[#10b981] tracking-wide">
+                  Loading model weights…
+                </p>
+                <p className="text-[10px] text-[#737373] mt-0.5">Fetching from server</p>
+                <div className="mt-2 h-1 w-full rounded-full bg-[#2a2a2a] overflow-hidden">
+                  <div className="h-full w-1/3 rounded-full bg-[#10b981]/75 project-loading-bar" />
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="flex items-center gap-2">
             <span>Model:</span>
             <span className="text-white font-mono truncate" title={activeModel}>
-              {modelsLoading ? 'Loading…' : activeModel || component.modelFile || '—'}
+              {activeModel || component.modelFile || '—'}
             </span>
           </div>
         )}

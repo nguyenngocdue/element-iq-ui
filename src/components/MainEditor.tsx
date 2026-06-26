@@ -32,11 +32,12 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
 
-function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
+function ParsingOverlay({ fileName, pages, progress: realProgress, stage, onClose }: {
   fileName: string;
   pages: number;
   progress?: number;
   stage?: string;
+  onClose: () => void;
 }) {
   const { state, stopAnalysis } = useApp();
   const [logs, setLogs] = useState<{msg: string, type: 'info'|'debug'|'success'}[]>([]);
@@ -83,7 +84,18 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
              <div className="text-[#82aaff]"><ScanFace className="w-6 h-6" /></div>
              <h3 className="text-white font-bold text-lg font-sans leading-tight">ElementIQ Analysis<br/><span className="text-[#82aaff] text-sm font-normal">{ELEMENTIQ_ENGINE}</span></h3>
            </div>
-           <div className="bg-[#1e1e1e] border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase text-right leading-none">IN<br/>PROGRESS</div>
+           <div className="flex items-center gap-2 shrink-0">
+             <div className="bg-[#1e1e1e] border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase text-right leading-none">IN<br/>PROGRESS</div>
+             <button
+               type="button"
+               onClick={onClose}
+               className="w-7 h-7 flex items-center justify-center rounded-md text-[#858585] hover:text-white hover:bg-[#333] transition-colors"
+               title="Close — analysis continues in background"
+               aria-label="Close analysis progress"
+             >
+               <X className="w-4 h-4" />
+             </button>
+           </div>
          </div>
 
          <div className="p-5 flex flex-col gap-4">
@@ -157,7 +169,14 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage }: {
            </div>
          </div>
 
-         <div className="p-4 border-t border-[#3c3c3c] bg-[#1e1e1e] flex justify-end gap-3">
+         <div className="p-4 border-t border-[#3c3c3c] bg-[#1e1e1e] flex justify-between items-center gap-3">
+           <button
+             type="button"
+             onClick={onClose}
+             className="text-[#a0a5b5] hover:text-white px-3 py-1.5 text-xs font-medium rounded transition-colors"
+           >
+             Run in Background
+           </button>
            <button
              type="button"
              onClick={() => stopAnalysis()}
@@ -865,12 +884,20 @@ export function MainEditor() {
     toggleAnalysisTerminal,
     setViewerOverlay,
     retryPdfLoad,
+    dismissAnalysisProgressOverlay,
+    showAnalysisProgressOverlay,
   } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun ?? !isReadOnly;
   const canDownload = state.canDownload === true;
   const file = state.files.find(f => f.id === state.activeFileId);
   const splitFile = state.files.find(f => f.id === state.splitFileId);
+  const analysisOverlayOpen =
+    file?.status === 'ANALYZING' && !state.analysisProgressOverlayDismissed;
+  const handleDismissAnalysisOverlay = useCallback(() => {
+    dismissAnalysisProgressOverlay();
+    if (!state.isAnalysisTerminalOpen) toggleAnalysisTerminal();
+  }, [dismissAnalysisProgressOverlay, state.isAnalysisTerminalOpen, toggleAnalysisTerminal]);
   const showingArtifact = Boolean(state.activeArtifact && state.editorView === 'artifact');
   const { getScale, setScaleForKey } = usePerViewZoom();
   const showAnnotations = state.overlayQa;
@@ -1221,7 +1248,23 @@ export function MainEditor() {
                   ▶ Start Analysis
                 </button>
               ) : file.status === 'ANALYZING' ? (
-                <button disabled className="h-full px-3 flex items-center gap-1 text-[11px] text-muted font-medium border-t-2 border-t-transparent">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (state.analysisProgressOverlayDismissed) showAnalysisProgressOverlay();
+                  }}
+                  className={cn(
+                    'h-full px-3 flex items-center gap-1 text-[11px] font-medium border-t-2 border-t-transparent',
+                    state.analysisProgressOverlayDismissed
+                      ? 'text-[#82aaff] hover:bg-[#333] transition-colors cursor-pointer'
+                      : 'text-muted cursor-default',
+                  )}
+                  title={
+                    state.analysisProgressOverlayDismissed
+                      ? 'Show analysis progress'
+                      : 'Analysis in progress'
+                  }
+                >
                   <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
                 </button>
               ) : (
@@ -1316,7 +1359,7 @@ export function MainEditor() {
         </div>
 
         {/* Overlay tools — row below Re-analyze, floats over canvas (no layout shift) */}
-        {file && file.status !== 'ANALYZING'
+        {file && !analysisOverlayOpen
           && (!showingArtifact || isGroutOverlayArtifactType(state.activeArtifact?.type ?? '')) ? (
           <div className="absolute top-[43px] right-2 z-50 pointer-events-none">
             <OverlayToolsBar
@@ -1374,12 +1417,13 @@ export function MainEditor() {
           className={`flex-1 overflow-auto bg-[#121212] relative no-scrollbar ${toolMode === 'pan' ? 'cursor-grab' : (toolMode === 'zoom' ? 'cursor-crosshair' : '')}`}
         >
           <div className="min-w-full min-h-full flex items-center justify-center p-8 w-max h-max relative">
-            {file.status === 'ANALYZING' && (
+            {analysisOverlayOpen && (
               <ParsingOverlay
                 fileName={file.name}
                 pages={file.pages}
                 progress={file.analysisProgress}
                 stage={file.analysisStage}
+                onClose={handleDismissAnalysisOverlay}
               />
             )}
             <PdfRenderer 
@@ -1407,7 +1451,7 @@ export function MainEditor() {
         ) : null}
 
         {/* Footer (Pane 1) — hidden when viewing artifact or analyzing */}
-        {!showingArtifact && file && file.status !== 'ANALYZING' && (
+        {!showingArtifact && file && !analysisOverlayOpen && (
         <div className="absolute py-1 px-3 bg-[#1e1e1e] border border-panel-border bottom-4 right-4 text-[10px] font-mono rounded shadow-lg flex items-center gap-3 z-50">
           <span className="text-muted">PAGE {state.activePage || 1}/{file.pages}</span>
           <span className="w-1 h-1 bg-[#3c3c3c] rounded-full"></span>
@@ -1421,7 +1465,7 @@ export function MainEditor() {
         )}
 
         {/* Floating Toolbar (Pane 1) — hidden while analyzing */}
-        {(!showingArtifact || isGroutOverlayArtifactType(state.activeArtifact?.type ?? '')) && file && file.status !== 'ANALYZING' && (
+        {(!showingArtifact || isGroutOverlayArtifactType(state.activeArtifact?.type ?? '')) && file && !analysisOverlayOpen && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#252526] border border-[#3c3c3c] p-1.5 rounded-lg shadow-2xl flex items-center gap-1 z-50">
           <button 
             onClick={() => setToolMode('select')}

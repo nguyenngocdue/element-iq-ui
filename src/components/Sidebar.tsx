@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp, type DeleteFilesOptions } from '../store';
-import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ExplorerFilesLoading } from './ProjectLoadingScreen';
 import { highlightMatch } from '../lib/fileSearch';
@@ -1183,6 +1183,13 @@ export function FileItem({
     if (controlledArtifactsExpanded === undefined) setInternalArtifactsExpanded(v);
   };
   const { anchorRef: fileRowRef, hoverProps: tooltipHoverProps, renderTooltip } = useExplorerHoverTooltip();
+
+  const isAnalyzing = file.status === 'ANALYZING';
+  const isUploading = file.status === 'UPLOADING';
+  const isPdfLoading = !!(
+    file.pdfLoading
+    || (isActive && file.file.size === 0 && !file.pdfLoadError)
+  );
   
   const getBadge = () => {
     const displayStatus = effectiveFileStatus(file);
@@ -1192,6 +1199,13 @@ export function FileItem({
     }
     if (file.status === 'ANALYZING') {
       return <RefreshCw className="w-3.5 h-3.5 text-[#10b981] animate-spin" />;
+    }
+    if (isPdfLoading) {
+      return (
+        <span className="text-[#3b82f6] font-bold text-[9px] bg-[#3b82f6]/10 px-1.5 py-0.5 rounded border border-[#3b82f6]/30 tracking-wider">
+          LOAD
+        </span>
+      );
     }
     const cls = statusBadgeClass(displayStatus, displayOverall);
     return (
@@ -1231,8 +1245,6 @@ export function FileItem({
       document.removeEventListener('keydown', onKey);
     };
   }, [menuOpen]);
-  const isAnalyzing = file.status === 'ANALYZING';
-  const isUploading = file.status === 'UPLOADING';
   const canClearAnalysis =
     file.status !== 'PENDING'
     && file.status !== 'UPLOADING'
@@ -1241,7 +1253,9 @@ export function FileItem({
     ? 'bg-[#10b981]/15 text-[#d1fae5] border-l-2 border-[#10b981]'
     : isUploading
       ? 'bg-[#3b82f6]/12 text-[#bfdbfe] border-l-2 border-[#3b82f6]'
-      : null;
+      : isPdfLoading
+        ? 'bg-[#3b82f6]/10 text-[#dbeafe] border-l-2 border-[#3b82f6]/70'
+        : null;
 
   const openArtifact = (artifact: NonNullable<DocumentFile['artifacts']>[number], name: string) => {
     window.dispatchEvent(new CustomEvent('elementiq:view-artifact', {
@@ -1318,7 +1332,11 @@ export function FileItem({
       ) : (
         <span className="w-3 shrink-0" />
       )}
-      <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+      {isPdfLoading ? (
+        <Loader2 className="w-3.5 h-3.5 shrink-0 text-[#3b82f6] animate-spin" aria-hidden />
+      ) : (
+        <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+      )}
       <span className="truncate flex-1 text-[13px] font-medium min-w-0">{highlightMatch(file.name, nameHighlight)}</span>
       {(showFileSize || showCreatedDate) && (
         <span className="flex items-center gap-1 shrink-0 text-[9px] text-[#666]">
