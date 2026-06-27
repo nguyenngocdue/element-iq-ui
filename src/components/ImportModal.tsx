@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { ComponentCard } from './ComponentCard';
+import { Spinner } from './LoadingScreen';
 import { X, Upload, FileText, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
@@ -377,7 +378,7 @@ function DuplicateDialog({
 
 // ── Main Modal ────────────────────────────────────────────────
 export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFileId, targetFileIds }: AnalysisConfigModalProps) {
-  const { state, setSelectedComponents, setComponentConfidence, setComponentModel, analyzeFile, analyzeAll, analyzeSelected, refreshProjectFiles } = useApp();
+  const { state, setSelectedComponents, setComponentConfidence, setComponentModel, analyzeFile, analyzeAll, analyzeSelected, refreshProjectFiles, showAnalysisProgressOverlay } = useApp();
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'syncing'>('idle');
@@ -600,6 +601,18 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const selectedCount = state.selectedComponents.length;
+  const configurableComponents = state.availableComponents.filter(
+    (c) => !AUTO_RUN_ANALYSIS_COMPONENT_IDS.has(c.id),
+  );
+  const readyComponents = configurableComponents.filter((c) => c.status === 'ready');
+  const selectedReadyCount = state.selectedComponents.filter((id) =>
+    readyComponents.some((c) => c.id === id),
+  ).length;
+  const componentsLoading = mode !== 'import' && state.availableComponents.length === 0;
+  const canAnalyze = mode === 'import' ? files.length > 0 : selectedReadyCount > 0 && !componentsLoading;
+  const targetFileCount = targetFileIds?.length ?? (targetFileId ? 1 : state.files.length);
+
   // ── Main action ───────────────────────────────────────────
   const handleAnalyze = async () => {
     if (mode === 'import') {
@@ -637,7 +650,8 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
 
       await startUpload(files.map(f => ({ file: f, uploadName: f.name })));
     } else {
-      if (state.selectedComponents.length > 0) {
+      if (selectedReadyCount > 0) {
+        showAnalysisProgressOverlay();
         onClose();
         if (targetFileIds && targetFileIds.length > 0) {
           void analyzeSelected(targetFileIds);
@@ -649,14 +663,6 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
       }
     }
   };
-
-  const selectedCount = state.selectedComponents.length;
-  const configurableComponents = state.availableComponents.filter(
-    (c) => !AUTO_RUN_ANALYSIS_COMPONENT_IDS.has(c.id),
-  );
-  const readyComponents = configurableComponents.filter((c) => c.status === 'ready');
-  const canAnalyze = mode === 'import' ? files.length > 0 : selectedCount > 0;
-  const targetFileCount = targetFileIds?.length ?? (targetFileId ? 1 : state.files.length);
 
   const progressItems: UploadQueueItem[] = uploadQueue ?? files.map(f => ({ file: f, uploadName: f.name }));
   const progressListActive = isBusy && uploadQueue != null;
@@ -714,9 +720,21 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider">Step 1: Select Components to Analyze</h3>
                   <span className="text-xs text-[#2eb886] border border-[#2eb886]/30 bg-[#2eb886]/10 px-2 flex items-center gap-1 font-bold py-1 rounded">
-                    {selectedCount} of {readyComponents.length} selected
+                    {componentsLoading
+                      ? 'Loading components…'
+                      : `${selectedReadyCount} of ${readyComponents.length} selected`}
                   </span>
                 </div>
+                {componentsLoading ? (
+                  <div
+                    className="rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] px-4 py-8 flex flex-col items-center gap-3"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <Spinner size="sm" />
+                    <p className="text-sm text-[#858585]">Loading components from server…</p>
+                  </div>
+                ) : (
                 <div className="space-y-3">
                   {configurableComponents.map((comp) => (
                     <ComponentCard
@@ -744,6 +762,7 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                     />
                   ))}
                 </div>
+                )}
               </section>
             )}
 
@@ -881,10 +900,14 @@ export function AnalysisConfigModal({ open, onClose, mode = 'import', targetFile
                       )}
                     </span>
                   )
+                ) : componentsLoading ? (
+                  <span className="text-[#3b82f6]">Loading analysis components…</span>
+                ) : selectedReadyCount === 0 && selectedCount > 0 ? (
+                  <span className="text-[#f59e0b]">Saved selection unavailable — pick a ready component above</span>
                 ) : (
                   <span>
                     Ready to analyze <span className="text-white font-semibold">{targetFileCount}</span> file(s)
-                    with <span className="text-white font-semibold">{selectedCount}</span> component(s)
+                    with <span className="text-white font-semibold">{selectedReadyCount}</span> component(s)
                   </span>
                 )
               ) : (
