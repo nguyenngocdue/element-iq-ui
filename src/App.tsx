@@ -19,6 +19,7 @@ import { RequireAdmin } from './components/RequireAdmin';
 import { ElementIQBot } from './components/ElementIQBot';
 import { RequireAuth } from './components/RequireAuth';
 import { AuthProvider, useAuth } from './lib/auth-context';
+import { usePresenceHeartbeat } from './hooks/usePresenceHeartbeat';
 import { hasProjectSessionCache } from './lib/projectSessionCache';
 import { LoginPage } from './components/LoginPage';
 import {
@@ -345,6 +346,7 @@ function AppContent() {
 
 function AppShell() {
   const { loading } = useAuth();
+  usePresenceHeartbeat();
 
   if (loading) {
     return (

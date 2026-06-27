@@ -1,6 +1,6 @@
 import { authFetch } from './supabase';
 
-export type AdminTab = 'overview' | 'files' | 'projects' | 'users' | 'jobs' | 'cleanup' | 'system';
+export type AdminTab = 'overview' | 'files' | 'projects' | 'users' | 'jobs' | 'cleanup' | 'system' | 'sessions';
 
 export interface Paginated<T> {
   items: T[];
@@ -47,6 +47,45 @@ export interface AdminProjectRow {
   storage_bytes: number;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface AdminSessionRow {
+  id: string;
+  session_kind: 'user' | 'guest';
+  user_id: string | null;
+  username: string | null;
+  email: string | null;
+  full_name: string | null;
+  guest_viewer_id: string | null;
+  device_id: string;
+  device_label: string;
+  ip_address: string | null;
+  location: string | null;
+  geo_country: string | null;
+  geo_region: string | null;
+  geo_city: string | null;
+  browser_name: string | null;
+  browser_version: string | null;
+  os_name: string | null;
+  os_version: string | null;
+  current_path: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  is_new_location: boolean;
+  is_online: boolean;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  ended_at: string | null;
+}
+
+export interface AdminSessionsResponse extends Paginated<AdminSessionRow> {
+  stats: {
+    online_total: number;
+    online_users: number;
+    online_guests: number;
+    new_location_today: number;
+    unique_devices_30d: number;
+  };
 }
 
 export interface AdminJobRow {
@@ -123,6 +162,7 @@ export const adminApi = {
   overview: () => adminGet<Record<string, unknown>>('/stats/overview'),
   storage: () => adminGet<Record<string, unknown>>('/stats/storage'),
   users: (params: URLSearchParams) => adminGet<Paginated<AdminUserRow>>(`/users?${params}`),
+  sessions: (params: URLSearchParams) => adminGet<AdminSessionsResponse>(`/sessions?${params}`),
   setUserRole: (id: string, role: string) => adminPatch<{ role: string }>(`/users/${id}/role`, { role }),
   files: (params: URLSearchParams) => adminGet<Paginated<AdminFileRow>>(`/files?${params}`),
   deleteFile: (id: string) => adminDelete(`/files/${id}`),

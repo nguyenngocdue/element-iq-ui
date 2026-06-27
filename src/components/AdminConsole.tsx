@@ -6,6 +6,7 @@ import {
   FileStack,
   FolderKanban,
   LayoutDashboard,
+  Monitor,
   RefreshCw,
   Server,
   Shield,
@@ -24,12 +25,14 @@ import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminJobsTab } from './admin/AdminJobsTab';
 import { AdminCleanupTab } from './admin/AdminCleanupTab';
 import { AdminSystemTab } from './admin/AdminSystemTab';
+import { AdminSessionsTab } from './admin/AdminSessionsTab';
 
 const TABS: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'files', label: 'Files', icon: FileStack },
   { id: 'users', label: 'Users', icon: Users },
+  { id: 'sessions', label: 'Sessions', icon: Monitor },
   { id: 'jobs', label: 'Jobs', icon: Activity },
   { id: 'cleanup', label: 'Cleanup', icon: Eraser },
   { id: 'system', label: 'System', icon: Server },
@@ -40,6 +43,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   files: 'Files',
   projects: 'Projects',
   users: 'Users',
+  sessions: 'Sessions',
   jobs: 'Jobs',
   cleanup: 'Cleanup',
   system: 'System',
@@ -73,6 +77,8 @@ export function AdminConsole() {
         return <AdminProjectsTab refreshKey={refreshKey} />;
       case 'users':
         return <AdminUsersTab refreshKey={refreshKey} isSuperAdmin={isSuperAdmin} />;
+      case 'sessions':
+        return <AdminSessionsTab refreshKey={refreshKey} />;
       case 'jobs':
         return <AdminJobsTab refreshKey={refreshKey} />;
       case 'cleanup':
