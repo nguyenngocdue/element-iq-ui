@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useApp, type DeleteFilesOptions } from '../store';
 import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -23,6 +23,7 @@ import {
 import { DocumentFile } from '../types';
 import { statusBadgeClass, filterFilesByBucket, averagePassRate, effectiveFileStatus, effectiveOverallStatus } from '../lib/analysisStatus';
 import { StatusLabel } from './StatusLabel';
+import { fileIdsForSelectionIndices, parseSelectionRangeInput } from '../lib/selectionRangeInput';
 import { useResizable } from '../hooks/useResizable';
 import {
   ExplorerTooltipLocation,
@@ -57,6 +58,68 @@ function resolveDeleteOptions(values?: Record<string, boolean>): DeleteFilesOpti
     removeFile,
     purgeAnalysis: removeFile ? true : values?.purgeAnalysis !== false,
   };
+}
+
+type BulkMode = 'run' | 'delete';
+
+function BulkSelectionRangeInput({
+  value,
+  onChange,
+  onApply,
+  error,
+  maxIndex,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onApply: () => void;
+  error: string | null;
+  maxIndex: number;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="mt-2.5 flex flex-col gap-1">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onApply();
+            }
+          }}
+          disabled={disabled}
+          placeholder="1,2,3 or from 1 to 10"
+          aria-label="Select drawings by row number"
+          className="flex-1 min-w-0 px-2 py-1 rounded border border-[#3b3d46] bg-[#12141a] text-[11px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#10b981]/50 disabled:opacity-40"
+        />
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={disabled || !value.trim()}
+          className="shrink-0 px-2 py-1 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+        >
+          Apply
+        </button>
+      </div>
+      {error ? (
+        <p className="text-[10px] text-[#f87171] leading-snug">{error}</p>
+      ) : (
+        <p className="text-[9px] text-[#666] leading-snug">
+          Row numbers from the list below
+          {maxIndex > 0 ? ` (1–${maxIndex})` : ''}
+          {' · '}
+          e.g. <span className="font-mono text-[#858585]">1,3,5</span>
+          {' · '}
+          <span className="font-mono text-[#858585]">1-10</span>
+          {' · '}
+          <span className="font-mono text-[#858585]">from 1 to 10</span>
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar() {
@@ -101,9 +164,10 @@ export function Sidebar() {
   const [artifactsExpandedFileIds, setArtifactsExpandedFileIds] = useState<Set<string>>(new Set());
 
   // Bulk select: run analysis or delete files
-  type BulkMode = 'run' | 'delete';
   const [bulkMode, setBulkMode] = useState<BulkMode | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [selectionRangeInput, setSelectionRangeInput] = useState('');
+  const [selectionRangeError, setSelectionRangeError] = useState<string | null>(null);
 
   // Keep expansion sets in sync when files are added or removed.
   React.useEffect(() => {
@@ -227,7 +291,39 @@ export function Sidebar() {
   const exitBulkMode = () => {
     setBulkMode(null);
     setSelectedFileIds(new Set());
+    setSelectionRangeInput('');
+    setSelectionRangeError(null);
   };
+
+  const applySelectionRangeInput = useCallback(() => {
+    const maxIndex = displayedFiles.length;
+    const { indices, error } = parseSelectionRangeInput(selectionRangeInput, maxIndex);
+    if (error) {
+      setSelectionRangeError(error);
+      return;
+    }
+    if (indices.length === 0) {
+      setSelectionRangeError(
+        maxIndex === 0 ? 'No drawings in the current list' : 'Enter at least one row number',
+      );
+      return;
+    }
+
+    const { ids, skippedBusy, outOfRange } = fileIdsForSelectionIndices(displayedFiles, indices);
+    if (ids.length === 0) {
+      const parts: string[] = [];
+      if (skippedBusy.length > 0) parts.push(`rows ${skippedBusy.join(', ')} are busy`);
+      if (outOfRange.length > 0) parts.push(`rows ${outOfRange.join(', ')} not in list`);
+      setSelectionRangeError(parts.join(' · ') || 'No selectable rows matched');
+      return;
+    }
+
+    setSelectedFileIds(new Set(ids));
+    const notes: string[] = [];
+    if (skippedBusy.length > 0) notes.push(`Skipped busy rows: ${skippedBusy.join(', ')}`);
+    if (outOfRange.length > 0) notes.push(`Ignored out of range: ${outOfRange.join(', ')}`);
+    setSelectionRangeError(notes.length > 0 ? notes.join(' · ') : null);
+  }, [displayedFiles, selectionRangeInput]);
 
   const isRunSelectMode = bulkMode === 'run';
   const isDeleteSelectMode = bulkMode === 'delete';
@@ -592,6 +688,8 @@ export function Sidebar() {
                         else {
                           setBulkMode('run');
                           setSelectedFileIds(new Set());
+                          setSelectionRangeInput('');
+                          setSelectionRangeError(null);
                         }
                       }}
                       disabled={state.files.length === 0 || isDeleteSelectMode}
@@ -623,6 +721,8 @@ export function Sidebar() {
                         else {
                           setBulkMode('delete');
                           setSelectedFileIds(new Set());
+                          setSelectionRangeInput('');
+                          setSelectionRangeError(null);
                         }
                       }}
                       disabled={state.files.length === 0 || isAnalyzing || isRunSelectMode}
@@ -657,7 +757,7 @@ export function Sidebar() {
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-[#ccc]">Run selected drawings</p>
                 <p className="text-[10px] text-[#858585] mt-1 leading-snug">
-                  Click files below or use checkboxes, then run analysis on the selection.
+                  Click files, use checkboxes, or type row numbers below.
                 </p>
               </div>
               <button
@@ -669,6 +769,17 @@ export function Sidebar() {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+            <BulkSelectionRangeInput
+              value={selectionRangeInput}
+              onChange={(v) => {
+                setSelectionRangeInput(v);
+                if (selectionRangeError) setSelectionRangeError(null);
+              }}
+              onApply={applySelectionRangeInput}
+              error={selectionRangeError}
+              maxIndex={displayedFiles.length}
+              disabled={displayedFiles.length === 0}
+            />
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <span className="text-[11px] tabular-nums text-[#858585]">
                 {selectedInViewCount} / {selectableFileIds.length} selected
@@ -713,7 +824,7 @@ export function Sidebar() {
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-[#ccc]">Remove selected drawings</p>
                 <p className="text-[10px] text-[#858585] mt-1 leading-snug">
-                  Remove files or clear analysis only. Use Remove for checkbox options.
+                  Click files, use checkboxes, or type row numbers below.
                 </p>
               </div>
               <button
@@ -725,6 +836,17 @@ export function Sidebar() {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+            <BulkSelectionRangeInput
+              value={selectionRangeInput}
+              onChange={(v) => {
+                setSelectionRangeInput(v);
+                if (selectionRangeError) setSelectionRangeError(null);
+              }}
+              onApply={applySelectionRangeInput}
+              error={selectionRangeError}
+              maxIndex={displayedFiles.length}
+              disabled={displayedFiles.length === 0}
+            />
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <span className="text-[11px] tabular-nums text-[#858585]">
                 {selectedInViewCount} / {selectableFileIds.length} selected

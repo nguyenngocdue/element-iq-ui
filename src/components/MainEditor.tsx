@@ -85,7 +85,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage, onClos
              <h3 className="text-white font-bold text-lg font-sans leading-tight">ElementIQ Analysis<br/><span className="text-[#82aaff] text-sm font-normal">{ELEMENTIQ_ENGINE}</span></h3>
            </div>
            <div className="flex items-center gap-2 shrink-0">
-             <div className="bg-[#1e1e1e] border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase text-right leading-none">IN<br/>PROGRESS</div>
+             <div className="border border-[#3c3c3c] px-3 py-1.5 text-[10px] font-black tracking-widest text-[#82aaff] rounded bg-[#82aaff]/10 uppercase whitespace-nowrap">In progress</div>
              <button
                type="button"
                onClick={onClose}
@@ -173,7 +173,7 @@ function ParsingOverlay({ fileName, pages, progress: realProgress, stage, onClos
            <button
              type="button"
              onClick={onClose}
-             className="text-[#a0a5b5] hover:text-white px-3 py-1.5 text-xs font-medium rounded transition-colors"
+             className="text-sky-400 hover:text-sky-300 px-3 py-1.5 text-xs font-medium rounded transition-colors"
            >
              Run in Background
            </button>
