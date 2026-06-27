@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DocumentFile } from '../types';
+import { fetchArtifactText } from '../lib/fetchArtifact';
 import { useReportJson } from './use-report-json';
 import {
   hasViewPanelsData,
@@ -24,7 +25,7 @@ export function useViewPanels(file: DocumentFile | undefined): {
       setLayoutLoading(false);
       return;
     }
-    if (!layoutArtifact?.downloadUrl) {
+    if (!layoutArtifact?.downloadUrl || !layoutArtifact.id) {
       setLayoutContent(null);
       setLayoutLoading(false);
       return;
@@ -34,14 +35,12 @@ export function useViewPanels(file: DocumentFile | undefined): {
     setLayoutLoading(true);
     (async () => {
       try {
-        const { authFetch } = await import('../lib/supabase');
-        const res = await authFetch(layoutArtifact.downloadUrl);
+        const text = await fetchArtifactText({
+          id: layoutArtifact.id,
+          downloadUrl: layoutArtifact.downloadUrl,
+        });
         if (cancelled) return;
-        if (!res.ok) {
-          setLayoutContent(null);
-          return;
-        }
-        setLayoutContent(await res.text());
+        setLayoutContent(text);
       } catch {
         if (!cancelled) setLayoutContent(null);
       } finally {
@@ -52,7 +51,7 @@ export function useViewPanels(file: DocumentFile | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [file?.id, file?.viewPanels?.panels?.length, layoutArtifact?.downloadUrl]);
+  }, [file?.id, file?.viewPanels?.panels?.length, layoutArtifact?.downloadUrl, layoutArtifact?.id]);
 
   const viewPanels = useMemo(() => {
     if (file?.viewPanels?.panels?.length) return file.viewPanels;

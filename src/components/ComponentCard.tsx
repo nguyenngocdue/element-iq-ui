@@ -203,9 +203,9 @@ export function ComponentCard({
               <Spinner size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-semibold text-[#10b981] tracking-wide">
-                  Loading model weights…
+                  Loading model list…
                 </p>
-                <p className="text-[10px] text-[#737373] mt-0.5">Fetching from server</p>
+                <p className="text-[10px] text-[#737373] mt-0.5">Reading available weights from server</p>
                 <div className="mt-2 h-1 w-full rounded-full bg-[#2a2a2a] overflow-hidden">
                   <div className="h-full w-1/3 rounded-full bg-[#10b981]/75 project-loading-bar" />
                 </div>

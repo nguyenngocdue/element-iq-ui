@@ -19,7 +19,8 @@ import {
 } from './lib/mapAnalysis';
 import { analysisStageFromProgress, ELEMENTIQ_ENGINE } from './lib/engineBranding';
 import { normalizeSelectedComponents } from './lib/analysisComponents';
-import { hydrateViewPanelsForDocs } from './lib/hydrateViewPanels';
+import { hydrateViewPanelsForDocIds, hydrateViewPanelForDoc } from './lib/hydrateViewPanels';
+import { fetchArtifactText } from './lib/fetchArtifact';
 import {
   formatWorkerLogMessage,
   levelForServerLogLine,
@@ -60,6 +61,11 @@ import {
   type EditorNavEntry,
 } from './lib/editorNavigationHistory';
 import { parseEditorUrlParams } from './lib/editorUrlState';
+import {
+  readEditorLayoutPrefs,
+  resolveLayoutOpenFromSearch,
+  writeEditorLayoutPrefs,
+} from './lib/editorLayoutPrefs';
 import {
   DEFAULT_EXPLORER_SORT,
   DEFAULT_EXPLORER_STATUS,
@@ -192,7 +198,9 @@ function mergeGuestRunResults(
 }
 
 function resolveUrlEditorFields(docs: DocumentFile[], search?: string) {
-  const parsed = parseEditorUrlParams(new URLSearchParams(search ?? window.location.search));
+  const params = new URLSearchParams(search ?? window.location.search);
+  const parsed = parseEditorUrlParams(params);
+  const layoutPrefs = readEditorLayoutPrefs();
   const initialFileId =
     parsed.fileId && docs.some((d) => d.id === parsed.fileId)
       ? parsed.fileId
@@ -228,8 +236,8 @@ function resolveUrlEditorFields(docs: DocumentFile[], search?: string) {
       openFiles: initialFileId ? [initialFileId] : [],
       activePage,
       activeSidebarTab: parsed.tab,
-      isSidebarOpen: parsed.sidebarOpen,
-      isValidationOpen: parsed.validationOpen,
+      isSidebarOpen: resolveLayoutOpenFromSearch(params, 'sb', layoutPrefs.isSidebarOpen),
+      isValidationOpen: resolveLayoutOpenFromSearch(params, 'panel', layoutPrefs.isValidationOpen),
       activeArtifact,
       editorView,
       explorerSort: parsed.explorerSort,
@@ -566,16 +574,25 @@ interface AppContextType {
 
 // Mock available components (P0: grout-tube ready, others not ready)
 // Load saved config from localStorage
+const savedLayout = readEditorLayoutPrefs();
+
+const bootSearch =
+  typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+
+const bootLayout = bootSearch
+  ? {
+      isSidebarOpen: resolveLayoutOpenFromSearch(bootSearch, 'sb', savedLayout.isSidebarOpen),
+      isValidationOpen: resolveLayoutOpenFromSearch(
+        bootSearch,
+        'panel',
+        savedLayout.isValidationOpen,
+      ),
+    }
+  : savedLayout;
+
 const savedConfig = (() => {
   try {
     const raw = localStorage.getItem('elementiq:analysis-config');
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-})();
-
-const savedLayout = (() => {
-  try {
-    const raw = localStorage.getItem('elementiq:layout');
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 })();
@@ -606,8 +623,8 @@ const initialState: SessionState = {
   pinnedFiles: [],
   activePage: 1,
   activeSidebarTab: 'explorer',
-  isSidebarOpen: savedLayout?.isSidebarOpen ?? true,
-  isValidationOpen: savedLayout?.isValidationOpen ?? true,
+  isSidebarOpen: bootLayout.isSidebarOpen,
+  isValidationOpen: bootLayout.isValidationOpen,
   isEngineLive: true,
   confidenceThreshold: savedConfig?.confidenceThreshold ?? 0.4,
   availableComponents: [],  // loaded from API
@@ -761,12 +778,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('elementiq:analysis-config', JSON.stringify(config));
   }, [state.selectedComponents, state.componentConfidence, state.componentModels, state.confidenceThreshold]);
 
-  // Persist layout preferences
+  // Persist layout preferences (sidebar + validation panel)
   React.useEffect(() => {
-    localStorage.setItem('elementiq:layout', JSON.stringify({
+    writeEditorLayoutPrefs({
       isSidebarOpen: state.isSidebarOpen,
       isValidationOpen: state.isValidationOpen,
-    }));
+    });
   }, [state.isSidebarOpen, state.isValidationOpen]);
 
   const updateFileStatus = useCallback((id: string, updates: Partial<DocumentFile>) => {
@@ -916,6 +933,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (file && file.file.size === 0 && !file.pdfLoadError) {
       void downloadFileIfNeeded(id, projectSessionRef.current);
     }
+
+    void (async () => {
+      const current = stateRef.current.files.find((f) => f.id === id);
+      if (!current || current.viewPanels?.panels?.length) return;
+      const hydrated = await hydrateViewPanelForDoc(current);
+      if (hydrated === current) return;
+      setState((prev) => ({
+        ...prev,
+        files: prev.files.map((f) => (f.id === id ? hydrated : f)),
+      }));
+    })();
   }, [state.files, downloadFileIfNeeded, syncEditorNavUi]);
 
   const applyNavEntry = useCallback((entry: EditorNavEntry) => {
@@ -1322,7 +1350,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, ...patch, files: mergedDocs, pinnedFiles: prev.pinnedFiles };
       });
       void (async () => {
-        const hydrated = await hydrateViewPanelsForDocs(mergedDocs);
+        const hydrateIds = [initialFileId ?? stateRef.current.activeFileId].filter(
+          (id): id is string => Boolean(id),
+        );
+        const hydrated = await hydrateViewPanelsForDocIds(mergedDocs, hydrateIds);
         setState((prev) => {
           if (!isSessionCurrent(loadSessionId)) return prev;
           const byId = new Map(hydrated.map((d) => [d.id, d]));
@@ -1511,7 +1542,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
 
       void (async () => {
-        const hydrated = await hydrateViewPanelsForDocs(mergedDocs);
+        const activeId = stateRef.current.activeFileId;
+        const hydrateIds = activeId ? [activeId] : [];
+        const hydrated = await hydrateViewPanelsForDocIds(mergedDocs, hydrateIds);
         if (!isSessionCurrent(refreshSessionId)) return;
         setState((prev) => {
           const byId = new Map(hydrated.map((d) => [d.id, d]));
@@ -2183,18 +2216,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         id,
         fileName,
         ),
-      );
+      ) as import('./types').FileArtifact[];
 
       let viewSplit = parseViewSplitFromAnalysis({ component_results: components });
       let viewTitles = parseViewTitlesFromAnalysis({ component_results: components });
       let tagNotes = parseTagNotesFromAnalysis({ component_results: components });
       let viewPanels: import('./lib/viewPanels').ParsedViewPanels | null = null;
       const reportArtifact = artifacts.find((a) => a.type === 'REPORT_JSON');
-      if (reportArtifact?.downloadUrl) {
+      if (reportArtifact?.downloadUrl && reportArtifact.id) {
         try {
-          const reportRes = await authFetch(reportArtifact.downloadUrl, fetchOpts);
-          if (reportRes.ok) {
-            const reportText = await reportRes.text();
+          const reportText = await fetchArtifactText(
+            { id: reportArtifact.id, downloadUrl: reportArtifact.downloadUrl },
+            fetchOpts,
+          );
+          if (reportText) {
             if (!viewSplit) viewSplit = parseViewSplitFromReport(reportText);
             if (!viewTitles) viewTitles = parseViewTitlesFromReport(reportText);
             if (!tagNotes) tagNotes = parseTagNotesFromReport(reportText);
@@ -2207,8 +2242,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!viewPanels?.panels?.length) {
         try {
           viewPanels = await fetchViewPanelsForFile(
-            { artifacts: artifacts.map((a) => ({ type: a.type, downloadUrl: a.downloadUrl })) },
-            (url) => authFetch(url, fetchOpts),
+            {
+              artifacts: artifacts.map((a) => ({
+                id: a.id,
+                type: a.type,
+                downloadUrl: a.downloadUrl,
+              })),
+            },
+            fetchOpts,
           );
         } catch {
           // Viewport overlay enrichment is optional — must not fail the whole analyze UI update.

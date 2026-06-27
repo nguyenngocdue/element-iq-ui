@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DocumentFile } from '../types';
+import { fetchArtifactText } from '../lib/fetchArtifact';
 
 type ReportJsonState = {
   content: string | null;
@@ -21,7 +22,7 @@ export function useReportJson(file: DocumentFile | undefined): ReportJsonState {
     }
 
     const artifact = file.artifacts?.find((a) => a.type === 'REPORT_JSON');
-    if (!artifact?.downloadUrl) {
+    if (!artifact?.downloadUrl || !artifact.id) {
       setState({ content: null, loading: false, error: 'No report JSON artifact available.' });
       return;
     }
@@ -31,17 +32,16 @@ export function useReportJson(file: DocumentFile | undefined): ReportJsonState {
     (async () => {
       setState({ content: null, loading: true, error: null });
       try {
-        const { authFetch } = await import('../lib/supabase');
-        const res = await authFetch(artifact.downloadUrl);
+        const text = await fetchArtifactText({
+          id: artifact.id,
+          downloadUrl: artifact.downloadUrl,
+        });
         if (cancelled) return;
-        if (!res.ok) {
-          setState({ content: null, loading: false, error: `HTTP ${res.status}` });
+        if (text === null) {
+          setState({ content: null, loading: false, error: 'HTTP error' });
           return;
         }
-        const text = await res.text();
-        if (!cancelled) {
-          setState({ content: text, loading: false, error: null });
-        }
+        setState({ content: text, loading: false, error: null });
       } catch (err) {
         if (!cancelled) {
           setState({

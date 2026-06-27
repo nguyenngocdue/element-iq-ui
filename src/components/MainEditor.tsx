@@ -25,6 +25,7 @@ import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
 import { useViewPanels } from '../hooks/use-view-panels';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid, Crosshair } from 'lucide-react';
 import { artifactDisplayLabel, artifactIconMeta, isJsonArtifactType } from '../lib/fileView';
+import { fetchArtifactBlob, fetchArtifactText } from '../lib/fetchArtifact';
 import { isGroutOverlayArtifactType } from '../lib/hydrateViewPanels';
 import { cn } from '../lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -613,29 +614,27 @@ function ArtifactViewer({
       setLoadError(null);
       setContent(null);
       try {
-        const { authFetch } = await import('../lib/supabase');
-        const res = await authFetch(artifact.downloadUrl);
-        if (cancelled) return;
-        if (!res.ok) {
-          const detail = await res.text().catch(() => '');
-          let message = `HTTP ${res.status}`;
-          try {
-            const parsed = JSON.parse(detail);
-            if (parsed.detail) message = typeof parsed.detail === 'string' ? parsed.detail : message;
-          } catch {
-            if (detail) message = detail.slice(0, 160);
-          }
-          setLoadError(message);
-          return;
-        }
         if (isJsonArtifactType(artifact.type)) {
-          setContent(await res.text());
-        } else if (artifact.type === 'ANNOTATED_PDF') {
-          const blob = await res.blob();
-          objectUrl = URL.createObjectURL(blob);
-          setContent(objectUrl);
+          const text = await fetchArtifactText({
+            id: artifact.id,
+            downloadUrl: artifact.downloadUrl,
+          });
+          if (cancelled) return;
+          if (text === null) {
+            setLoadError('Failed to load artifact');
+            return;
+          }
+          setContent(text);
         } else {
-          const blob = await res.blob();
+          const blob = await fetchArtifactBlob({
+            id: artifact.id,
+            downloadUrl: artifact.downloadUrl,
+          });
+          if (cancelled) return;
+          if (!blob) {
+            setLoadError('Failed to load artifact');
+            return;
+          }
           objectUrl = URL.createObjectURL(blob);
           setContent(objectUrl);
         }

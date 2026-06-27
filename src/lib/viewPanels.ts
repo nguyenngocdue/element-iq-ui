@@ -1,4 +1,5 @@
 import type { Detection } from '../types';
+import { fetchArtifactText } from './fetchArtifact';
 import { extractReportComponents, type ParsedViewSplit, type ViewSplitObject } from './viewSplit';
 
 /** Analysis raster px per PDF point (inverse of 72/300). */
@@ -110,15 +111,18 @@ export function fileHasLayoutArtifacts(file: { artifacts?: { type: string }[] } 
 }
 
 export async function fetchViewPanelsForFile(
-  file: { artifacts?: { type: string; downloadUrl?: string }[] },
-  authFetch: (url: string) => Promise<Response>,
+  file: { artifacts?: { id: string; type: string; downloadUrl?: string }[] },
+  init?: RequestInit,
 ): Promise<ParsedViewPanels | null> {
   const reportArt = file.artifacts?.find((a) => a.type === 'REPORT_JSON');
-  if (reportArt?.downloadUrl) {
+  if (reportArt?.downloadUrl && reportArt.id) {
     try {
-      const res = await authFetch(reportArt.downloadUrl);
-      if (res.ok) {
-        const parsed = parseViewPanelsFromReport(await res.text());
+      const text = await fetchArtifactText(
+        { id: reportArt.id, downloadUrl: reportArt.downloadUrl },
+        init,
+      );
+      if (text) {
+        const parsed = parseViewPanelsFromReport(text);
         if (parsed) return parsed;
       }
     } catch {
@@ -126,11 +130,14 @@ export async function fetchViewPanelsForFile(
     }
   }
   const layoutArt = file.artifacts?.find((a) => a.type === 'LAYOUT_JSON');
-  if (layoutArt?.downloadUrl) {
+  if (layoutArt?.downloadUrl && layoutArt.id) {
     try {
-      const res = await authFetch(layoutArt.downloadUrl);
-      if (res.ok) {
-        return parseViewPanelsFromLayoutJson(await res.text());
+      const text = await fetchArtifactText(
+        { id: layoutArt.id, downloadUrl: layoutArt.downloadUrl },
+        init,
+      );
+      if (text) {
+        return parseViewPanelsFromLayoutJson(text);
       }
     } catch {
       return null;
