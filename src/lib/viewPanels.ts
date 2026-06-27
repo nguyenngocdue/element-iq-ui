@@ -9,6 +9,8 @@ export const GROUT_VIEWPORT_CLASSES = new Set(['plan_view', 'reinforcement_plan'
 /** YOLO classes that are never grout view-split panels (even if title harvest is wrong). */
 export const NON_GROUT_VIEW_CLASSES = new Set([
   'section_view',
+  'view',
+  'detail',
   'detail_view',
   'rigging_diagram',
   'title_block',

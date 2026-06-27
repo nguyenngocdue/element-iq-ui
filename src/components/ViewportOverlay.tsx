@@ -21,6 +21,16 @@ const PANEL_COLORS: Record<string, { border: string; fill: string; chip: string 
     fill: 'rgba(255, 120, 0, 0.08)',
     chip: 'bg-[#ff7800]/90 border-[#ff7800]',
   },
+  view: {
+    border: '#ffb400',
+    fill: 'rgba(255, 180, 0, 0.08)',
+    chip: 'bg-[#ffb400]/90 border-[#ffb400]',
+  },
+  detail: {
+    border: '#0050c8',
+    fill: 'rgba(0, 80, 200, 0.08)',
+    chip: 'bg-[#0050c8]/90 border-[#0050c8]',
+  },
   detail_view: {
     border: '#0050c8',
     fill: 'rgba(0, 80, 200, 0.08)',
