@@ -1393,8 +1393,8 @@ export function FileItem({
 
   const fileTooltip = renderTooltip(
     <>
-      <ExplorerTooltipRow label="ID" value={`${file.id.slice(0, 8)}...`} valueClassName="font-mono" />
-      <ExplorerTooltipRow label="File" value={file.name} valueClassName="font-medium" />
+      <ExplorerTooltipRow label="ID" value={file.id} copyText={file.id} valueClassName="font-mono" />
+      <ExplorerTooltipRow label="File" value={file.name} copyText={file.name} valueClassName="font-medium" />
       <ExplorerTooltipRow label="Size" value={formatFileSizeBytes(getFileSizeBytes(file))} />
       <ExplorerTooltipRow label="Pages" value={file.pages} />
       <ExplorerTooltipRow

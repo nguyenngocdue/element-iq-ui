@@ -13,8 +13,8 @@ export function ProjectTooltipContent({  id,
 }) {
   return (
     <>
-      <ExplorerTooltipRow label="UUID" value={id} valueClassName="font-mono text-[11px] break-all" />
-      <ExplorerTooltipRow label="Project" value={name} valueClassName="font-medium" />
+      <ExplorerTooltipRow label="UUID" value={id} copyText={id} valueClassName="font-mono text-[11px] break-all" />
+      <ExplorerTooltipRow label="Project" value={name} copyText={name} valueClassName="font-medium" />
       {description?.trim() ? (
         <ExplorerTooltipRow label="Description" value={description.trim()} />
       ) : null}
@@ -59,8 +59,10 @@ export function UserTooltipContent({
 }) {
   return (
     <>
-      <ExplorerTooltipRow label="User ID" value={userId} valueClassName="font-mono text-[11px] break-all" />
-      {name ? <ExplorerTooltipRow label="Name" value={name} valueClassName="font-medium" /> : null}
+      <ExplorerTooltipRow label="User ID" value={userId} copyText={userId} valueClassName="font-mono text-[11px] break-all" />
+      {name ? (
+        <ExplorerTooltipRow label="Name" value={name} copyText={name} valueClassName="font-medium" />
+      ) : null}
       {username ? <ExplorerTooltipRow label="Username" value={username} /> : null}
       {email ? <ExplorerTooltipRow label="Email" value={email} /> : null}
     </>

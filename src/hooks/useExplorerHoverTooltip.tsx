@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { Check, Copy } from 'lucide-react';
+import { useCopy } from './use-copy';
 import { cn } from '../lib/utils';
 
 export const EXPLORER_TOOLTIP_SHELL_CLASS =
@@ -210,18 +212,59 @@ export function useExplorerHoverTooltip(delayMs = 200, placement: TooltipPlaceme
   };
 }
 
+export function ExplorerTooltipCopyButton({
+  text,
+  title = 'Copy',
+}: {
+  text: string;
+  title?: string;
+}) {
+  const { copied, copy } = useCopy();
+
+  return (
+    <button
+      type="button"
+      className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-[#858585] hover:bg-[#3c3c3c] hover:text-white transition-colors cursor-pointer"
+      title={copied ? 'Copied' : title}
+      aria-label={copied ? 'Copied' : title}
+      onClick={(e) => {
+        e.stopPropagation();
+        void copy(text);
+      }}
+    >
+      {copied ? <Check className="h-3 w-3 text-[#2eb886]" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 export function ExplorerTooltipRow({
   label,
   value,
   valueClassName,
+  copyText,
 }: {
   label: string;
   value: ReactNode;
   valueClassName?: string;
+  /** When set, shows a copy button and stacks label above value. */
+  copyText?: string;
 }) {
+  if (copyText) {
+    return (
+      <div className="text-[#b0b0b0]">
+        <div className="mb-0.5 flex items-center justify-between gap-2">
+          <span>{label}:</span>
+          <ExplorerTooltipCopyButton text={copyText} title={`Copy ${label.toLowerCase()}`} />
+        </div>
+        <span className={cn('text-white break-all block', valueClassName)}>{value}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="text-[#b0b0b0]">
-      {label}: <span className={cn('text-white', valueClassName)}>{value}</span>
+      {label}:{' '}
+      <span className={cn('text-white break-all', valueClassName)}>{value}</span>
     </div>
   );
 }
@@ -229,7 +272,10 @@ export function ExplorerTooltipRow({
 export function ExplorerTooltipLocation({ path }: { path: string }) {
   return (
     <div className="text-[#858585] border-t border-[#333] pt-1 mt-1">
-      <div className="mb-0.5">Location:</div>
+      <div className="mb-0.5 flex items-center justify-between gap-2">
+        <span>Location:</span>
+        <ExplorerTooltipCopyButton text={path} title="Copy path" />
+      </div>
       <span className="text-[#6b9af5] font-mono break-all leading-relaxed">{path}</span>
     </div>
   );

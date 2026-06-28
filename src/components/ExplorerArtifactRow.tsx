@@ -28,8 +28,8 @@ function ArtifactTooltipContent({
 
   return (
     <>
-      <ExplorerTooltipRow label="ID" value={`${artifact.id.slice(0, 8)}...`} valueClassName="font-mono" />
-      <ExplorerTooltipRow label="Artifact" value={displayName} valueClassName="font-medium" />
+      <ExplorerTooltipRow label="ID" value={artifact.id} copyText={artifact.id} valueClassName="font-mono" />
+      <ExplorerTooltipRow label="Artifact" value={displayName} copyText={displayName} valueClassName="font-medium" />
       <ExplorerTooltipRow label="Source" value={sourceFileName} />
       {artifact.originalFilename && (
         <ExplorerTooltipRow label="Filename" value={artifact.originalFilename} />

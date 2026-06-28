@@ -1,5 +1,5 @@
 import React from 'react';
-import { ParsedTagNote, ParsedTagNotes } from '../lib/tagNotes';
+import { ParsedTagNote, ParsedTagNotes, TagBboxKind } from '../lib/tagNotes';
 
 const TAG_COLORS: Record<
   ParsedTagNote['source'],
@@ -25,6 +25,17 @@ const TAG_COLORS: Record<
     line: 'rgba(133, 133, 133, 0.55)',
     chip: 'bg-[#858585]/95 border-[#858585]',
   },
+};
+
+const KIND_STYLES: Record<
+  TagBboxKind,
+  { border: string; line: string; width: number; opacity: number; chip?: string }
+> = {
+  check: { border: '#f97316', line: 'rgba(249, 115, 22, 0.55)', width: 3, opacity: 1 },
+  raw: { border: '#ffc800', line: 'rgba(255, 200, 0, 0.45)', width: 1, opacity: 0.92 },
+  anchor: { border: '#60a5fa', line: 'rgba(96, 165, 250, 0.45)', width: 2, opacity: 0.95 },
+  candidate: { border: '#6b7280', line: 'rgba(107, 114, 128, 0.45)', width: 1, opacity: 0.72 },
+  parsed: { border: '#a78bfa', line: 'rgba(167, 139, 250, 0.45)', width: 2, opacity: 0.88 },
 };
 
 const REJECTED_COLOR = {
@@ -55,9 +66,17 @@ export function TagOverlay({
   const h = viewerHeight * viewerScale;
 
   const sorted = [...data.tags].sort((a, b) => {
+    const kindOrder: Record<TagBboxKind, number> = {
+      raw: 0,
+      anchor: 1,
+      parsed: 2,
+      candidate: 3,
+      check: 4,
+    };
+    if (kindOrder[a.bboxKind] !== kindOrder[b.bboxKind]) {
+      return kindOrder[a.bboxKind] - kindOrder[b.bboxKind];
+    }
     if (a.usedForCheck !== b.usedForCheck) return a.usedForCheck ? 1 : -1;
-    if (a.rejectedReason && !b.rejectedReason) return -1;
-    if (!a.rejectedReason && b.rejectedReason) return 1;
     return 0;
   });
 
@@ -68,7 +87,11 @@ export function TagOverlay({
       aria-label="Qty tag boundary overlay"
     >
       {sorted.map((tag, i) => (
-        <TagMarkers key={`${tag.rawText}-${tag.bbox.join(',')}-${i}`} tag={tag} toScreen={toScreen} />
+        <TagMarkers
+          key={`${tag.bboxKind}-${tag.rawText}-${tag.bbox.join(',')}-${i}`}
+          tag={tag}
+          toScreen={toScreen}
+        />
       ))}
     </div>
   );
@@ -82,9 +105,17 @@ function TagMarkers({
   toScreen: (v: number) => number;
 }) {
   const rejected = Boolean(tag.rejectedReason);
-  const colors = rejected ? REJECTED_COLOR : (TAG_COLORS[tag.source] ?? TAG_COLORS.unknown);
-  const borderWidth = tag.usedForCheck ? 3 : rejected ? 1 : 2;
-  const opacity = rejected ? 0.72 : 1;
+  const sourceColors = rejected ? REJECTED_COLOR : (TAG_COLORS[tag.source] ?? TAG_COLORS.unknown);
+  const kind = KIND_STYLES[tag.bboxKind] ?? KIND_STYLES.parsed;
+  const colors = tag.bboxKind === 'check' && !rejected
+    ? { border: kind.border, line: kind.line, chip: sourceColors.chip }
+    : {
+        border: kind.border,
+        line: kind.line,
+        chip: rejected ? REJECTED_COLOR.chip : 'bg-[#1e1e1e]/90 border-white/20',
+      };
+  const borderWidth = kind.width;
+  const opacity = rejected ? 0.72 : kind.opacity;
   const [x1, y1, x2, y2] = tag.bbox;
   const [cx, cy] = tag.center;
   const left = toScreen(x1);
@@ -104,6 +135,19 @@ function TagMarkers({
       ? ` · rejected`
       : '';
 
+  const kindLabel =
+    tag.bboxKind === 'check'
+      ? ''
+      : tag.bboxKind === 'raw'
+        ? ' · PDF bbox'
+        : tag.bboxKind === 'anchor'
+          ? ' · anchor'
+          : tag.bboxKind === 'parsed'
+            ? ' · pinned'
+            : '';
+
+  const showChip = tag.bboxKind === 'check' || tag.bboxKind === 'candidate';
+
   return (
     <>
       <div
@@ -115,7 +159,7 @@ function TagMarkers({
           height,
           opacity,
           border: `${borderWidth}px dashed ${colors.border}`,
-          boxShadow: tag.usedForCheck ? `0 0 10px ${colors.border}60` : undefined,
+          boxShadow: tag.bboxKind === 'check' ? `0 0 10px ${colors.border}60` : undefined,
         }}
         aria-label={`Tag boundary ${tag.rawText}`}
       />
@@ -146,19 +190,29 @@ function TagMarkers({
           style={{ backgroundColor: colors.border, left: '50%', top: '50%' }}
         />
       </div>
-      <div
-        className={`absolute px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wide text-white shadow-lg border whitespace-nowrap ${colors.chip}`}
-        style={{ left, top: top + height + 6, opacity }}
-      >
-        {tag.checkIndex ? `QTY CHECK #${tag.checkIndex}: ` : ''}
-        {tag.rawText}
-        {tag.usedForCheck ? ` = ${tag.quantity}` : ''}
-        {!rejected ? ` · ${sourceLabel}` : ''}
-        {statusSuffix}
-        {tag.view ? ` · ${tag.view}` : ''}
-        {' · ('}
-        {cx.toFixed(0)},{cy.toFixed(0)})
-      </div>
+      {showChip ? (
+        <div
+          className={`absolute px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wide text-white shadow-lg border whitespace-nowrap ${colors.chip}`}
+          style={{ left, top: top + height + 6, opacity }}
+        >
+          {tag.checkIndex ? `QTY CHECK #${tag.checkIndex}: ` : ''}
+          {tag.rawText}
+          {tag.usedForCheck ? ` = ${tag.quantity}` : ''}
+          {!rejected ? ` · ${sourceLabel}` : ''}
+          {statusSuffix}
+          {tag.view ? ` · ${tag.view}` : ''}
+          {' · ('}
+          {cx.toFixed(0)},{cy.toFixed(0)})
+        </div>
+      ) : (
+        <div
+          className="absolute px-1.5 py-0.5 rounded text-[9px] font-mono text-white/90 bg-[#1e1e1e]/85 border border-white/15 whitespace-nowrap"
+          style={{ left, top: Math.max(4, top - 18), opacity }}
+        >
+          {tag.rawText}
+          {kindLabel}
+        </div>
+      )}
     </>
   );
 }
