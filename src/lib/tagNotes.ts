@@ -48,6 +48,8 @@ export type TagSelectionMetaLike = {
 
   anchor_xy?: number[] | null;
 
+  rotation_deg?: number | null;
+
   draw_bbox_source?: string | null;
 
 };
@@ -123,6 +125,9 @@ export type ParsedTagNote = {
   reportStatus?: string;
 
   view?: string;
+
+  /** 0 = horizontal callout; 90 = vertical strip on rendered sheet. */
+  rotationDeg?: 0 | 90;
 
 };
 
@@ -332,48 +337,6 @@ function noteAnchorXy(
 
 
 
-function rawNoteNearClusterBBox(note: TagNoteLike, cluster?: MatchedClusterLike | null): boolean {
-
-  const bb = note.bbox_px;
-
-  const cb = cluster?.bbox;
-
-  if (!bb || bb.length < 4 || !cb || cb.length < 4) return false;
-
-  const anchor = noteAnchorXy(bb, cluster) ?? tagCenter(bb);
-
-  const [px, py] = anchor;
-
-  const [x1, y1, x2, y2] = cb;
-
-  if (py < y1 - 180) return false;
-
-  if (y2 + 15 <= py && py <= y2 + 1200) {
-
-    if (x1 - 520 <= px && px <= x2 + 520) return true;
-
-  }
-
-  if (x1 - 520 <= px && px <= x1 + 100 && y1 - 100 <= py && py <= y2 + 1200) return true;
-
-  if (noteBboxIsVertical(bb)) {
-
-    if (Math.abs(px - x2) <= 520 && y1 - 180 <= py && py <= y2 + 420) return true;
-
-    if (Math.abs(px - x1) <= 520 && y1 - 180 <= py && py <= y2 + 420) return true;
-
-  }
-
-  if (Math.abs(py - y2) > 280) return false;
-
-  if (px > x2 + 120) return false;
-
-  return true;
-
-}
-
-
-
 function tagCoordsMisaligned(note: TagNoteLike, cluster?: MatchedClusterLike | null): boolean {
 
   const bb = note.bbox_px;
@@ -404,7 +367,31 @@ function tagCoordsMisaligned(note: TagNoteLike, cluster?: MatchedClusterLike | n
 
 }
 
+function noteUsesDisplaySwap(bbox: number[], cluster?: MatchedClusterLike | null): boolean {
+  if (bbox.length < 4 || !cluster?.bbox || cluster.bbox.length < 4) return false;
+  if (noteBboxIsVertical(bbox)) return false;
+  const [x1, , x2, y2] = bbox;
+  const [, y1c, , y2c] = cluster.bbox;
+  const py = y2;
+  if (py >= y1c - 180) return false;
+  const [, dcy] = noteDisplayCenter(bbox);
+  if (!(y1c - 180 <= dcy && dcy <= y2c + 1200)) return false;
+  const anchor = noteAnchorXy(bbox, cluster);
+  if (!anchor) return false;
+  const [ncx, ncy] = tagCenter(bbox);
+  return Math.hypot(ncx - anchor[0], ncy - anchor[1]) > 480;
+}
 
+function noteDisplayRotationDeg(
+  note: TagNoteLike,
+  cluster?: MatchedClusterLike | null,
+): 0 | 90 {
+  const bb = note.bbox_px;
+  if (!bb || bb.length < 4) return 0;
+  if (noteBboxIsVertical(bb)) return 90;
+  if (noteUsesDisplaySwap(bb, cluster)) return 90;
+  return 0;
+}
 
 function estimatedCalloutBbox(cluster: MatchedClusterLike): number[] | null {
 
@@ -417,8 +404,6 @@ function estimatedCalloutBbox(cluster: MatchedClusterLike): number[] | null {
   return [Math.max(0, x1 - 95), y2 - 120, Math.max(0, x1 - 8), y2 + 12];
 
 }
-
-
 
 function anchorHighlightBbox(
 
@@ -440,39 +425,28 @@ function anchorHighlightBbox(
 
   const cb = cluster?.bbox;
 
-  if (noteBboxIsVertical(bb)) {
+  const rotation = noteDisplayRotationDeg(note, cluster);
 
-    const halfH = Math.min(150, Math.max(45, (bb[3] - bb[1]) / 2));
-
-    const stripW = Math.max(36, Math.min(58, bb[2] - bb[0] + 14));
-
-    const edgeX = Math.round(px);
-
-    if (cb && cb.length >= 4 && px <= (cb[0] + cb[2]) / 2) {
-
-      return [edgeX, Math.round(py - halfH), edgeX + stripW, Math.round(py + halfH)];
-
+  if (rotation === 90) {
+    let halfH: number;
+    let stripW: number;
+    if (noteBboxIsVertical(bb)) {
+      halfH = Math.min(150, Math.max(45, (bb[3] - bb[1]) / 2));
+      stripW = Math.max(36, Math.min(58, bb[2] - bb[0] + 14));
+    } else {
+      halfH = 72;
+      stripW = 42;
     }
-
+    const edgeX = Math.round(px);
+    if (cb && cb.length >= 4 && px <= (cb[0] + cb[2]) / 2) {
+      return [edgeX, Math.round(py - halfH), edgeX + stripW, Math.round(py + halfH)];
+    }
     return [Math.max(0, edgeX - stripW), Math.round(py - halfH), edgeX, Math.round(py + halfH)];
-
   }
 
   return [Math.round(px - 72), Math.round(py - 20), Math.round(px + 72), Math.round(py + 20)];
 
 }
-
-
-
-function bboxesDiffer(a: number[], b: number[], tol = 24): boolean {
-
-  if (a.length < 4 || b.length < 4) return true;
-
-  return a.some((v, i) => Math.abs(v - b[i]) > tol);
-
-}
-
-
 
 function resolveOverlayBbox(bbox: number[]): {
 
@@ -488,7 +462,19 @@ function resolveOverlayBbox(bbox: number[]): {
 
 }
 
-
+function rawBboxFarFromAnchor(
+  note: TagNoteLike,
+  cluster?: MatchedClusterLike | null,
+  maxDist = 480,
+): boolean {
+  const bb = note.bbox_px;
+  const cb = cluster?.bbox;
+  if (!bb || bb.length < 4 || !cb || cb.length < 4) return false;
+  const anchor = noteAnchorXy(bb, cluster);
+  if (!anchor) return false;
+  const [ncx, ncy] = tagCenter(bb);
+  return Math.hypot(ncx - anchor[0], ncy - anchor[1]) > maxDist;
+}
 
 /** Mirrors validator ``_tag_draw_bbox``. */
 
@@ -502,17 +488,15 @@ function resolveDrawBbox(note: TagNoteLike, cluster?: MatchedClusterLike | null)
 
 
 
-  if (tagCoordsMisaligned(note, cluster)) {
+  const needsPin = tagCoordsMisaligned(note, cluster) || rawBboxFarFromAnchor(note, cluster);
+  if (needsPin) {
     const anchor = noteAnchorXy(bb, cluster);
     const cb = cluster.bbox;
     const anchorBox = anchorHighlightBbox(note, cluster);
-    if (
-      anchorBox
-      && anchor
-      && cb[1] - 120 <= anchor[1]
-      && anchor[1] <= cb[3] + 250
-    ) {
-      return anchorBox;
+    if (anchorBox) {
+      if (!anchor || (cb[1] - 120 <= anchor[1] && anchor[1] <= cb[3] + 250)) {
+        return anchorBox;
+      }
     }
     return estimatedCalloutBbox(cluster) ?? tightenTagBbox(bb);
   }
@@ -657,6 +641,8 @@ function upsertTag(map: Map<string, ParsedTagNote>, entry: ParsedTagNote): void 
 
     view: entry.view ?? existing.view,
 
+    rotationDeg: entry.rotationDeg ?? existing.rotationDeg,
+
     source: entry.source !== 'unknown' ? entry.source : existing.source,
 
   });
@@ -693,6 +679,8 @@ function addFromBbox(
 
     view?: string;
 
+    rotationDeg?: 0 | 90;
+
   },
 
 ): void {
@@ -727,97 +715,9 @@ function addFromBbox(
 
     view: params.view,
 
+    rotationDeg: params.rotationDeg,
+
   });
-
-}
-
-
-
-function addRawAndAnchorBoxes(
-
-  map: Map<string, ParsedTagNote>,
-
-  note: TagNoteLike,
-
-  cluster: MatchedClusterLike | null | undefined,
-
-  drawBbox: number[],
-
-  meta: {
-
-    source: ParsedTagNote['source'];
-
-    usedForCheck: boolean;
-
-    checkIndex?: number;
-
-    reportStatus?: string;
-
-    view?: string;
-
-  },
-
-): void {
-
-  const raw = (note.raw_text ?? '').trim();
-
-  const rawBbox = note.bbox_px;
-
-  if (!rawBbox || rawBbox.length < 4) return;
-
-
-
-  if (bboxesDiffer(rawBbox, drawBbox)) {
-
-    addFromBbox(map, {
-
-      rawText: raw,
-
-      quantity: note.quantity ?? 0,
-
-      face: note.face ?? null,
-
-      bboxPx: rawBbox,
-
-      bboxKind: 'raw',
-
-      source: meta.source,
-
-      usedForCheck: false,
-
-      view: meta.view,
-
-    });
-
-  }
-
-
-
-  const anchorBox = anchorHighlightBbox(note, cluster);
-
-  if (anchorBox && bboxesDiffer(anchorBox, drawBbox) && bboxesDiffer(anchorBox, rawBbox)) {
-
-    addFromBbox(map, {
-
-      rawText: raw,
-
-      quantity: note.quantity ?? 0,
-
-      face: note.face ?? null,
-
-      bboxPx: anchorBox,
-
-      bboxKind: 'anchor',
-
-      source: meta.source,
-
-      usedForCheck: false,
-
-      view: meta.view,
-
-    });
-
-  }
 
 }
 
@@ -842,10 +742,6 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
     if (entry.tag_selection) tagSelection = entry.tag_selection;
 
   }
-
-
-
-  const defaultCluster = reports.find((r) => r.matched_cluster?.bbox)?.matched_cluster ?? null;
 
 
 
@@ -883,6 +779,11 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
 
     checkIndex += 1;
 
+    const rotationDeg =
+      report.tag_selection?.rotation_deg === 90
+        ? 90
+        : noteDisplayRotationDeg(note, report.matched_cluster);
+
     const meta = {
 
       source: resolveTagSource(note.raw_text, tagSelection),
@@ -900,25 +801,16 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
 
 
     addFromBbox(tagMap, {
-
       rawText: note.raw_text,
-
       quantity: note.quantity ?? 0,
-
       face: note.face ?? null,
-
       bboxPx: drawBbox,
-
       bboxKind: 'check',
-
+      rotationDeg,
       ...meta,
-
     });
 
-    addRawAndAnchorBoxes(tagMap, note, report.matched_cluster, drawBbox, meta);
-
     seenNoteKeys.add(`${note.raw_text}:${(note.bbox_px ?? []).join(',')}`);
-
   }
 
 
@@ -1010,137 +902,21 @@ export function parseTagNotesFromComponent(comp: ComponentResultWithTags): Parse
 
 
       addFromBbox(tagMap, {
-
         rawText: raw,
-
         quantity,
-
         face,
-
         bboxPx: drawBbox,
-
         bboxKind: 'candidate',
-
         source: 'unknown',
-
         usedForCheck: false,
-
         rejectedReason: candidate.rejected_reason ?? null,
-
         reportStatus: candidate.rejected_reason ? 'REJECTED' : undefined,
-
         view: report.expected?.view ?? 'PLAN AS CAST',
-
       });
-
-      addRawAndAnchorBoxes(
-
-        tagMap,
-
-        { raw_text: raw, bbox_px: bboxPx, quantity, face },
-
-        report.matched_cluster,
-
-        drawBbox,
-
-        { source: 'unknown', usedForCheck: false, view: report.expected?.view },
-
-      );
-
     }
-
   }
-
-
-
-  for (const note of notes) {
-
-    const raw = (note.raw_text ?? '').trim();
-
-    if (!raw || !isAuthoritativeGroutQtyTag(raw, note.position)) continue;
-
-    const key = `${note.raw_text}:${(note.bbox_px ?? []).join(',')}`;
-
-    if (seenNoteKeys.has(key)) continue;
-
-    if (!note.bbox_px || note.bbox_px.length < 4) continue;
-
-
-
-    const cluster = defaultCluster;
-
-    const nearCluster = cluster ? rawNoteNearClusterBBox(note, cluster) : false;
-
-    const drawBbox = resolveDrawBbox(note, cluster);
-
-
-
-    addFromBbox(tagMap, {
-
-      rawText: raw,
-
-      quantity: note.quantity ?? 0,
-
-      face: note.face ?? null,
-
-      bboxPx: note.bbox_px,
-
-      bboxKind: 'raw',
-
-      source: 'pdf',
-
-      usedForCheck: false,
-
-      view: 'PLAN AS CAST',
-
-    });
-
-
-
-    if (nearCluster && bboxesDiffer(note.bbox_px, drawBbox)) {
-
-      addFromBbox(tagMap, {
-
-        rawText: raw,
-
-        quantity: note.quantity ?? 0,
-
-        face: note.face ?? null,
-
-        bboxPx: drawBbox,
-
-        bboxKind: 'parsed',
-
-        source: 'pdf',
-
-        usedForCheck: false,
-
-        view: 'PLAN AS CAST',
-
-      });
-
-      addRawAndAnchorBoxes(tagMap, note, cluster, drawBbox, {
-
-        source: 'pdf',
-
-        usedForCheck: false,
-
-        view: 'PLAN AS CAST',
-
-      });
-
-    }
-
-
-
-    seenNoteKeys.add(key);
-
-  }
-
-
 
   return { tags: [...tagMap.values()] };
-
 }
 
 

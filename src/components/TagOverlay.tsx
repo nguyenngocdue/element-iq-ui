@@ -97,6 +97,13 @@ export function TagOverlay({
   );
 }
 
+function tagIsVertical(tag: ParsedTagNote): boolean {
+  if (tag.rotationDeg === 90) return true;
+  if (tag.rotationDeg === 0) return false;
+  const [x1, y1, x2, y2] = tag.bbox;
+  return y2 - y1 > (x2 - x1) * 1.15;
+}
+
 function TagMarkers({
   tag,
   toScreen,
@@ -124,8 +131,8 @@ function TagMarkers({
   const height = Math.max(2, toScreen(y2) - toScreen(y1));
   const lineX = toScreen(cx);
   const crossY = toScreen(cy);
-  const guideH = Math.max(height * AXIS_GUIDE_SCALE, 40);
-  const guideTop = crossY - guideH / 2;
+  const vertical = tagIsVertical(tag);
+  const guideMain = Math.max((vertical ? width : height) * AXIS_GUIDE_SCALE, 40);
   const sourceLabel =
     tag.source === 'ocr' ? 'OCR' : tag.source === 'pdf' ? 'PDF' : tag.source.toUpperCase();
 
@@ -148,6 +155,10 @@ function TagMarkers({
 
   const showChip = tag.bboxKind === 'check' || tag.bboxKind === 'candidate';
 
+  const chipStyle: React.CSSProperties = vertical
+    ? { left: left + width + 6, top: crossY, transform: 'translateY(-50%)', opacity }
+    : { left, top: top + height + 6, opacity };
+
   return (
     <>
       <div
@@ -163,16 +174,29 @@ function TagMarkers({
         }}
         aria-label={`Tag boundary ${tag.rawText}`}
       />
-      <div
-        className="absolute w-px border-l border-dashed"
-        style={{
-          left: lineX,
-          top: guideTop,
-          height: guideH,
-          opacity,
-          borderColor: colors.line,
-        }}
-      />
+      {vertical ? (
+        <div
+          className="absolute h-px border-t border-dashed"
+          style={{
+            left: lineX - guideMain / 2,
+            top: crossY,
+            width: guideMain,
+            opacity,
+            borderColor: colors.line,
+          }}
+        />
+      ) : (
+        <div
+          className="absolute w-px border-l border-dashed"
+          style={{
+            left: lineX,
+            top: crossY - guideMain / 2,
+            height: guideMain,
+            opacity,
+            borderColor: colors.line,
+          }}
+        />
+      )}
       <div
         className="absolute -translate-x-1/2 -translate-y-1/2"
         style={{ left: lineX, top: crossY, opacity }}
@@ -193,7 +217,7 @@ function TagMarkers({
       {showChip ? (
         <div
           className={`absolute px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wide text-white shadow-lg border whitespace-nowrap ${colors.chip}`}
-          style={{ left, top: top + height + 6, opacity }}
+          style={chipStyle}
         >
           {tag.checkIndex ? `QTY CHECK #${tag.checkIndex}: ` : ''}
           {tag.rawText}
@@ -201,6 +225,7 @@ function TagMarkers({
           {!rejected ? ` · ${sourceLabel}` : ''}
           {statusSuffix}
           {tag.view ? ` · ${tag.view}` : ''}
+          {vertical ? ' · VERT' : ''}
           {' · ('}
           {cx.toFixed(0)},{cy.toFixed(0)})
         </div>
