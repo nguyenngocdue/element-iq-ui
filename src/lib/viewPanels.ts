@@ -47,7 +47,14 @@ export type ParsedViewPanels = {
 type SheetLayoutBlock = {
   dpi?: number;
   sheet_size_px?: number[];
-  panels?: ViewPanelItem[];
+  /** Legacy layout JSON (`width` / `height` at 300 dpi). */
+  width?: number;
+  height?: number;
+  panels?: Array<
+    ViewPanelItem & {
+      class_name?: string;
+    }
+  >;
   panel_count?: number;
 };
 
@@ -76,19 +83,32 @@ function normalizeSheetLayout(
   spanMap?: Map<number, ViewportTextSpan[]>,
 ): ParsedViewPanels | null {
   if (!raw?.panels?.length) return null;
-  const size = raw.sheet_size_px ?? [0, 0];
+  const size =
+    raw.sheet_size_px?.length === 2 && (raw.sheet_size_px[0] ?? 0) > 0
+      ? raw.sheet_size_px
+      : raw.width && raw.height
+        ? [raw.width, raw.height]
+        : [0, 0];
   const panels = raw.panels.map((panel) => {
-    const spans = spanMap?.get(panel.id);
-    if (!spans?.length) return panel;
-    return {
+    const normalized: ViewPanelItem = {
       ...panel,
+      view_class: panel.view_class ?? panel.class_name ?? 'unknown',
+    };
+    const spans = spanMap?.get(normalized.id);
+    if (!spans?.length) return normalized;
+    return {
+      ...normalized,
       text_spans: spans,
       text_count: spans.length,
     };
   });
+  const sheetW = size[0] ?? 0;
+  const sheetH = size[1] ?? 0;
+  const sheet_size_px: [number, number] =
+    sheetW > 0 && sheetH > 0 ? [sheetW, sheetH] : inferSheetSizePx(panels);
   return {
     dpi: raw.dpi ?? 300,
-    sheet_size_px: [size[0] ?? 0, size[1] ?? 0],
+    sheet_size_px,
     panels,
     panel_count: raw.panel_count ?? panels.length,
   };
@@ -146,6 +166,17 @@ export async function fetchViewPanelsForFile(
   return null;
 }
 
+function inferSheetSizePx(panels: ViewPanelItem[]): [number, number] {
+  let maxX = 0;
+  let maxY = 0;
+  for (const panel of panels) {
+    const [, , x2, y2] = panel.bbox_px;
+    maxX = Math.max(maxX, x2);
+    maxY = Math.max(maxY, y2);
+  }
+  return [maxX, maxY];
+}
+
 export function parseViewPanelsFromReport(content: string | null | undefined): ParsedViewPanels | null {
   if (!content) return null;
   try {
@@ -182,7 +213,7 @@ export function parseViewPanelsFromReport(content: string | null | undefined): P
         }));
         return {
           dpi: record.viewport_text?.dpi ?? 300,
-          sheet_size_px: [0, 0],
+          sheet_size_px: inferSheetSizePx(panels),
           panels,
           panel_count: panels.length,
         };

@@ -197,6 +197,7 @@ export interface SessionState {
   overlayViewports: boolean;
   overlayViewportCoords: boolean;
   overlayTags: boolean;
+  overlayTagDetach: boolean;
   /** User closed the in-editor analysis progress modal; job keeps running. */
   analysisProgressOverlayDismissed: boolean;
 }

@@ -248,6 +248,7 @@ function resolveUrlEditorFields(docs: DocumentFile[], search?: string) {
       overlayViewports: parsed.overlayViewports,
       overlayViewportCoords: parsed.overlayViewportCoords,
       overlayTags: parsed.overlayTags,
+      overlayTagDetach: parsed.overlayTagDetach,
     } satisfies Partial<SessionState>,
   };
 }
@@ -567,7 +568,7 @@ interface AppContextType {
   setEditorView: (view: 'pdf' | 'artifact') => void;
   setExplorerSort: (sort: ExplorerSortKey) => void;
   setExplorerStatus: (status: ExplorerStatusFilter) => void;
-  setViewerOverlay: (key: 'qa' | 'split' | 'titles' | 'viewports' | 'coords' | 'tags', value: boolean) => void;
+  setViewerOverlay: (key: 'qa' | 'split' | 'titles' | 'viewports' | 'coords' | 'tags' | 'tagDetach', value: boolean) => void;
   applyEditorUrlFromSearch: (search: string) => void;
   retryPdfLoad: (fileId: string) => void;
 }
@@ -651,6 +652,7 @@ const initialState: SessionState = {
   overlayViewports: bootUrlPrefs?.overlayViewports ?? false,
   overlayViewportCoords: bootUrlPrefs?.overlayViewportCoords ?? false,
   overlayTags: bootUrlPrefs?.overlayTags ?? true,
+  overlayTagDetach: bootUrlPrefs?.overlayTagDetach ?? false,
   analysisProgressOverlayDismissed: false,
 };
 
@@ -1646,7 +1648,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setViewerOverlay = useCallback((
-    key: 'qa' | 'split' | 'titles' | 'viewports' | 'coords' | 'tags',
+    key: 'qa' | 'split' | 'titles' | 'viewports' | 'coords' | 'tags' | 'tagDetach',
     value: boolean,
   ) => {
     setState((prev) => ({
@@ -1661,7 +1663,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               ? { overlayViewports: value }
               : key === 'coords'
                 ? { overlayViewportCoords: value }
-                : { overlayTags: value }),
+                : key === 'tagDetach'
+                  ? { overlayTagDetach: value }
+                  : { overlayTags: value }),
     }));
   }, []);
 

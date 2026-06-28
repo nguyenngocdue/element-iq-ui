@@ -125,6 +125,7 @@ function UrlSync() {
     state.overlayViewports,
     state.overlayViewportCoords,
     state.overlayTags,
+    state.overlayTagDetach,
     navigate,
     location.search,
     state.isLoadingFiles,

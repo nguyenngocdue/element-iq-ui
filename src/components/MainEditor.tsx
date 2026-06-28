@@ -21,9 +21,10 @@ import { effectiveFileStatus, effectiveOverallStatus } from '../lib/analysisStat
 import { StatusLabel } from './StatusLabel';
 import { ProjectLoadingScreen } from './ProjectLoadingScreen';
 import { LoadingContent } from './LoadingScreen';
+import { TagDetachScopeOverlay, hasTagDetachScopeData } from './TagDetachScopeOverlay';
 import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
 import { useViewPanels } from '../hooks/use-view-panels';
-import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid, Crosshair } from 'lucide-react';
+import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid, Crosshair, BoxSelect } from 'lucide-react';
 import { artifactDisplayLabel, artifactIconMeta, isJsonArtifactType } from '../lib/fileView';
 import { downloadArtifactFile, downloadFileArtifactsBundle } from '../lib/artifactDownload';
 import { fetchArtifactBlob, fetchArtifactText } from '../lib/fetchArtifact';
@@ -205,6 +206,9 @@ function OverlayToolsBar({
   tagsAvailable,
   showTagOverlay,
   onToggleTagOverlay,
+  tagDetachScopeAvailable,
+  showTagDetachOverlay,
+  onToggleTagDetachOverlay,
   viewportsAvailable,
   showViewportOverlay,
   onToggleViewportOverlay,
@@ -223,6 +227,9 @@ function OverlayToolsBar({
   tagsAvailable: boolean;
   showTagOverlay: boolean;
   onToggleTagOverlay: () => void;
+  tagDetachScopeAvailable: boolean;
+  showTagDetachOverlay: boolean;
+  onToggleTagDetachOverlay: () => void;
   viewportsAvailable: boolean;
   showViewportOverlay: boolean;
   onToggleViewportOverlay: () => void;
@@ -230,7 +237,7 @@ function OverlayToolsBar({
   onToggleViewportCoords: () => void;
   hideQa?: boolean;
 }) {
-  if (hideQa && !viewSplitAvailable && !titlesAvailable && !tagsAvailable && !viewportsAvailable) return null;
+  if (hideQa && !viewSplitAvailable && !titlesAvailable && !tagsAvailable && !tagDetachScopeAvailable && !viewportsAvailable) return null;
 
   const btn = (active: boolean) =>
     cn(
@@ -283,6 +290,17 @@ function OverlayToolsBar({
           <Tag className="w-3 h-3" /> Tags
         </button>
       ) : null}
+      {tagDetachScopeAvailable ? (
+        <button
+          type="button"
+          onClick={onToggleTagDetachOverlay}
+          className={btn(showTagDetachOverlay)}
+          style={{ borderTopColor: showTagDetachOverlay ? '#ec4899' : undefined }}
+          title="Show PDF tag detach scope (panel + PLAN/REINF gutter + orphan margin)"
+        >
+          <BoxSelect className="w-3 h-3" /> Tag scope
+        </button>
+      ) : null}
       {viewportsAvailable ? (
         <button
           type="button"
@@ -323,9 +341,10 @@ function PdfRenderer({
   viewTitles,
   showTagOverlay,
   tagNotes,
+  showTagDetachOverlay,
+  viewPanels,
   showViewportOverlay,
   showViewportCoords = false,
-  viewPanels,
   onDimensionsLoaded,
   onRetryPdf,
 }: {
@@ -342,6 +361,7 @@ function PdfRenderer({
   viewTitles?: import('../lib/viewTitles').ParsedViewTitles | null;
   showTagOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
+  showTagDetachOverlay?: boolean;
   showViewportOverlay?: boolean;
   showViewportCoords?: boolean;
   viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
@@ -537,6 +557,18 @@ function PdfRenderer({
           viewerHeight={baseSize.h}
           viewerScale={scale}
           unitScale={ANALYSIS_TO_PDF_UNIT}
+          coordinateSpace="pdfjs"
+        />
+      ) : null}
+
+      {showTagDetachOverlay && hasViewPanelsData(viewPanels) && hasTagDetachScopeData(viewPanels) && baseSize.w > 0 ? (
+        <TagDetachScopeOverlay
+          viewPanels={viewPanels!}
+          viewerWidth={baseSize.w}
+          viewerHeight={baseSize.h}
+          viewerScale={scale}
+          unitScale={ANALYSIS_TO_PDF_UNIT}
+          coordinateSpace="pdfjs"
         />
       ) : null}
 
@@ -549,6 +581,7 @@ function PdfRenderer({
           unitScale={ANALYSIS_TO_PDF_UNIT}
           showPanels={Boolean(showViewportOverlay)}
           showCoords={showViewportCoords}
+          coordinateSpace="pdfjs"
         />
       ) : null}
     </div>
@@ -571,6 +604,7 @@ function ArtifactViewer({
   showTitleOverlay = false,
   tagNotes,
   showTagOverlay = false,
+  showTagDetachOverlay = false,
   viewPanels,
   showViewportOverlay = false,
   showViewportCoords = false,
@@ -590,6 +624,7 @@ function ArtifactViewer({
   showTitleOverlay?: boolean;
   tagNotes?: import('../lib/tagNotes').ParsedTagNotes | null;
   showTagOverlay?: boolean;
+  showTagDetachOverlay?: boolean;
   viewPanels?: import('../lib/viewPanels').ParsedViewPanels | null;
   showViewportOverlay?: boolean;
   showViewportCoords?: boolean;
@@ -815,6 +850,17 @@ function ArtifactViewer({
                   viewerHeight={imgNaturalSize.h}
                   viewerScale={scale}
                   unitScale={1}
+                  coordinateSpace="raster"
+                />
+              ) : null}
+              {showTagDetachOverlay && hasViewPanelsData(viewPanels) && hasTagDetachScopeData(viewPanels) && imgNaturalSize.w > 0 ? (
+                <TagDetachScopeOverlay
+                  viewPanels={viewPanels!}
+                  viewerWidth={imgNaturalSize.w}
+                  viewerHeight={imgNaturalSize.h}
+                  viewerScale={scale}
+                  unitScale={1}
+                  coordinateSpace="raster"
                 />
               ) : null}
               {(showViewportOverlay || showViewportCoords) && hasViewPanelsData(viewPanels) && imgNaturalSize.w > 0 ? (
@@ -826,6 +872,7 @@ function ArtifactViewer({
                   unitScale={1}
                   showPanels={showViewportOverlay}
                   showCoords={showViewportCoords}
+                  coordinateSpace="raster"
                 />
               ) : null}
             </div>
@@ -904,6 +951,7 @@ export function MainEditor() {
   const showViewSplitOverlay = state.overlaySplit;
   const showTitleOverlay = state.overlayTitles;
   const showTagOverlay = state.overlayTags;
+  const showTagDetachOverlay = state.overlayTagDetach;
   const showViewportOverlay = state.overlayViewports;
   const showViewportCoords = state.overlayViewportCoords;
   const [toolMode, setToolMode] = useState<'select' | 'pan' | 'zoom'>('select');
@@ -919,6 +967,7 @@ export function MainEditor() {
   const titlesAvailable = hasViewTitlesData(viewTitles);
   const tagsAvailable = hasTagNotesData(tagNotes);
   const viewportsAvailable = hasViewPanelsData(viewPanels);
+  const tagDetachScopeAvailable = hasTagDetachScopeData(viewPanels);
   const viewportScopedSplit = hasGroutViewportPanels(viewPanelsWithCounts);
   const showLegacyViewSplit =
     showViewSplitOverlay &&
@@ -1373,6 +1422,9 @@ export function MainEditor() {
               tagsAvailable={tagsAvailable}
               showTagOverlay={showTagOverlay}
               onToggleTagOverlay={() => setViewerOverlay('tags', !showTagOverlay)}
+              tagDetachScopeAvailable={tagDetachScopeAvailable}
+              showTagDetachOverlay={showTagDetachOverlay}
+              onToggleTagDetachOverlay={() => setViewerOverlay('tagDetach', !showTagDetachOverlay)}
               viewportsAvailable={viewportsAvailable}
               showViewportOverlay={showViewportOverlay}
               onToggleViewportOverlay={() => setViewerOverlay('viewports', !showViewportOverlay)}
@@ -1401,6 +1453,7 @@ export function MainEditor() {
             showTitleOverlay={showTitleOverlay}
             tagNotes={tagNotes}
             showTagOverlay={showTagOverlay}
+            showTagDetachOverlay={showTagDetachOverlay}
             viewPanels={viewPanelsWithCounts}
             showViewportOverlay={showViewportOverlay}
             showViewportCoords={showViewportCoords}
@@ -1441,6 +1494,7 @@ export function MainEditor() {
                viewTitles={viewTitles}
                showTagOverlay={showTagOverlay}
                tagNotes={tagNotes}
+               showTagDetachOverlay={showTagDetachOverlay}
                showViewportOverlay={showViewportOverlay}
                showViewportCoords={showViewportCoords}
                viewPanels={viewPanelsWithCounts}

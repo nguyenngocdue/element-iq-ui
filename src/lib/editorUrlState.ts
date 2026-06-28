@@ -45,6 +45,7 @@ export type EditorUrlSnapshot = {
   overlayViewports: boolean;
   overlayViewportCoords: boolean;
   overlayTags: boolean;
+  overlayTagDetach: boolean;
 };
 
 function parseBoolParam(value: string | null, defaultValue: boolean): boolean {
@@ -83,6 +84,7 @@ export function parseEditorUrlParams(search: URLSearchParams): EditorUrlSnapshot
     overlayViewports: parseBoolParam(search.get('viewports'), false),
     overlayViewportCoords: parseBoolParam(search.get('coords'), false),
     overlayTags: parseBoolParam(search.get('tags'), true),
+    overlayTagDetach: parseBoolParam(search.get('tagscope'), false),
   };
 }
 
@@ -112,6 +114,7 @@ export function buildEditorSearchParams(state: SessionState): string {
   if (state.overlayViewports) params.set('viewports', '1');
   if (state.overlayViewportCoords) params.set('coords', '1');
   if (!state.overlayTags) params.set('tags', '0');
+  if (state.overlayTagDetach) params.set('tagscope', '1');
 
   return params.toString();
 }

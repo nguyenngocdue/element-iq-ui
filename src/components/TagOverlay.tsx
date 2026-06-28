@@ -1,5 +1,8 @@
 import React from 'react';
+import { overlayBboxForSpace, bboxCenter, type OverlayCoordinateSpace } from '../lib/displayBbox';
+import { overlayToScreen } from '../lib/overlayCoords';
 import { ParsedTagNote, ParsedTagNotes, TagBboxKind } from '../lib/tagNotes';
+import { ANALYSIS_TO_PDF_UNIT } from '../lib/viewSplit';
 
 const TAG_COLORS: Record<
   ParsedTagNote['source'],
@@ -52,6 +55,7 @@ type TagOverlayProps = {
   viewerHeight: number;
   viewerScale: number;
   unitScale?: number;
+  coordinateSpace?: OverlayCoordinateSpace;
 };
 
 export function TagOverlay({
@@ -59,9 +63,11 @@ export function TagOverlay({
   viewerWidth,
   viewerHeight,
   viewerScale,
-  unitScale = 1,
+  unitScale = ANALYSIS_TO_PDF_UNIT,
+  coordinateSpace = 'pdfjs',
 }: TagOverlayProps) {
-  const toScreen = (v: number) => v * unitScale * viewerScale;
+  const toScreen = (v: number) =>
+    overlayToScreen(v, viewerWidth, viewerScale, undefined, unitScale);
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
 
@@ -90,6 +96,7 @@ export function TagOverlay({
         <TagMarkers
           key={`${tag.bboxKind}-${tag.rawText}-${tag.bbox.join(',')}-${i}`}
           tag={tag}
+          coordinateSpace={coordinateSpace}
           toScreen={toScreen}
         />
       ))}
@@ -107,9 +114,11 @@ function tagIsVertical(tag: ParsedTagNote): boolean {
 function TagMarkers({
   tag,
   toScreen,
+  coordinateSpace,
 }: {
   tag: ParsedTagNote;
   toScreen: (v: number) => number;
+  coordinateSpace: OverlayCoordinateSpace;
 }) {
   const rejected = Boolean(tag.rejectedReason);
   const sourceColors = rejected ? REJECTED_COLOR : (TAG_COLORS[tag.source] ?? TAG_COLORS.unknown);
@@ -123,8 +132,9 @@ function TagMarkers({
       };
   const borderWidth = kind.width;
   const opacity = rejected ? 0.72 : kind.opacity;
-  const [x1, y1, x2, y2] = tag.bbox;
-  const [cx, cy] = tag.center;
+  const mapped = overlayBboxForSpace(tag.bbox, coordinateSpace);
+  const [x1, y1, x2, y2] = mapped;
+  const [cx, cy] = bboxCenter(mapped);
   const left = toScreen(x1);
   const top = toScreen(y1);
   const width = Math.max(2, toScreen(x2) - toScreen(x1));

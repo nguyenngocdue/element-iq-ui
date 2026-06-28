@@ -4,6 +4,8 @@ import {
   ViewPanelItem,
   ViewportTextSpan,
 } from '../lib/viewPanels';
+import { overlayBboxForSpace, type OverlayCoordinateSpace } from '../lib/displayBbox';
+import { overlayToScreen } from '../lib/overlayCoords';
 
 const PANEL_COLORS: Record<string, { border: string; fill: string; chip: string }> = {
   plan_view: {
@@ -60,6 +62,7 @@ type ViewportOverlayProps = {
   showPanels?: boolean;
   /** Origin, sheet size, panel corner (x, y) in analysis px. */
   showCoords?: boolean;
+  coordinateSpace?: OverlayCoordinateSpace;
 };
 
 function panelColors(viewClass: string) {
@@ -210,11 +213,14 @@ function PanelCorner({
 function TextSpanBox({
   span,
   toScreen,
+  coordinateSpace,
 }: {
   span: ViewportTextSpan;
   toScreen: (v: number) => number;
+  coordinateSpace: OverlayCoordinateSpace;
 }) {
-  const [x1, y1, x2, y2] = span.bbox_px;
+  const mapped = overlayBboxForSpace(span.bbox_px, coordinateSpace);
+  const [x1, y1, x2, y2] = mapped;
   const left = toScreen(x1);
   const top = toScreen(y1);
   const width = Math.max(toScreen(x2) - left, 2);
@@ -240,11 +246,13 @@ function PanelBox({
   toScreen,
   showPanels,
   showCoords,
+  coordinateSpace = 'pdfjs',
 }: {
   panel: ViewPanelItem;
   toScreen: (v: number) => number;
   showPanels: boolean;
   showCoords: boolean;
+  coordinateSpace: OverlayCoordinateSpace;
 }) {
   const [x1, y1, x2, y2] = panel.bbox_px;
   const left = toScreen(x1);
@@ -280,7 +288,12 @@ function PanelBox({
             {label}{textHint}
           </div>
           {panel.text_spans?.map((span) => (
-            <TextSpanBox key={`${panel.id}-${span.index}`} span={span} toScreen={toScreen} />
+            <TextSpanBox
+              key={`${panel.id}-${span.index}`}
+              span={span}
+              toScreen={toScreen}
+              coordinateSpace={coordinateSpace}
+            />
           ))}
         </>
       ) : null}
@@ -304,8 +317,10 @@ export function ViewportOverlay({
   unitScale = 1,
   showPanels = true,
   showCoords = false,
+  coordinateSpace = 'pdfjs',
 }: ViewportOverlayProps) {
-  const toScreen = (v: number) => v * unitScale * viewerScale;
+  const toScreen = (v: number) =>
+    overlayToScreen(v, viewerWidth, viewerScale, data.sheet_size_px, unitScale);
   const w = viewerWidth * viewerScale;
   const h = viewerHeight * viewerScale;
   const [sheetW, sheetH] = data.sheet_size_px;
@@ -329,6 +344,7 @@ export function ViewportOverlay({
           toScreen={toScreen}
           showPanels={showPanels}
           showCoords={showCoords}
+          coordinateSpace={coordinateSpace}
         />
       ))}
     </div>
