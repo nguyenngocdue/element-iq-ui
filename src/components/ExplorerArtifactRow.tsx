@@ -54,6 +54,7 @@ export function ExplorerArtifactRow({
   isLast,
   className,
   spacerColumns = 0,
+  guideColor,
 }: React.Attributes & {
   artifact: FileArtifact;
   sourceFileName: string;
@@ -64,6 +65,7 @@ export function ExplorerArtifactRow({
   isLast?: boolean;
   className?: string;
   spacerColumns?: number;
+  guideColor?: string;
 }) {
   const { anchorRef, hoverProps, renderTooltip } = useExplorerHoverTooltip();
   const displayName = artifactDisplayLabel(artifact);
@@ -89,6 +91,7 @@ export function ExplorerArtifactRow({
             active={isActive}
             onClick={handleClick}
             className={className}
+            guideColor={guideColor}
           >
             <Icon className={cn('w-3.5 h-3.5 shrink-0', color)} />
             <span className="truncate">{displayName}</span>

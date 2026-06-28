@@ -25,6 +25,7 @@ import { statusBadgeClass, filterFilesByBucket, averagePassRate, effectiveFileSt
 import { StatusLabel } from './StatusLabel';
 import { fileIdsForSelectionIndices, parseSelectionRangeInput } from '../lib/selectionRangeInput';
 import { downloadFileArtifactsBundle, downloadOriginalPdfFile } from '../lib/artifactDownload';
+import { explorerSelectedRowStyle } from '../lib/explorerNodeColors';
 import { useResizable } from '../hooks/useResizable';
 import {
   ExplorerTooltipLocation,
@@ -63,6 +64,33 @@ function resolveDeleteOptions(values?: Record<string, boolean>): DeleteFilesOpti
 
 type BulkMode = 'run' | 'delete';
 
+const bulkActionBtn =
+  'px-2.5 py-1 rounded-md border text-[10px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+const bulkBtnApply = cn(
+  bulkActionBtn,
+  'shrink-0 border-[#3b82f6]/45 bg-[#1e3a5f]/90 text-[#93c5fd] hover:bg-[#1d4ed8]/70 hover:border-[#60a5fa]/55',
+);
+const bulkBtnSelectAll = cn(
+  bulkActionBtn,
+  'border-[#06b6d4]/40 bg-[#164e63]/75 text-[#67e8f9] hover:bg-[#155e75]/90 hover:border-[#22d3ee]/45',
+);
+const bulkBtnDeselect = cn(
+  bulkActionBtn,
+  'border-[#52525b]/55 bg-[#27272a] text-[#d4d4d8] hover:bg-[#3f3f46] hover:text-white hover:border-[#71717a]',
+);
+const bulkBtnRun = cn(
+  bulkActionBtn,
+  'border-[#10b981]/55 bg-[#065f46]/95 text-[#6ee7b7] font-semibold hover:bg-[#047857] hover:border-[#34d399]/60 shadow-[0_1px_0_rgba(16,185,129,0.2)]',
+);
+const bulkBtnClearAnalysis = cn(
+  bulkActionBtn,
+  'border-[#f59e0b]/45 bg-[#78350f]/80 text-[#fcd34d] hover:bg-[#92400e]/90 hover:border-[#fbbf24]/50',
+);
+const bulkBtnRemove = cn(
+  bulkActionBtn,
+  'border-[#ef4444]/50 bg-[#7f1d1d]/90 text-[#fecaca] font-semibold hover:bg-[#991b1b]/95 hover:border-[#f87171]/55 ml-auto shadow-[0_1px_0_rgba(239,68,68,0.15)]',
+);
+
 function BulkSelectionRangeInput({
   value,
   onChange,
@@ -100,7 +128,7 @@ function BulkSelectionRangeInput({
           type="button"
           onClick={onApply}
           disabled={disabled || !value.trim()}
-          className="shrink-0 px-2 py-1 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+          className={bulkBtnApply}
         >
           Apply
         </button>
@@ -755,7 +783,7 @@ export function Sidebar() {
         </div>
 
         {isRunSelectMode && !isAnalyzing && (
-          <div className="mt-2 rounded-md border border-[#3b3d46] bg-[#1e1f24] px-3 py-2.5">
+          <div className="mt-2 rounded-md border border-[#10b981]/25 bg-[#141a18] px-3 py-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-[#ccc]">Run selected drawings</p>
@@ -792,7 +820,7 @@ export function Sidebar() {
                 type="button"
                 onClick={selectAllFiles}
                 disabled={selectableFileIds.length === 0}
-                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+                className={bulkBtnSelectAll}
               >
                 Select all{hasActiveFilter ? ' shown' : ''}
               </button>
@@ -800,7 +828,7 @@ export function Sidebar() {
                 type="button"
                 onClick={() => setSelectedFileIds(new Set())}
                 disabled={selectedInViewCount === 0}
-                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+                className={bulkBtnDeselect}
               >
                 Deselect
               </button>
@@ -813,7 +841,7 @@ export function Sidebar() {
                   exitBulkMode();
                 }}
                 disabled={selectedInViewCount === 0}
-                className="px-2 py-0.5 rounded border border-[#2eb886]/40 bg-[#1a3a2a] text-[10px] text-[#2eb886] hover:bg-[#224d36] transition-colors disabled:opacity-40 ml-auto"
+                className={cn(bulkBtnRun, 'ml-auto')}
               >
                 Run{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
@@ -822,7 +850,7 @@ export function Sidebar() {
         )}
 
         {isDeleteSelectMode && !isAnalyzing && (
-          <div className="mt-2 rounded-md border border-[#3b3d46] bg-[#1e1f24] px-3 py-2.5">
+          <div className="mt-2 rounded-md border border-[#ef4444]/22 bg-[#1a1416] px-3 py-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-[11px] font-medium text-[#ccc]">Remove selected drawings</p>
@@ -859,7 +887,7 @@ export function Sidebar() {
                 type="button"
                 onClick={selectAllFiles}
                 disabled={selectableFileIds.length === 0}
-                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+                className={bulkBtnSelectAll}
               >
                 Select all{hasActiveFilter ? ' shown' : ''}
               </button>
@@ -867,7 +895,7 @@ export function Sidebar() {
                 type="button"
                 onClick={() => setSelectedFileIds(new Set())}
                 disabled={selectedInViewCount === 0}
-                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+                className={bulkBtnDeselect}
               >
                 Deselect
               </button>
@@ -880,7 +908,7 @@ export function Sidebar() {
                   setShowClearAnalysisDialog(true);
                 }}
                 disabled={selectedInViewCount === 0}
-                className="px-2 py-0.5 rounded border border-[#3b3d46] bg-[#262831] text-[10px] text-[#ccc] hover:text-white hover:border-[#555] transition-colors disabled:opacity-40"
+                className={bulkBtnClearAnalysis}
               >
                 Clear analysis{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
@@ -891,7 +919,7 @@ export function Sidebar() {
                   setShowDeleteSelectedDialog(true);
                 }}
                 disabled={selectedInViewCount === 0}
-                className="px-2 py-0.5 rounded border border-[#522b30] bg-[#3d2c2e] text-[10px] text-[#ff7b7b] hover:bg-[#4d3235] transition-colors disabled:opacity-40 ml-auto"
+                className={bulkBtnRemove}
               >
                 Remove{selectedInViewCount > 0 ? ` (${selectedInViewCount})` : ''}
               </button>
@@ -1348,13 +1376,7 @@ export function FileItem({
   const showSheets = expanded && hasSheets;
   const showArtifactsBlock = expanded && hasArtifacts;
   const selectDisabled = file.status === 'ANALYZING' || file.status === 'UPLOADING';
-  const isRunBulk = bulkMode === 'run';
-  const isDeleteBulk = bulkMode === 'delete';
-  const bulkSelectedClass = isSelected && isRunBulk
-    ? 'bg-[#2a2a1a] text-white border-l-2 border-[#f59e0b]'
-    : isSelected && isDeleteBulk
-      ? 'bg-[#3d2c2e] text-white border-l-2 border-[#ef4444]'
-      : null;
+  const selectedStyle = isSelected && index != null ? explorerSelectedRowStyle(index) : null;
 
   React.useEffect(() => {
     if (!menuOpen) return;
@@ -1433,36 +1455,64 @@ export function FileItem({
             selectDisabled && 'opacity-25 cursor-not-allowed',
             !selectDisabled && 'cursor-pointer',
             isSelected
-              ? bulkMode === 'delete'
-                ? 'bg-[#ef4444] border-[#ef4444] text-white'
-                : 'bg-[#f59e0b] border-[#f59e0b] text-[#1a1b20]'
+              ? 'text-white'
               : 'border-[#666] bg-[#12141a] hover:border-[#f59e0b]',
           )}
+          style={isSelected && selectedStyle
+            ? { backgroundColor: selectedStyle.accent, borderColor: selectedStyle.accent }
+            : undefined}
         >
           {isSelected && <Check className="w-3 h-3" strokeWidth={3} />}
         </button>
       )}
       {index != null && (
-        <span className="text-[12px] font-bold text-[#a0a5b5] font-mono w-5 shrink-0 text-right tabular-nums">{index}</span>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className="text-[12px] font-bold text-[#a0a5b5] font-mono w-4 shrink-0 text-right tabular-nums leading-none">
+            {index}
+          </span>
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+              className="shrink-0 text-[#858585] hover:text-white transition-colors -ml-px"
+            >
+              {expanded
+                ? <ChevronDown className="w-3 h-3" />
+                : <ChevronRight className="w-3 h-3" />
+              }
+            </button>
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+          {isPdfLoading ? (
+            <Loader2 className="w-3.5 h-3.5 shrink-0 text-[#3b82f6] animate-spin" aria-hidden />
+          ) : (
+            <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+          )}
+        </div>
       )}
-      {hasChildren ? (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          className="shrink-0 text-[#858585] hover:text-white transition-colors"
-        >
-          {expanded
-            ? <ChevronDown className="w-3 h-3" />
-            : <ChevronRight className="w-3 h-3" />
-          }
-        </button>
-      ) : (
-        <span className="w-3 shrink-0" />
-      )}
-      {isPdfLoading ? (
-        <Loader2 className="w-3.5 h-3.5 shrink-0 text-[#3b82f6] animate-spin" aria-hidden />
-      ) : (
-        <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+      {index == null && (
+        <>
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+              className="shrink-0 text-[#858585] hover:text-white transition-colors"
+            >
+              {expanded
+                ? <ChevronDown className="w-3 h-3" />
+                : <ChevronRight className="w-3 h-3" />
+              }
+            </button>
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+          {isPdfLoading ? (
+            <Loader2 className="w-3.5 h-3.5 shrink-0 text-[#3b82f6] animate-spin" aria-hidden />
+          ) : (
+            <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isActive && !hasSheets ? 'text-[#82aaff] fill-current/20' : '')} />
+          )}
+        </>
       )}
       <span className="truncate flex-1 text-[13px] font-medium min-w-0">{highlightMatch(file.name, nameHighlight)}</span>
       {(showFileSize || showCreatedDate) && (
@@ -1596,16 +1646,19 @@ export function FileItem({
         selectMode && !selectDisabled && 'cursor-pointer',
         selectMode && selectDisabled && 'cursor-not-allowed opacity-50',
         !selectMode && 'cursor-pointer',
-        bulkSelectedClass
-          ? bulkSelectedClass
+        selectedStyle
+          ? 'text-white border-l-2'
           : runningRowClass
             ? runningRowClass
             : isActive && !hasSheets && !selectMode
               ? 'bg-[#333748] text-white border-l-2 border-[#1e5cdc]'
               : 'hover:bg-[#25272e] text-[#a0a5b5] border-l-2 border-transparent',
       )}
+      style={selectedStyle
+        ? { borderLeftColor: selectedStyle.borderLeftColor, backgroundColor: selectedStyle.backgroundColor }
+        : undefined}
     >
-      <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">{fileRowContent}</div>
+      <div className="flex items-center gap-1.5 overflow-hidden flex-1 mr-3">{fileRowContent}</div>
     </div>
   );
 
@@ -1669,7 +1722,7 @@ export function FileItem({
                 isPageActive ? 'bg-[#333748] text-white' : 'hover:bg-[#25272e] text-[#858585]',
               )}
             >
-              <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-3">
+              <div className="flex items-center gap-1.5 overflow-hidden flex-1 mr-3">
                 <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isPageActive ? 'text-[#82aaff] fill-current/20' : '')} />
                 <span className="truncate">Sheet {pageNum}</span>
               </div>
@@ -1709,10 +1762,14 @@ export function FileItem({
           }}
           className={cn(
             'text-[13px] font-medium group',
-            bulkSelectedClass,
+            selectedStyle && 'text-white border-l-2',
             selectMode && selectDisabled && 'opacity-50',
             !selectMode && runningRowClass,
           )}
+          style={selectedStyle
+            ? { borderLeftColor: selectedStyle.borderLeftColor, backgroundColor: selectedStyle.backgroundColor }
+            : undefined}
+          guideColor={selectedStyle?.accent}
         >
           {fileRowContent}
         </TreeRow>
@@ -1733,6 +1790,7 @@ export function FileItem({
           isLast={artifactsHeaderIsLast && !(artifactsExpanded && file.artifacts!.length > 0)}
           onClick={(e) => { e.stopPropagation(); setArtifactsExpanded(!artifactsExpanded); }}
           className="text-[10px] text-[#858585]"
+          guideColor={selectedStyle?.accent}
         >
           {artifactsExpanded
             ? <ChevronDown className="w-2.5 h-2.5 shrink-0" />
@@ -1770,6 +1828,7 @@ export function FileItem({
             continuingGuides={artifactRowGuides(artifactIsLast)}
             isLast={artifactIsLast}
             className="text-[11px]"
+            guideColor={selectedStyle?.accent}
           />
         );
       })}
@@ -1788,6 +1847,7 @@ export function FileItem({
             active={isPageActive}
             onClick={(e) => { e.stopPropagation(); onPageClick(pageNum); }}
             className="text-[13px] font-medium"
+            guideColor={selectedStyle?.accent}
           >
             <FileIcon className={cn('w-3.5 h-3.5 shrink-0 opacity-80', isPageActive ? 'text-[#82aaff] fill-current/20' : '')} />
             <span className="truncate flex-1">Sheet {pageNum}</span>
