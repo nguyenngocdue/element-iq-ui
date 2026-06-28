@@ -259,6 +259,46 @@ function noteDisplayCenter(bbox: number[]): [number, number] {
 
 }
 
+function noteUsesDisplayBboxSwap(
+  bbox: number[],
+  cluster?: MatchedClusterLike | null,
+): boolean {
+  if (!noteBboxIsVertical(bbox) || !cluster?.bbox || cluster.bbox.length < 4) return false;
+  const [x1, y1, x2, y2] = cluster.bbox;
+  const [bx1, by1, bx2, by2] = bbox;
+  const rawCy = (by1 + by2) / 2;
+  if (rawCy < y1 - 180) return false;
+  const scx = (by1 + by2) / 2;
+  const scy = (bx1 + bx2) / 2;
+  if (scy < y2 - 300) return false;
+  if (scx < x1 - 80 || scx > x2 + 120) return false;
+  return true;
+}
+
+function noteDisplayBboxPx(
+  note: TagNoteLike,
+  cluster?: MatchedClusterLike | null,
+): number[] {
+  const bb = note.bbox_px;
+  if (!bb || bb.length < 4) return [];
+  if (!noteUsesDisplayBboxSwap(bb, cluster)) return bb;
+  const [x1, y1, x2, y2] = bb;
+  const w = x2 - x1;
+  const h = y2 - y1;
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  const dcx = cy;
+  const dcy = cx;
+  const halfW = h / 2;
+  const halfH = w / 2;
+  return [
+    Math.round(dcx - halfW),
+    Math.round(dcy - halfH),
+    Math.round(dcx + halfW),
+    Math.round(dcy + halfH),
+  ];
+}
+
 
 
 /** Mirrors ``tag_anchor.note_anchor_xy`` (simplified for overlay). */
@@ -388,6 +428,7 @@ function noteDisplayRotationDeg(
 ): 0 | 90 {
   const bb = note.bbox_px;
   if (!bb || bb.length < 4) return 0;
+  if (noteUsesDisplayBboxSwap(bb, cluster)) return 0;
   if (noteBboxIsVertical(bb)) return 90;
   if (noteUsesDisplaySwap(bb, cluster)) return 90;
   return 0;
@@ -488,7 +529,7 @@ function resolveDrawBbox(note: TagNoteLike, cluster?: MatchedClusterLike | null)
 
 
 
-  const needsPin = tagCoordsMisaligned(note, cluster) || rawBboxFarFromAnchor(note, cluster);
+  const needsPin = rawBboxFarFromAnchor(note, cluster);
   if (needsPin) {
     const anchor = noteAnchorXy(bb, cluster);
     const cb = cluster.bbox;
@@ -501,8 +542,7 @@ function resolveDrawBbox(note: TagNoteLike, cluster?: MatchedClusterLike | null)
     return estimatedCalloutBbox(cluster) ?? tightenTagBbox(bb);
   }
 
-  return tightenTagBbox(bb);
-
+  return tightenTagBbox(noteDisplayBboxPx(note, cluster));
 }
 
 
