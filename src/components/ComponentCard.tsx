@@ -218,15 +218,14 @@ export function ComponentCard({
             <span className="text-white font-mono truncate" title={activeModel}>
               {activeModel || component.modelFile || '—'}
             </span>
+            {activeModelMeta?.map50_95 != null && (
+              <span className="text-[#737373]">
+                · mAP50-95 {(activeModelMeta.map50_95 * 100).toFixed(1)}%
+              </span>
+            )}
           </div>
         )}
         <div className="flex items-center gap-3">
-          {component.accuracy != null && !isNaN(component.accuracy) && (
-            <span>
-              <span>Accuracy:</span>{' '}
-              <span className="text-[#22c55e] font-semibold">{(component.accuracy * 100).toFixed(0)}%</span>
-            </span>
-          )}
           <span>
             <span>Classes:</span> <span className="text-white">{component.classes.join(', ')}</span>
           </span>
