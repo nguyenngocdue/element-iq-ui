@@ -25,6 +25,7 @@ import { ViewportOverlay, hasViewPanelsData } from './ViewportOverlay';
 import { useViewPanels } from '../hooks/use-view-panels';
 import { ZoomIn, ZoomOut, Move, Download, Share2, Play, RefreshCw, X, ShieldCheck, ScanFace, MessageSquare, Brain, Pin, MousePointer2, Hand, Search, Split, Maximize, Terminal, Columns2, Type, Tag, LayoutGrid, Crosshair } from 'lucide-react';
 import { artifactDisplayLabel, artifactIconMeta, isJsonArtifactType } from '../lib/fileView';
+import { downloadArtifactFile, downloadFileArtifactsBundle } from '../lib/artifactDownload';
 import { fetchArtifactBlob, fetchArtifactText } from '../lib/fetchArtifact';
 import { isGroutOverlayArtifactType } from '../lib/hydrateViewPanels';
 import { cn } from '../lib/utils';
@@ -1295,6 +1296,18 @@ export function MainEditor() {
                   >
                     📄 Original PDF
                   </button>
+                  {file?.artifacts && file.artifacts.length > 0 && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!file?.id) return;
+                        await downloadFileArtifactsBundle(file.id, file.name);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white border-b border-[#3c3c3c]"
+                    >
+                      📦 PDF + artifacts (ZIP)
+                    </button>
+                  )}
                   {file?.artifacts?.map(a => {
                     const { Icon, color } = artifactIconMeta(a.type);
                     return (
@@ -1302,21 +1315,8 @@ export function MainEditor() {
                       key={a.id}
                       onClick={async (e) => {
                         e.stopPropagation();
-                        const { authFetch } = await import('../lib/supabase');
-                        const sep = a.downloadUrl.includes('?') ? '&' : '?';
-                        const res = await authFetch(`${a.downloadUrl}${sep}download=1`);
-                        if (res.ok) {
-                          const blob = await res.blob();
-                          const url = URL.createObjectURL(blob);
-                          const link = document.createElement('a');
-                          link.href = url;
-                          link.download = isGroutOverlayArtifactType(a.type)
-                            ? `${file.name.replace('.pdf', '')}_grout_overlay.png`
-                            : a.type === 'ANNOTATED_PDF'
-                              ? `${file.name.replace('.pdf', '')}_annotated.pdf`
-                              : `${file.name.replace('.pdf', '')}_report.json`;
-                          document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
-                        }
+                        if (!file) return;
+                        await downloadArtifactFile(a, file.name);
                       }}
                       className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#333] text-white flex items-center gap-2"
                     >

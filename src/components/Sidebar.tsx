@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useApp, type DeleteFilesOptions } from '../store';
-import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil, Loader2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, CloudUpload, Download, File as FileIcon, HardDrive, X, RefreshCw, Eye, EyeOff, Search, ListChecks, Trash2, EllipsisVertical, Pencil, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ExplorerFilesLoading } from './ProjectLoadingScreen';
 import { highlightMatch } from '../lib/fileSearch';
@@ -24,6 +24,7 @@ import { DocumentFile } from '../types';
 import { statusBadgeClass, filterFilesByBucket, averagePassRate, effectiveFileStatus, effectiveOverallStatus } from '../lib/analysisStatus';
 import { StatusLabel } from './StatusLabel';
 import { fileIdsForSelectionIndices, parseSelectionRangeInput } from '../lib/selectionRangeInput';
+import { downloadFileArtifactsBundle, downloadOriginalPdfFile } from '../lib/artifactDownload';
 import { useResizable } from '../hooks/useResizable';
 import {
   ExplorerTooltipLocation,
@@ -137,6 +138,7 @@ export function Sidebar() {
   } = useApp();
   const isReadOnly = state.isReadOnly ?? false;
   const canRun = state.canRun === true;
+  const canDownload = state.canDownload === true;
   const isProjectOwner = state.isProjectOwner ?? !isReadOnly;
   const [showStatuses, setShowStatuses] = useState(true);
   const [showFileSizes, setShowFileSizes] = useState(false);
@@ -397,6 +399,7 @@ export function Sidebar() {
             selectMode={isBulkSelectMode}
             bulkMode={bulkMode}
             canManage={isProjectOwner}
+            canDownload={canDownload}
             onRename={(id, name) => {
               setRenameTarget({ id, name });
               setRenameValue(name);
@@ -1257,6 +1260,7 @@ export function FileItem({
   selectMode = false,
   bulkMode = null,
   canManage = false,
+  canDownload = false,
   onRename,
   onRemove,
   onClearAnalysis,
@@ -1283,6 +1287,7 @@ export function FileItem({
   selectMode?: boolean;
   bulkMode?: 'run' | 'delete' | null;
   canManage?: boolean;
+  canDownload?: boolean;
   onRename?: (id: string, name: string) => void;
   onRemove?: (id: string) => void;
   onClearAnalysis?: (id: string) => void;
@@ -1483,7 +1488,7 @@ export function FileItem({
         </span>
       )}
       <span className="shrink-0">{!hideBadge && getBadge()}</span>
-      {canManage && !selectMode && (
+      {canDownload && !selectMode && (
         <div ref={menuRef} className="relative shrink-0">
           <button
             type="button"
@@ -1498,9 +1503,35 @@ export function FileItem({
           </button>
           {menuOpen && (
             <div
-              className="absolute right-0 top-full mt-1 z-[120] min-w-[132px] py-1 bg-[#1e1f24] border border-[#3c3c3c] rounded-lg shadow-2xl"
+              className="absolute right-0 top-full mt-1 z-[120] min-w-[168px] py-1 bg-[#1e1f24] border border-[#3c3c3c] rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  void downloadOriginalPdfFile(file.id, file.name, file.file);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#ccc] hover:bg-[#262831] hover:text-white transition-colors"
+              >
+                <Download className="w-3 h-3 shrink-0" /> Download PDF
+              </button>
+              {hasArtifacts && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    void downloadFileArtifactsBundle(file.id, file.name);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#ccc] hover:bg-[#262831] hover:text-white transition-colors border-b border-[#3c3c3c]"
+                >
+                  <Download className="w-3 h-3 shrink-0" /> PDF + artifacts (ZIP)
+                </button>
+              )}
+              {canManage && (
+                <>
               <button
                 type="button"
                 disabled={selectDisabled}
@@ -1539,6 +1570,8 @@ export function FileItem({
               >
                 <Trash2 className="w-3 h-3 shrink-0" /> Remove
               </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1597,6 +1630,17 @@ export function FileItem({
               {artifactsExpanded ? <ChevronDown className="w-2.5 h-2.5 shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
               <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
               <span className="ml-auto text-[9px] text-[#555]">{file.artifacts!.length}</span>
+              <button
+                type="button"
+                title="Download PDF gốc + tất cả artifacts (ZIP)"
+                className="ml-1 p-0.5 rounded hover:bg-[#333] text-[#858585] hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void downloadFileArtifactsBundle(file.id, file.name);
+                }}
+              >
+                <Download className="w-3 h-3" />
+              </button>
             </div>
             {artifactsExpanded && file.artifacts!.map(a => {
               const artifactName = artifactDisplayLabel(a);
@@ -1696,6 +1740,17 @@ export function FileItem({
           }
           <span className="uppercase tracking-wider font-bold text-[9px]">Artifacts</span>
           <span className="ml-auto text-[9px] text-[#555]">{file.artifacts!.length}</span>
+          <button
+            type="button"
+            title="Download PDF gốc + tất cả artifacts (ZIP)"
+            className="ml-1 p-0.5 rounded hover:bg-[#333] text-[#858585] hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              void downloadFileArtifactsBundle(file.id, file.name);
+            }}
+          >
+            <Download className="w-3 h-3" />
+          </button>
         </TreeRow>
       )}
 
