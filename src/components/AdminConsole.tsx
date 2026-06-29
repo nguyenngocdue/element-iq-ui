@@ -62,6 +62,7 @@ export function AdminConsole() {
   const { profile, isSuperAdmin } = useAdminProfile();
 
   const displayName = profile?.full_name || profile?.username || 'Admin';
+  const userEmail = profile?.email ?? null;
 
   const setTab = (tab: AdminTab) => {
     setSearchParams({ tab }, { replace: true });
@@ -95,6 +96,7 @@ export function AdminConsole() {
       <WorkspaceSidebar
         activeNav="admin"
         displayName={displayName}
+        userEmail={userEmail}
         showAdminLink
         showModelLabLink
         onCreateProject={() => navigate('/projects')}

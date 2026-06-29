@@ -10,6 +10,7 @@ export type WorkspaceNav = 'dashboard' | 'projects' | 'account' | 'admin' | 'mod
 interface WorkspaceSidebarProps {
   activeNav: WorkspaceNav;
   displayName: string;
+  userEmail?: string | null;
   onCreateProject: () => void;
   onNavigate: (nav: WorkspaceNav) => void;
   onAiChat?: () => void;
@@ -102,6 +103,7 @@ function NavButton({
 export function WorkspaceSidebar({
   activeNav,
   displayName,
+  userEmail,
   onCreateProject,
   onNavigate,
   onAiChat,
@@ -164,10 +166,10 @@ export function WorkspaceSidebar({
         <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/25 to-transparent pointer-events-none" />
         {isCollapsed ? (
           <div className="px-1 py-1">
-            <WorkspaceSidebarBrand collapsed displayName={displayName} />
+            <WorkspaceSidebarBrand collapsed displayName={displayName} userEmail={userEmail} />
           </div>
         ) : (
-          <WorkspaceSidebarBrand collapsed={false} displayName={displayName} />
+          <WorkspaceSidebarBrand collapsed={false} displayName={displayName} userEmail={userEmail} />
         )}
       </div>
 

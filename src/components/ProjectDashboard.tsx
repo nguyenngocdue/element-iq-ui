@@ -467,6 +467,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   }, [myProjects]);
 
   const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Guest';
+  const userEmail = user?.email ?? null;
 
   // ── Load projects from API ────────────────────────────────
   useEffect(() => {
@@ -1019,6 +1020,7 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       <WorkspaceSidebar
         activeNav={activeTab}
         displayName={displayName}
+        userEmail={userEmail}
         onCreateProject={() => {
           if (!user) {
             promptSignInForAction();

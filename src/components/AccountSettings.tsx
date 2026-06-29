@@ -113,6 +113,7 @@ export function AccountSettings() {
       <WorkspaceSidebar
         activeNav="account"
         displayName={displayName}
+        userEmail={email}
         onCreateProject={() => navigate('/projects')}
         onNavigate={handleNavigate}
         onAiChat={() => {}}

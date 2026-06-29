@@ -629,6 +629,7 @@ export function ModelLabConsole() {
   const navigate = useNavigate();
   const { profile } = useAdminProfile();
   const displayName = profile?.full_name || profile?.username || 'Admin';
+  const userEmail = profile?.email ?? null;
 
   const [report, setReport] = useState<ModelAnalysisReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -692,6 +693,7 @@ export function ModelLabConsole() {
       <WorkspaceSidebar
         activeNav="model-lab"
         displayName={displayName}
+        userEmail={userEmail}
         showAdminLink
         showModelLabLink
         onCreateProject={() => navigate('/projects')}
