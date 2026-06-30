@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { FileJson, FileText, Image } from 'lucide-react';
 import { DocumentFile } from '../types';
 import { filterFilesByQuery } from './fileSearch';
+import { effectiveFileStatus } from './analysisStatus';
 
 export type ExplorerSortKey = 'name-asc' | 'name-desc' | 'date-desc' | 'size-desc';
 
@@ -183,10 +184,15 @@ export function filterFilesByStatus(
   status: ExplorerStatusFilter,
 ): DocumentFile[] {
   if (status === 'all') return files;
-  if (status === 'PASS') return files.filter((f) => f.status === 'PASS');
-  if (status === 'FAIL') return files.filter((f) => f.status === 'FAIL');
-  if (status === 'WARN') return files.filter((f) => f.status === 'WARN');
-  return files.filter((f) => f.status === 'NO-NOTE');
+  // Match the badge shown in the list (reconciled), not the stale raw f.status.
+  if (status === 'PASS') return files.filter((f) => effectiveFileStatus(f) === 'PASS');
+  if (status === 'FAIL') return files.filter((f) => effectiveFileStatus(f) === 'FAIL');
+  if (status === 'WARN') return files.filter((f) => effectiveFileStatus(f) === 'WARN');
+  // "No note" = everything not Pass/Fail/Warn (NO-NOTE, NO-TUBE, PENDING/READY).
+  return files.filter((f) => {
+    const s = effectiveFileStatus(f);
+    return s === 'NO-NOTE' || s === 'NO-TUBE' || s === 'PENDING';
+  });
 }
 
 export function sortFiles(files: DocumentFile[], sortKey: ExplorerSortKey): DocumentFile[] {
