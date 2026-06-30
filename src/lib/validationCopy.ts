@@ -187,15 +187,40 @@ export function summarizeGroutCheck(
     };
   }
 
-  if (issues.some((a) => a.status === 'FAIL' || a.status === 'VISION-GAP')) {
-    const first = issues.find((a) => a.status === 'FAIL' || a.status === 'VISION-GAP')!;
+  const blockingIssues = issues.filter(
+    (a) => a.status === 'FAIL' || a.status === 'MISSING-TAG' || a.status === 'TAG-OCR-SUSPECT',
+  );
+
+  if (blockingIssues.some((a) => a.status === 'FAIL')) {
+    const first = blockingIssues.find((a) => a.status === 'FAIL')!;
     const copy = describeValidationAnnotation(first);
     return {
       tone: 'fail',
       title: copy.title,
       statNumber: copy.statNumber,
       statUnit: copy.statUnit,
-      statContent: `${issues.length} issue(s) on this sheet · ${copy.statContent}`,
+      statContent: `${blockingIssues.length} issue(s) on this sheet · ${copy.statContent}`,
+    };
+  }
+
+  if (plan?.status === 'PASS' && blockingIssues.length === 0) {
+    const infoGap = issues.find((a) => a.status === 'VISION-GAP');
+    if (infoGap) {
+      const copy = describeValidationAnnotation(infoGap);
+      return {
+        tone: 'pass',
+        title: 'Grout Tube Check Passed',
+        statNumber: String(tubeCount),
+        statUnit: 'tubes',
+        statContent: `Plan qty tag matches. Note: ${copy.statContent}`,
+      };
+    }
+    return {
+      tone: 'pass',
+      title: 'Grout Tube Check Passed',
+      statNumber: String(tubeCount),
+      statUnit: 'tubes',
+      statContent: 'Plan qty tag matches tube count on all checked views.',
     };
   }
 

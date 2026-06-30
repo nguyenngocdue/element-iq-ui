@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
 import { loginPath } from '../lib/authRoutes';
 import { authFetch } from '../lib/supabase';
-import { Search, ChevronDown, Plus, Bell, LayoutGrid, Box, FolderKanban, X, List, Pencil, Trash2, EllipsisVertical, Upload, BarChart3, Clock, Globe, Lock } from 'lucide-react';
+import { Search, ChevronDown, Plus, Bell, LayoutGrid, Box, FolderKanban, X, List, Pencil, Trash2, EllipsisVertical, Upload, BarChart3, Clock, Globe, Lock, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ConfirmDialog } from './ConfirmDialog';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
@@ -636,11 +636,13 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
   };
 
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim() || !editingProject) return;
+    if (!newProjectName.trim() || !editingProject || editSaving) return;
 
+    setEditSaving(true);
     try {
       const res = await authFetch(`/api/v1/projects/${editingProject.id}`, {
         method: 'PATCH',
@@ -650,11 +652,13 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
       if (!res.ok) throw new Error('Failed to update');
       const updated = await res.json();
       patchProjectInLists(editingProject.id, updated);
+      setEditingProject(null);
+      setNewProjectName('');
     } catch (err) {
       console.error('Edit project error:', err);
+    } finally {
+      setEditSaving(false);
     }
-    setEditingProject(null);
-    setNewProjectName('');
   };
 
   const [deleteTarget, setDeleteTarget] = useState<ProjectItem | null>(null);
@@ -686,17 +690,20 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
 
   const openEditModal = (project: ProjectItem, e: React.MouseEvent) => {
     e.stopPropagation();
+    setEditSaving(false);
     setEditingProject(project);
     setNewProjectName(project.name);
   };
 
   const [createDescription, setCreateDescription] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createSaving, setCreateSaving] = useState(false);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim()) return;
+    if (!newProjectName.trim() || createSaving) return;
     setCreateError(null);
+    setCreateSaving(true);
 
     try {
       const res = await authFetch('/api/v1/projects', {
@@ -722,6 +729,8 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
     } catch (err: any) {
       console.error('Create project error:', err);
       setCreateError(err.message || 'Failed to create project');
+    } finally {
+      setCreateSaving(false);
     }
   };
 
@@ -1378,7 +1387,12 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-[#3c3c3c] bg-[#1e1e1e]">
               <h2 className="text-xl font-bold text-white tracking-wider">Create New Project</h2>
-              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white">
+              <button
+                type="button"
+                onClick={() => !createSaving && setIsCreateModalOpen(false)}
+                disabled={createSaving}
+                className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white disabled:opacity-50 disabled:pointer-events-none"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1399,12 +1413,30 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 )}
               </div>
               <div className="flex items-center justify-end p-5 border-t border-[#3c3c3c] bg-[#1e1e1e] gap-3">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-6 py-2 text-sm font-semibold rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  disabled={createSaving}
+                  className="px-6 py-2 text-sm font-semibold rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
                   Cancel
                 </button>
-                <button type="submit" className="px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20">
-                  <Plus className="w-4 h-4" />
-                  Create project
+                <button
+                  type="submit"
+                  disabled={createSaving}
+                  className="px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20 disabled:opacity-70 disabled:pointer-events-none min-w-[148px] justify-center"
+                >
+                  {createSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                      Creating…
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" aria-hidden />
+                      Create project
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1418,7 +1450,12 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-[#3c3c3c] bg-[#1e1e1e]">
               <h2 className="text-xl font-bold text-white tracking-wider">Edit Project</h2>
-              <button onClick={() => setEditingProject(null)} className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white">
+              <button
+                type="button"
+                onClick={() => !editSaving && setEditingProject(null)}
+                disabled={editSaving}
+                className="p-1 hover:bg-[#3c3c3c] rounded transition-colors text-[#b0b0b0] hover:text-white disabled:opacity-50 disabled:pointer-events-none"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1430,12 +1467,30 @@ export function ProjectDashboard({ activeTab }: ProjectDashboardProps) {
                 </div>
               </div>
               <div className="flex items-center justify-end p-5 border-t border-[#3c3c3c] bg-[#1e1e1e] gap-3">
-                <button type="button" onClick={() => setEditingProject(null)} className="px-6 py-2 text-sm font-semibold rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setEditingProject(null)}
+                  disabled={editSaving}
+                  className="px-6 py-2 text-sm font-semibold rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-white transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
                   Cancel
                 </button>
-                <button type="submit" className="px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20">
-                  <Pencil className="w-4 h-4" />
-                  Save Changes
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-6 py-2 text-sm font-semibold flex items-center gap-2 rounded transition-colors shadow-lg bg-[#10b981] hover:bg-[#059669] text-white shadow-[#10b981]/20 disabled:opacity-70 disabled:pointer-events-none min-w-[148px] justify-center"
+                >
+                  {editSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="w-4 h-4" aria-hidden />
+                      Save Changes
+                    </>
+                  )}
                 </button>
               </div>
             </form>

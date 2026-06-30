@@ -129,6 +129,13 @@ function overallLabelToStatus(raw: string | undefined): DocumentFile['status'] |
   return null;
 }
 
+/** Info-only annotation rows — shown in Active Annotations but not grout pass/fail (core _grout_check_reports). */
+const INFO_ONLY_ANNOTATION_STATUSES = new Set<string>([
+  'VISION-GAP',
+  'REINF-COUNT',
+  'VIEW-AMBIGUOUS',
+]);
+
 /** Align badge with Active Annotations when report rows and overall disagree. */
 export function reconcileFileStatusWithAnnotations(
   fileStatus: DocumentFile['status'],
@@ -143,20 +150,23 @@ export function reconcileFileStatusWithAnnotations(
   }
   if (!annotations?.length) return fileStatus;
 
-  const issues = annotations.filter(
-    (a) => a.status !== 'PASS' && a.status !== 'REINF-COUNT',
-  );
   const plan = annotations.find((a) => a.view === 'PLAN AS CAST');
 
-  if (issues.some((a) => a.status === 'FAIL' || a.status === 'VISION-GAP')) {
+  if (annotations.some((a) => a.status === 'FAIL')) {
     return 'FAIL';
   }
-  if (issues.some((a) => a.status === 'MISSING-TAG' || a.status === 'TAG-OCR-SUSPECT')) {
+  if (annotations.some((a) => a.status === 'MISSING-TAG' || a.status === 'TAG-OCR-SUSPECT')) {
     return 'WARN';
   }
-  if (issues.length === 0 && plan?.status === 'PASS' && fileStatus === 'FAIL') {
-    return 'PASS';
+
+  // VISION-GAP / REINF-COUNT / VIEW-AMBIGUOUS — trust report overall (usually PASS when plan passes).
+  const hasInfoOnlyIssues = annotations.some(
+    (a) => INFO_ONLY_ANNOTATION_STATUSES.has(a.status),
+  );
+  if (hasInfoOnlyIssues && plan?.status === 'PASS') {
+    return fileStatus === 'FAIL' ? 'PASS' : fileStatus;
   }
+
   return fileStatus;
 }
 
@@ -194,8 +204,12 @@ export function effectiveFileStatus(file: DocumentFile): DocumentFile['status'] 
     return tubes === 0 && file.status === 'PASS' ? 'NO-TUBE' : file.status;
   }
 
+  const baseStatus = file.overallStatus
+    ? mapOverallToFileStatus(file.overallStatus, true)
+    : file.status;
+
   return reconcileFileStatusWithAnnotations(
-    file.status,
+    baseStatus,
     file.validationAnnotations,
     tubes,
   );

@@ -9,6 +9,7 @@ import {
   hasAnalysisPayload,
   resolveFileStatusFromAnalysis,
   reconcileFileStatusWithAnnotations,
+  mapOverallToFileStatus,
   resolveOverallRaw,
   resolvePassRate,
 } from './lib/analysisStatus';
@@ -366,8 +367,11 @@ function mergeDocsWithExistingFiles(
       && existing.validationAnnotations?.length
     ) {
       const tubes = existing.tubeCount ?? existing.detections?.length ?? d.tubeCount ?? 0;
+      const baseForReconcile = existing.overallStatus
+        ? mapOverallToFileStatus(existing.overallStatus, true)
+        : existing.status;
       const localStatus = reconcileFileStatusWithAnnotations(
-        existing.status,
+        baseForReconcile,
         existing.validationAnnotations,
         tubes,
       );
